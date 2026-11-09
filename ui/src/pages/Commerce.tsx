@@ -13,10 +13,12 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { LicenceActivationSteps } from "@/components/commerce/CommerceActivationSteps";
 import { CatalogueList, CatalogueRecord, type CatalogueResource } from "@/components/commerce/CommerceCatalogue";
+import { ClientList, ClientRecord, CustomerTierList, EnquiryList, ReceiptList } from "@/components/commerce/CommerceClients";
 import { CommerceCurrency } from "@/components/commerce/CommerceCurrency";
 import { CommerceImportJob, CommerceImports } from "@/components/commerce/CommerceImports";
 import { CommercePayments } from "@/components/commerce/CommercePayments";
 import { DraftInvoiceActions, QuoteActions, RefundRequest, isDraftInvoice } from "@/components/commerce/CommerceSalesActions";
+import { LicenceActions, OrderStatusActions } from "@/components/commerce/CommerceSettingsActions";
 import { useCommerceCustomers, useCommerceSite } from "@/hooks/useCommerceSite";
 import { CATALOGUE_COPY } from "@/lib/commerce-catalogue";
 import {
@@ -51,8 +53,11 @@ const RECORD_LINK = "inline-flex w-fit items-center gap-1 rounded-sm font-medium
 
 const CATALOGUE_SECTIONS = ["offerings", "vendors", "categories", "pricing-rules", "customer-tiers", "currency", "imports"] as const;
 type CatalogueSection = (typeof CATALOGUE_SECTIONS)[number];
-type CommerceSection = CommerceResource | "payments" | CatalogueSection;
-type CommerceArea = "sales" | "catalogue";
+// Clients, enquiries and portal receipts (GRE-4784): the website admin's settings beside sales and the catalogue.
+const CLIENT_SECTIONS = ["customers", "enquiries", "portal-acceptances"] as const;
+type ClientSection = (typeof CLIENT_SECTIONS)[number];
+type CommerceSection = CommerceResource | "payments" | CatalogueSection | ClientSection;
+type CommerceArea = "sales" | "catalogue" | "clients";
 
 const SECTION_LABEL: Record<CommerceSection, string> = {
   ...Object.fromEntries(COMMERCE_RESOURCES.map((value) => [value, COMMERCE_COPY[value].label])) as Record<CommerceResource, string>,
@@ -64,23 +69,29 @@ const SECTION_LABEL: Record<CommerceSection, string> = {
   "customer-tiers": CATALOGUE_COPY["customer-tiers"].label,
   currency: "Currency",
   imports: "Price-book import",
+  customers: "Client companies",
+  enquiries: "Enquiries and leads",
+  "portal-acceptances": "Portal receipts",
 };
 const AREA_SECTIONS: Record<CommerceArea, readonly CommerceSection[]> = {
   sales: [...COMMERCE_RESOURCES, "payments"],
   catalogue: CATALOGUE_SECTIONS,
+  clients: CLIENT_SECTIONS,
 };
-const AREA_TABS = [{ value: "sales", label: "Sales" }, { value: "catalogue", label: "Catalogue" }];
+const AREA_TABS = [{ value: "sales", label: "Sales" }, { value: "catalogue", label: "Catalogue" }, { value: "clients", label: "Clients" }];
 const AREA_COPY: Record<CommerceArea, string> = {
   sales: "The website's quotes, orders, invoices, licences and Stripe payments",
   catalogue: "The website's offerings, vendors, categories, pricing, currency and price-book imports",
+  clients: "The website's client companies, enquiries and leads, and portal receipts",
 };
 
 function sectionOf(value: string | undefined): CommerceSection | null {
   return value && value in SECTION_LABEL ? (value as CommerceSection) : null;
 }
-const areaOf = (section: CommerceSection): CommerceArea => ((CATALOGUE_SECTIONS as readonly string[]).includes(section) ? "catalogue" : "sales");
+const areaOf = (section: CommerceSection): CommerceArea => ((CATALOGUE_SECTIONS as readonly string[]).includes(section) ? "catalogue"
+  : (CLIENT_SECTIONS as readonly string[]).includes(section) ? "clients" : "sales");
 const isCatalogueResource = (section: CommerceSection): section is CatalogueResource =>
-  ["offerings", "vendors", "categories", "pricing-rules", "customer-tiers"].includes(section);
+  ["offerings", "vendors", "categories", "pricing-rules"].includes(section);
 
 function StatusPill({ status }: { status: unknown }) {
   const value = text(status);
@@ -367,8 +378,10 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
 
       <LineItems record={record} />
 
+      {resource === "licences" ? <LicenceActions companyId={companyId} siteId={siteId} licence={record} /> : null}
       {resource === "licences" ? <LicenceActivationSteps companyId={companyId} siteId={siteId} licence={record} /> : null}
       {resource === "quotes" ? <QuoteActions companyId={companyId} siteId={siteId} quote={record} /> : null}
+      {resource === "orders" ? <OrderStatusActions companyId={companyId} siteId={siteId} order={record} /> : null}
       {resource === "orders" && isDraftInvoice(record) ? <DraftInvoiceActions companyId={companyId} siteId={siteId} order={record} /> : null}
       {resource === "orders" && !isDraftInvoice(record) && Number(record.total_minor ?? 0) > 0 ? (
         <RefundRequest companyId={companyId} siteId={siteId} order={record} />
@@ -428,7 +441,7 @@ export function CommercePage() {
       crumbs.push({
         label: resource ? COMMERCE_COPY[resource].singular
           : section && isCatalogueResource(section) ? (recordId === "new" ? "New" : CATALOGUE_COPY[section].singular)
-            : section === "imports" ? "Import" : "Record",
+            : section === "imports" ? "Import" : section === "customers" ? "Client" : "Record",
       });
     }
     setBreadcrumbs(crumbs);
@@ -460,9 +473,19 @@ export function CommercePage() {
       ? <CommerceRecordView key={`${resource}:${recordId}`} companyId={companyId} siteId={siteId} resource={resource} recordId={recordId} />
       : <CommerceList key={resource} companyId={companyId} siteId={siteId} resource={resource} />;
   } else if (isCatalogueResource(section)) {
-    body = recordId && section !== "customer-tiers"
+    body = recordId
       ? <CatalogueRecord key={`${section}:${recordId}`} companyId={companyId} siteId={siteId} resource={section} recordId={recordId} />
       : <CatalogueList key={section} companyId={companyId} siteId={siteId} resource={section} />;
+  } else if (section === "customer-tiers") {
+    body = <CustomerTierList companyId={companyId} siteId={siteId} />;
+  } else if (section === "customers") {
+    body = recordId
+      ? <ClientRecord key={recordId} companyId={companyId} siteId={siteId} clientId={recordId} />
+      : <ClientList companyId={companyId} siteId={siteId} />;
+  } else if (section === "enquiries") {
+    body = <EnquiryList companyId={companyId} siteId={siteId} />;
+  } else if (section === "portal-acceptances") {
+    body = <ReceiptList companyId={companyId} siteId={siteId} />;
   } else if (section === "imports") {
     body = recordId
       ? <CommerceImportJob key={recordId} companyId={companyId} siteId={siteId} jobId={recordId} />
