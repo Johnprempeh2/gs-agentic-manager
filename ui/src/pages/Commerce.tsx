@@ -401,6 +401,12 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
             <span className="text-xs text-muted-foreground">No organisation in GSAM has this customer's domain or name.</span>
           ) : null}
           {customerId ? (
+            <Link to={`/commerce/customers/${encodeURIComponent(customerId)}`} className={cn(RECORD_LINK, "sm:shrink-0")}>
+              Open client
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          ) : null}
+          {customerId ? (
             <Link to={`/commerce/${resource}?customer=${encodeURIComponent(customerId)}`} className={cn(RECORD_LINK, "sm:shrink-0")}>
               Their {copy.label.toLowerCase()}
               <ArrowRight className="size-3.5" aria-hidden="true" />

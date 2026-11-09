@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useCommercePerson, useCommerceWrite } from "@/hooks/useCommerceWrite";
-import { maskedLicenceKey, statusLabel, text } from "@/lib/commerce";
+import { statusLabel, text } from "@/lib/commerce";
 import { LICENCE_FIELDS, ORDER_STATUS_FIELDS, licenceEmailMessage, orderStatusLocked } from "@/lib/commerce-settings";
 import { rowVersionOf } from "@/lib/commerce-write";
 import { queryKeys } from "@/lib/queryKeys";
@@ -136,7 +136,7 @@ export function LicenceActions({ companyId, siteId, licence }: { companyId: stri
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <h2 className="text-sm font-semibold">Change this licence</h2>
-          <p className="text-sm text-muted-foreground">Key ending {maskedLicenceKey(licence)}. A revoked licence stops working in the client's account.</p>
+          <p className="text-sm text-muted-foreground">A revoked licence stops working in the client's account.</p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-wrap gap-2">
