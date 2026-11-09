@@ -26,10 +26,10 @@ import { cn } from "@/lib/utils";
 import { CommerceRowForm, CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
 // The catalogue (GRE-3972 slice 1): vendors, categories, offerings with their editions, specs and media, pricing
-// rules with their targets, and customer tiers (read only). Anyone with Commerce rights creates, edits and deletes
-// drafts; only a person publishes or archives.
+// rules with their targets. Customer tiers have their own list (CommerceClients, GRE-4784). Anyone with Commerce
+// rights creates, edits and deletes drafts; only a person publishes or archives.
 
-export type CatalogueResource = WebsiteCommerceCatalogueResource | "customer-tiers";
+export type CatalogueResource = WebsiteCommerceCatalogueResource;
 const PAGE_SIZE = 50;
 const ROW_LINK = "flex min-w-0 items-center gap-3 px-4 py-3 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
@@ -75,24 +75,17 @@ export function CatalogueList({ companyId, siteId, resource }: { companyId: stri
     getNextPageParam: (last) => last.nextCursor || undefined,
   });
   const items = rows.data?.pages.flatMap((page) => page.items) ?? [];
-  const readOnly = resource === "customer-tiers";
 
   return (
     <section className="space-y-3" aria-label={copy.label} data-testid="commerce-catalogue-list">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {readOnly
-            ? "Read only. Tiers are set on the website."
-            : "New records start as drafts. Only published records show on the website."}
-        </p>
-        {readOnly ? null : (
-          <Button asChild size="sm">
-            <Link to={`/commerce/${resource}/new`}>
-              <Plus aria-hidden="true" />
-              New {copy.singular.toLowerCase()}
-            </Link>
-          </Button>
-        )}
+        <p className="text-sm text-muted-foreground">New records start as drafts. Only published records show on the website.</p>
+        <Button asChild size="sm">
+          <Link to={`/commerce/${resource}/new`}>
+            <Plus aria-hidden="true" />
+            New {copy.singular.toLowerCase()}
+          </Link>
+        </Button>
       </div>
       {rows.isLoading ? <PageSkeleton variant="list" /> : null}
       {rows.error ? <ErrorState error={rows.error} onRetry={() => void rows.refetch()} retrying={rows.isFetching} /> : null}
@@ -106,16 +99,13 @@ export function CatalogueList({ companyId, siteId, resource }: { companyId: stri
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{rowOptionLabel(row)}</span>
                   <span className="block truncate text-xs text-muted-foreground">{catalogueMeta(resource, row) || " "}</span>
-                  {readOnly && text(row.description) ? <span className="mt-1 block text-xs text-muted-foreground">{text(row.description)}</span> : null}
                 </span>
                 <StatusPill status={row.status} />
               </>
             );
             return (
               <li key={id}>
-                {readOnly ? <div className="flex min-w-0 items-center gap-3 px-4 py-3">{body}</div> : (
-                  <Link to={`/commerce/${resource}/${encodeURIComponent(id)}`} className={ROW_LINK}>{body}</Link>
-                )}
+                <Link to={`/commerce/${resource}/${encodeURIComponent(id)}`} className={ROW_LINK}>{body}</Link>
               </li>
             );
           })}

@@ -33,6 +33,18 @@ function searchOf(query: Record<string, string | number | undefined>) {
   return search ? `?${search}` : "";
 }
 
+/**
+ * A write's answer: the row, plus `email` for a licence-issued email (GRE-4782). A lead delete answers
+ * `{ id, deleted }` with no row.
+ */
+export interface CommerceWriteResult {
+  item: CommerceRow;
+  result?: unknown;
+  email?: "sent" | "not_sent" | "not_configured" | "sending";
+  id?: string;
+  deleted?: boolean;
+}
+
 const writeHeaders = (idempotencyKey: string) => ({ "Content-Type": "application/json", "Idempotency-Key": idempotencyKey });
 
 export const websiteCommerceApi = {
@@ -53,9 +65,9 @@ export const websiteCommerceApi = {
     const path = `${commercePath(companyId, siteId)}/${change.parts.map(encodeURIComponent).join("/")}`;
     const options = { headers: writeHeaders(idempotencyKey) };
     const body = change.body ?? {};
-    if (change.method === "POST") return api.post<{ item: CommerceRow; result?: unknown }>(path, body, options);
-    if (change.method === "PATCH") return api.patch<{ item: CommerceRow }>(path, body, options);
-    return api.deleteWithBody<{ item: CommerceRow }>(path, body, options);
+    if (change.method === "POST") return api.post<CommerceWriteResult>(path, body, options);
+    if (change.method === "PATCH") return api.patch<CommerceWriteResult>(path, body, options);
+    return api.deleteWithBody<CommerceWriteResult>(path, body, options);
   },
   /** Sets or clears one vendor's licence activation steps (GRE-3982). The answer never holds a licence key. */
   putActivationSteps: (companyId: string, siteId: string, vendorId: string, input: WebsiteVendorActivationStepsInput,

@@ -239,7 +239,7 @@ describe("Commerce write screens", () => {
     expect(byTestId("commerce-draft-invoice")).not.toBeNull();
     expect(buttonNamed("Edit draft")).toBeDefined();
     expect(byTestId("commerce-invoice-issue")).toBeNull();
-    expect(byTestId("commerce-people-only-note")?.textContent).toContain("A person issues invoices");
+    expect(byTestId("commerce-draft-invoice")?.querySelector("[data-testid=commerce-people-only-note]")?.textContent).toContain("A person issues invoices");
   });
 
   it("shows apply and issue to a person", async () => {
@@ -354,7 +354,7 @@ describe("Commerce write screens", () => {
       render(`/commerce/licences/${LICENCE_ID}`);
       await flush();
       expect(byTestId("commerce-activation-edit")).toBeNull();
-      expect(byTestId("commerce-people-only-note")?.textContent).toContain("a person changes its steps");
+      expect(byTestId("commerce-activation-steps")?.querySelector("[data-testid=commerce-people-only-note]")?.textContent).toContain("a person changes its steps");
 
       const select = container.querySelector<HTMLSelectElement>("#activation-vendor")!;
       act(() => { select.value = otherVendor.id; select.dispatchEvent(new Event("change", { bubbles: true })); });

@@ -105,11 +105,11 @@ describe("CommercePage", () => {
     expect(container.querySelectorAll("[data-testid=commerce-list] button")).toHaveLength(0);
   });
 
-  it("shows the Sales and Catalogue areas, with the sales records and payments under Sales", async () => {
+  it("shows the Sales, Catalogue and Clients areas, with the sales records and payments under Sales", async () => {
     render("/commerce");
     await flush();
     const tabs = [...container.querySelectorAll("[role=tab]")].map((tab) => tab.textContent);
-    expect(tabs).toEqual(["Sales", "Catalogue", "Quotes", "Orders", "Invoices", "Licences", "Payments"]);
+    expect(tabs).toEqual(["Sales", "Catalogue", "Clients", "Quotes", "Orders", "Invoices", "Licences", "Payments"]);
   });
 
   it("filters a list by customer", async () => {
