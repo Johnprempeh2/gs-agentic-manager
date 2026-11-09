@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageCircleQuestion, Sparkles } from "lucide-react";
 import type {
   Agent,
@@ -22,6 +22,8 @@ import { AttentionInteractionResolver } from "../AttentionInteractionResolver";
 import { DecisionResolver } from "../DecisionResolver";
 import { ImageGalleryModal, type GalleryMediaItem } from "../ImageGalleryModal";
 import { MarkdownBody } from "../MarkdownBody";
+import { ApprovalPayloadRenderer } from "../ApprovalPayload";
+import { approvalsApi } from "../../api/approvals";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
@@ -393,6 +395,7 @@ export function DecisionFeedCard({
         ) : null}
         {card.setup ? <SetupFacts setup={card.setup} showTasks={!card.task} /> : null}
       </dl>
+      <WebsitePublishChanges card={card} />
 
       {card.atDesk ? (
         <AtDeskPanel
@@ -976,4 +979,17 @@ function ClarityThread({ clarity }: { clarity: NonNullable<DecisionCard["clarity
       )}
     </div>
   );
+}
+
+/** John, 8 Nov: a Publish card lists each page, what changed and a View page link. */
+function WebsitePublishChanges({ card }: { card: DecisionCard }) {
+  const item = card.items.find((i) => i.sourceKind === "approval" && i.subject.metadata?.type === "website_publish");
+  const approvalId = item?.subject.id ?? null;
+  const { data } = useQuery({
+    queryKey: queryKeys.approvals.detail(approvalId ?? ""),
+    queryFn: () => approvalsApi.get(approvalId!),
+    enabled: !!approvalId,
+  });
+  if (data?.type !== "website_publish" || !data.payload) return null;
+  return <ApprovalPayloadRenderer type={data.type} payload={data.payload as Record<string, unknown>} />;
 }

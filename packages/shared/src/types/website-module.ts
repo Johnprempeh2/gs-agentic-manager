@@ -294,6 +294,15 @@ export interface WebsitePublishChange {
   revisionId: string;
   /** Page title, or `collection/entryKey` for an entry. */
   label: string;
+  /** Pages: the URL path, e.g. `/consultancy`. */
+  path?: string;
+  /** Pages: what changed against the version live now, in words (empty when unknown). */
+  changeLines?: string[];
+  /** Pages: the first added or edited section, so a link can land on it. */
+  firstChangedBlockId?: string | null;
+  /** Pages: the SEO title and description this Publish puts live. */
+  seoTitle?: string | null;
+  seoDescription?: string | null;
 }
 
 /** Payload of a `website_publish` approval. The server builds it; callers cannot set it. */
