@@ -17859,7 +17859,8 @@ export function toolAccessService(
       // database purpose/transport check never turns them into a 500.
       if (input.connectionPurpose !== undefined && input.connectionPurpose !== "tool")
         throw unprocessable("Only tool connections can be created here");
-      if (transport === "chat_sdk" || transport === "voice")
+      // Our transports have no "voice" today; the string check keeps upstream's guard.
+      if ((transport as string) === "chat_sdk" || (transport as string) === "voice")
         throw unprocessable("Chat and voice connections cannot be created here");
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? {},
