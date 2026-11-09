@@ -123,14 +123,14 @@ describe("IssueDocumentsSection keyless rows", () => {
     container.remove();
   });
 
-  it.each([false, true])("skips a cached row without a key (general only: %s)", async generalDocumentsOnly => {
+  it("skips a cached row without a key", async () => {
     mockIssuesApi.listDocuments.mockResolvedValue([
       keylessDocument({ id: "keyless", body: "Keyless row content" }),
       createIssueDocument({ id: "note", key: "notes", title: "Task note", body: "General document content" }),
     ]);
     await act(async () => root.render(
       <QueryClientProvider client={client}>
-        <IssueDocumentsSection issue={createIssue()} canDeleteDocuments={false} generalDocumentsOnly={generalDocumentsOnly} />
+        <IssueDocumentsSection issue={createIssue()} canDeleteDocuments={false} />
       </QueryClientProvider>,
     ));
     await flush();
