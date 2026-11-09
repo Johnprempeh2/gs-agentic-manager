@@ -94,7 +94,10 @@ describe("website commerce tools: drafts", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     const names = projectToolDefinitions("standard").map((tool) => tool.name).filter((name) => name.startsWith("commerce_"));
     expect(names).toEqual(["commerce_draft_create", "commerce_draft_edit", "commerce_draft_delete", "commerce_convert_quote",
-      "commerce_import_dry_run", "commerce_request_refund", "commerce_request_publish"]);
+      "commerce_import_dry_run", "commerce_request_refund", "commerce_request_publish",
+      // GRE-4783: commerce settings; a people-only one only ever opens a card (website-commerce-settings-tools.test.ts)
+      "commerce_order_set_status", "commerce_enquiry_set_status", "commerce_client_save", "commerce_timeline_save", "commerce_timeline_delete",
+      "commerce_licence_edit", "commerce_tier_save", "commerce_activation_steps_set", "commerce_request_change"]);
     // only asks: no tool publishes, archives or decides
     expect(names.filter((name) => !name.startsWith("commerce_request_")).some((name) => /publish|archive|fx|apply|issue|decide/.test(name))).toBe(false);
   });

@@ -13,6 +13,8 @@ import {
   websiteCommerceRefundRequestSchema,
   websiteCommercePublishRequestSchema,
   websiteCommerceWriteOperation,
+  websiteCommerceChangeRequestSchema,
+  websiteVendorActivationStepsSchema,
   websiteAccessChangeRequestSchema,
   websitePortalDocumentCreateSchema,
   websitePortalDocumentEditSchema,
@@ -45,6 +47,17 @@ const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
   commerce_request_refund: mcpToolHints("write", { idempotent: true }),
   // GRE-4089: opens a card only; the same open ask returns the same card.
   commerce_request_publish: mcpToolHints("write", { idempotent: true }),
+  // GRE-4783: commerce settings. Each takes an idempotency key; a people-only change opens a card, and the same ask
+  // returns it.
+  commerce_order_set_status: mcpToolHints("write", { idempotent: true }),
+  commerce_enquiry_set_status: mcpToolHints("write", { idempotent: true }),
+  commerce_client_save: mcpToolHints("write", { idempotent: true }),
+  commerce_timeline_save: mcpToolHints("write", { idempotent: true }),
+  commerce_timeline_delete: mcpToolHints("destructive", { idempotent: true }),
+  commerce_licence_edit: mcpToolHints("write", { idempotent: true }),
+  commerce_tier_save: mcpToolHints("write", { idempotent: true }),
+  commerce_activation_steps_set: mcpToolHints("write", { idempotent: true }),
+  commerce_request_change: mcpToolHints("write", { idempotent: true }),
   // GRE-4085: people and access. Reads are open; a change is only ever an ask (a card), and the same ask returns it.
   website_access_list: mcpToolHints("read"),
   website_access_request_change: mcpToolHints("write", { idempotent: true }),
@@ -600,7 +613,8 @@ export function projectToolDefinitions(workMode: string, includeTask = false) {
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,
   }));
-  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...WEBSITE_PORTAL_TOOLS,
+  return workMode === "skill_test" ? catalog : [...catalog, WEBSITE_FEATURES_TOOL, ...WEBSITE_DATA_TOOLS, WEBSITE_STYLE_TOOL, ...WEBSITE_COMMERCE_TOOLS,
+    ...WEBSITE_COMMERCE_SETTINGS_TOOLS, ...WEBSITE_ACCESS_TOOLS, ...WEBSITE_PORTAL_TOOLS,
     ...WEBSITE_REDIRECT_MEDIA_TOOLS, ...INTERVIEW_TOOLS];
 }
 
@@ -654,19 +668,27 @@ async function readWebsiteData(input: { apiUrl: string; token: string; companyId
   return apiGet(input.apiUrl, input.token, withQuery(base, ["customer", "updatedSince", "cursor", "limit"]));
 }
 
-async function apiSend(apiUrl: string, token: string, method: "POST" | "PATCH" | "DELETE", path: string, body: unknown, idempotencyKey: string) {
+async function apiSendRaw(apiUrl: string, token: string, method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body: unknown,
+  idempotencyKey: string) {
   const response = await fetch(`${apiUrl.replace(/\/+$/, "").replace(/\/api$/, "")}/api${path}`, {
     method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(60_000),
   });
-  const result = await response.json();
-  if (!response.ok) {
+  return { ok: response.ok, status: response.status, result: await response.json() };
+}
+
+function unwrapSent({ ok, status, result }: Awaited<ReturnType<typeof apiSendRaw>>) {
+  if (!ok) {
     const current = result?.details?.current ? ` The row now: ${JSON.stringify(result.details.current)}` : "";
-    throw new Error(`${typeof result.error === "string" ? result.error : `Commerce change failed (${response.status})`}${current}`);
+    throw new Error(`${typeof result.error === "string" ? result.error : `Commerce change failed (${status})`}${current}`);
   }
   return result;
+}
+
+async function apiSend(apiUrl: string, token: string, method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, body: unknown, idempotencyKey: string) {
+  return unwrapSent(await apiSendRaw(apiUrl, token, method, path, body, idempotencyKey));
 }
 
 /** The site's 22-character key from the agent's own: the same agent, tool and key always give the same one. */
@@ -748,6 +770,239 @@ async function commerceToolCall(input: { apiUrl: string; token: string; companyI
 
 const COMMERCE_TOOL_NAMES = new Set(WEBSITE_COMMERCE_TOOLS.map((tool) => tool.name));
 
+/**
+ * Commerce settings (GRE-4783, GRE-4079 step 5b): order and enquiry status, client companies, the client timeline,
+ * licences, customer tiers, receipts and activation steps, through GSAM's commerce routes (website:commerce). John
+ * (5 Nov): agents may do all of it, but anything that emails a client, changes money, or issues or revokes a licence
+ * key goes through a person's approval card. So a plain status or record edit is made at once; a people-only one (a
+ * client's tier, a licence key or link, a shared timeline item) opens a commerce_change_request card on the task and
+ * changes nothing, and commerce_request_change only ever opens a card. No tool calls a people-only change directly.
+ */
+const expectedRowVersionProperty = { type: "integer", minimum: 0, description: "row_version as you last read it. A stale one is refused with the current row: read it again." };
+const noteProperty = { type: "string", minLength: 1, maxLength: 2000, description: "Why, for the person who decides, when it needs a card." };
+const COMMERCE_REQUEST_ACTIONS = ["notify_licence", "delete_lead", "issue_licence", "revoke_licence", "reissue_licence",
+  "share_timeline_item", "unshare_timeline_item", "resend_receipt"] as const;
+const WEBSITE_COMMERCE_SETTINGS_TOOLS = [
+  {
+    name: "commerce_order_set_status",
+    description: "Set a website order's status: pending, confirmed, fulfilled or cancelled. A cancelled or refunded order does not change; refunds go through commerce_request_refund. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_order_set_status,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, orderId: { type: "string" }, status: { type: "string", enum: ["pending", "confirmed", "fulfilled", "cancelled"] },
+        expectedRowVersion: expectedRowVersionProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "orderId", "status", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_enquiry_set_status",
+    description: "Set a website enquiry's or front door lead's status: new, contacted or closed. enquiryId is the id website_data_list enquiries shows (si-… or fd-…). Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_enquiry_set_status,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, enquiryId: { type: "string" }, status: { type: "string", enum: ["new", "contacted", "closed"] },
+        expectedRowVersion: expectedRowVersionProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "enquiryId", "status", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_client_save",
+    description: "Add a client company on a connected website, or change one (give customerId). fields: name, slug, domain, billingCurrency, notes, tierId. Setting tierId sets the client's prices, so it opens an approval card on your task instead and changes nothing until a person approves. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_client_save,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, customerId: { type: "string", description: "Only to change a client. Leave out to add one." },
+        fields: fieldsProperty, expectedRowVersion: expectedRowVersionProperty, note: noteProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "fields", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_timeline_save",
+    description: "Add an item to a client's timeline (give customerId), or change one (give engagementId). fields: title, kind, summary, bodyHtml, externalUrl, occurredOn, phase, ownerName, attendees, tags, pinned. A new item is a draft the client does not see. Changing an item the client can see (shared) opens an approval card on your task instead. Share or unshare with commerce_request_change. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_timeline_save,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, customerId: { type: "string", description: "To add an item: the client's customer id." },
+        engagementId: { type: "string", description: "To change an item: its id (website_data_list engagements shows them)." },
+        fields: fieldsProperty, expectedRowVersion: expectedRowVersionProperty, note: noteProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "fields", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_timeline_delete",
+    description: "Delete an item from a client's timeline (soft delete). Deleting an item the client can see (shared) opens an approval card on your task instead. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_timeline_delete,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, engagementId: { type: "string" }, expectedRowVersion: expectedRowVersionProperty, note: noteProperty,
+        idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "engagementId", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_licence_edit",
+    description: "Change a client's licence: offeringName, variantName, seats, expiresAt, notes. Changing licenceKey or downloadUrl opens an approval card on your task instead; the key is kept in GSAM's vault, never on the card. Issue, revoke or re-issue a licence with commerce_request_change. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_licence_edit,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, licenceId: { type: "string" }, fields: fieldsProperty, expectedRowVersion: expectedRowVersionProperty,
+        note: noteProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "licenceId", "fields", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_tier_save",
+    description: "Add a customer tier (slug, name, rank, description), or change one (give tierId). Tiers have no row version: the last change wins. Putting a client on a tier is commerce_client_save with tierId. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_tier_save,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, tierId: { type: "string", description: "Only to change a tier. Leave out to add one." },
+        fields: fieldsProperty, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "fields", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_activation_steps_set",
+    description: "Set or clear (null) the licence activation steps a vendor's licences show to clients, at the vendor's row version. Never put a licence key in the text: the site refuses it. An agent changes a draft vendor only. Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_activation_steps_set,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, vendorId: { type: "string" }, activationSteps: { type: ["string", "null"], maxLength: 20000 },
+        expectedRowVersion: { type: "integer", minimum: 0 }, idempotencyKey: idempotencyKeyProperty },
+      required: ["siteId", "vendorId", "activationSteps", "expectedRowVersion", "idempotencyKey"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "commerce_request_change",
+    description: "Ask a person for a commerce change only a person may make. This changes nothing: it opens an approval card on your task, and a person with Commerce rights approves it and GSAM makes it in their name. Asking twice for the same change returns the same card. Actions and their id: notify_licence (orderId: email the client their licence is ready), delete_lead (a front door lead's fd-… id, for good), issue_licence (customerId; fields offeringName and licenceKey or downloadUrl, optional orderId, variantName, seats, expiresAt, notes; the key is kept in GSAM's vault), revoke_licence and reissue_licence (licenceId), share_timeline_item and unshare_timeline_item (engagementId), resend_receipt (a portal acceptance id: sends the client's receipt email again). Needs website:commerce.",
+    annotations: PROJECT_TOOL_HINTS.commerce_request_change,
+    inputSchema: {
+      type: "object",
+      properties: { siteId: siteIdProperty, action: { type: "string", enum: [...COMMERCE_REQUEST_ACTIONS] },
+        id: { type: "string", description: "The record the action is on, as listed for each action." },
+        fields: { ...fieldsProperty, description: "issue_licence only: the licence's fields." },
+        expectedRowVersion: expectedRowVersionProperty, note: noteProperty },
+      required: ["siteId", "action", "id"],
+      additionalProperties: false,
+    },
+  },
+];
+
+/** A people-only ask: opens a commerce_change_request card on the task and changes nothing. */
+async function askCommerceChange(input: { apiUrl: string; token: string; companyId: string; agentId: string; issueId: string | null },
+  siteId: string, method: "POST" | "PATCH" | "DELETE", parts: string[], body: Record<string, unknown> | undefined, note: string | undefined) {
+  const ask = websiteCommerceChangeRequestSchema.parse({ method, path: parts.join("/"), ...(body ? { body } : {}), ...(note ? { note } : {}),
+    ...(input.issueId && z.string().uuid().safeParse(input.issueId).success ? { issueId: input.issueId } : {}) });
+  const result = await apiSend(input.apiUrl, input.token, "POST",
+    `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}/commerce/change-requests`, ask,
+    commerceKey(input.agentId, "commerce_request_change", createHash("sha256").update(JSON.stringify(ask)).digest("hex")));
+  return { ...result, changed: false,
+    message: "Only a person can make this change. An approval card is open on your task; GSAM makes the change in their name when they approve it." };
+}
+
+/** Through GSAM's commerce routes; a people-only change becomes a card, never a direct call. */
+async function commerceSettingsToolCall(input: { apiUrl: string; token: string; companyId: string; agentId: string; issueId: string | null;
+  name: string; args: Record<string, unknown> }) {
+  const uuid = z.string().uuid();
+  const common = { siteId: uuid, idempotencyKey: z.string().min(1).max(200) };
+  const fields = z.record(z.string(), z.unknown());
+  const version = z.number().int().min(0).optional();
+  const note = z.string().min(1).max(2000).optional();
+  const withVersion = (body: Record<string, unknown>, v: number | undefined) => (v === undefined ? body : { ...body, expectedRowVersion: v });
+  const site = (siteId: string) => `/companies/${encodeURIComponent(input.companyId)}/website/sites/${encodeURIComponent(siteId)}/commerce`;
+
+  if (input.name === "commerce_request_change") {
+    const args = z.object({ siteId: uuid, action: z.enum(COMMERCE_REQUEST_ACTIONS), id: z.string().min(1).max(80),
+      fields: fields.optional(), expectedRowVersion: version, note }).strict().parse(input.args);
+    if (args.fields && args.action !== "issue_licence") throw badRequest("fields go with issue_licence only");
+    const v = args.expectedRowVersion;
+    const [method, parts, body]: [ "POST" | "DELETE", string[], Record<string, unknown> | undefined] = (() => {
+      switch (args.action) {
+        case "notify_licence": return ["POST", ["orders", args.id, "notify-licence"], undefined];
+        case "delete_lead": return ["DELETE", ["enquiries", args.id], undefined];
+        case "issue_licence": return ["POST", ["customers", args.id, "licences"], args.fields ?? {}];
+        case "revoke_licence": return ["POST", ["licences", args.id, "revoke"], withVersion({}, v)];
+        case "reissue_licence": return ["POST", ["licences", args.id, "reissue"], withVersion({}, v)];
+        case "share_timeline_item": return ["POST", ["engagements", args.id, "share"], withVersion({}, v)];
+        case "unshare_timeline_item": return ["POST", ["engagements", args.id, "unshare"], withVersion({}, v)];
+        case "resend_receipt": return ["POST", ["portal-acceptances", args.id, "resend"], undefined];
+      }
+    })();
+    if (!websiteCommerceWriteOperation(method, parts, body)) throw badRequest(`That id does not fit ${args.action}`);
+    return askCommerceChange(input, args.siteId, method, parts, body && Object.keys(body).length ? body : undefined, args.note);
+  }
+
+  if (input.name === "commerce_activation_steps_set") {
+    const args = z.object({ ...common, vendorId: uuid, activationSteps: z.string().nullable(), expectedRowVersion: z.number().int().min(0) })
+      .strict().parse(input.args);
+    const steps = websiteVendorActivationStepsSchema.parse({ activationSteps: args.activationSteps, expectedRowVersion: args.expectedRowVersion });
+    return apiSend(input.apiUrl, input.token, "PUT", `${site(args.siteId)}/vendors/${encodeURIComponent(args.vendorId)}/activation-steps`, steps,
+      commerceKey(input.agentId, input.name, args.idempotencyKey));
+  }
+
+  let method: "POST" | "PATCH" | "DELETE";
+  let parts: string[];
+  let body: Record<string, unknown> | undefined;
+  let askNote: string | undefined;
+  /** Only the site knows a timeline item is shared: its 403 denied turns the change into a card. */
+  let askWhenDenied = false;
+  const args = z.object({ ...common }).passthrough().parse(input.args);
+  if (input.name === "commerce_order_set_status") {
+    const a = z.object({ ...common, orderId: uuid, status: z.enum(["pending", "confirmed", "fulfilled", "cancelled"]), expectedRowVersion: version })
+      .strict().parse(input.args);
+    [method, parts, body] = ["PATCH", ["orders", a.orderId], withVersion({ status: a.status }, a.expectedRowVersion)];
+  } else if (input.name === "commerce_enquiry_set_status") {
+    const a = z.object({ ...common, enquiryId: z.string().min(1).max(80), status: z.enum(["new", "contacted", "closed"]), expectedRowVersion: version })
+      .strict().parse(input.args);
+    [method, parts, body] = ["PATCH", ["enquiries", a.enquiryId], withVersion({ status: a.status }, a.expectedRowVersion)];
+  } else if (input.name === "commerce_client_save") {
+    const a = z.object({ ...common, customerId: uuid.optional(), fields, expectedRowVersion: version, note }).strict().parse(input.args);
+    if (!a.customerId && a.expectedRowVersion !== undefined) throw badRequest("A new client has no row version");
+    [method, parts, body, askNote] = a.customerId
+      ? ["PATCH", ["customers", a.customerId], withVersion(a.fields, a.expectedRowVersion), a.note]
+      : ["POST", ["customers"], a.fields, a.note];
+  } else if (input.name === "commerce_timeline_save") {
+    const a = z.object({ ...common, customerId: uuid.optional(), engagementId: uuid.optional(), fields, expectedRowVersion: version, note })
+      .strict().parse(input.args);
+    if (Boolean(a.customerId) === Boolean(a.engagementId)) throw badRequest("Give customerId to add an item, or engagementId to change one");
+    if ("status" in a.fields) throw badRequest("A timeline item has no status field: share or unshare it with commerce_request_change");
+    [method, parts, body, askNote, askWhenDenied] = a.engagementId
+      ? ["PATCH", ["engagements", a.engagementId], withVersion(a.fields, a.expectedRowVersion), a.note, true]
+      : ["POST", ["customers", a.customerId!, "engagements"], a.fields, a.note, false];
+  } else if (input.name === "commerce_timeline_delete") {
+    const a = z.object({ ...common, engagementId: uuid, expectedRowVersion: version, note }).strict().parse(input.args);
+    [method, parts, body, askNote, askWhenDenied] = ["DELETE", ["engagements", a.engagementId],
+      a.expectedRowVersion === undefined ? undefined : { expectedRowVersion: a.expectedRowVersion }, a.note, true];
+  } else if (input.name === "commerce_licence_edit") {
+    const a = z.object({ ...common, licenceId: uuid, fields, expectedRowVersion: version, note }).strict().parse(input.args);
+    if ("orderId" in a.fields) throw badRequest("A licence's order does not change");
+    [method, parts, body, askNote] = ["PATCH", ["licences", a.licenceId], withVersion(a.fields, a.expectedRowVersion), a.note];
+  } else {
+    const a = z.object({ ...common, tierId: uuid.optional(), fields }).strict().parse(input.args);
+    [method, parts, body] = a.tierId ? ["PATCH", ["customer-tiers", a.tierId], a.fields] : ["POST", ["customer-tiers"], a.fields];
+  }
+  // the same table the route checks: a people-only change is only ever asked for
+  const operation = websiteCommerceWriteOperation(method, parts, body);
+  if (!operation) throw badRequest("That is not a commerce change GSAM knows");
+  if (operation.peopleOnly) return askCommerceChange(input, args.siteId, method, parts, body, askNote);
+  const sent = await apiSendRaw(input.apiUrl, input.token, method, `${site(args.siteId)}/${parts.map(encodeURIComponent).join("/")}`, body,
+    commerceKey(input.agentId, input.name, args.idempotencyKey));
+  if (!sent.ok && askWhenDenied && sent.result?.code === "website_bridge_denied") {
+    return askCommerceChange(input, args.siteId, method, parts, body, askNote);
+  }
+  return unwrapSent(sent);
+}
+
+const COMMERCE_SETTINGS_TOOL_NAMES = new Set(WEBSITE_COMMERCE_SETTINGS_TOOLS.map((tool) => tool.name));
+
 /** Through the normal interview routes, so the company check, the entitlement and the people-only rules apply. */
 async function interviewToolCall(input: { apiUrl: string; token: string; companyId: string; name: string; args: Record<string, unknown> }) {
   const uuid = z.string().uuid();
@@ -798,6 +1053,10 @@ export async function callProjectTool(input: {
   }
   if (COMMERCE_TOOL_NAMES.has(input.name)) {
     return commerceToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
+      issueId: input.conversation ? null : input.issueId, name: input.name, args });
+  }
+  if (COMMERCE_SETTINGS_TOOL_NAMES.has(input.name)) {
+    return commerceSettingsToolCall({ apiUrl: input.apiUrl, token: input.token, companyId: input.companyId, agentId: input.agentId,
       issueId: input.conversation ? null : input.issueId, name: input.name, args });
   }
   if (ACCESS_TOOL_NAMES.has(input.name)) {
