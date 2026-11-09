@@ -87,6 +87,8 @@ export interface AgentPermissionUpdate {
   websiteAccess?: AgentWebsiteAccessLevel;
   /** Limits websiteAccess to one site; null for every site (GRE-3992). */
   websiteSiteId?: string | null;
+  /** Sets or clears website:commerce; needs website access (GRE-4814). */
+  canUseCommerce?: boolean;
   trustPreset?: AgentPermissions["trustPreset"];
   authorizationPolicy?: AgentPermissions["authorizationPolicy"];
 }
