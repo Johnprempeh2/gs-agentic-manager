@@ -76,8 +76,8 @@ describe("secret provider registry", () => {
     const keyFile = path.join(dir, "master.key");
     writeFileSync(keyFile, randomBytes(32).toString("base64"), "utf8");
     chmodSync(keyFile, 0o666);
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = keyFile;
-    delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+    process.env.GSAM_SECRETS_MASTER_KEY_FILE = keyFile;
+    delete process.env.GSAM_SECRETS_MASTER_KEY;
     vi.spyOn(process, "platform", "get").mockReturnValue("win32");
 
     const checks = await checkSecretProviders();

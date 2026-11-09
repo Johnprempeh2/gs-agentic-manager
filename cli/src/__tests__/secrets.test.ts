@@ -272,11 +272,11 @@ describe("secrets CLI helpers", () => {
     let keyFilePath: string;
 
     beforeEach(() => {
-      delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+      delete process.env.GSAM_SECRETS_MASTER_KEY;
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-secrets-check-"));
       keyFilePath = path.join(tempDir, "master.key");
       fs.writeFileSync(keyFilePath, randomBytes(32).toString("base64"), "utf8");
-      process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = keyFilePath;
+      process.env.GSAM_SECRETS_MASTER_KEY_FILE = keyFilePath;
     });
 
     afterEach(() => {
