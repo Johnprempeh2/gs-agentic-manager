@@ -126,4 +126,31 @@ describe("batched run secret redaction", () => {
       { id: "a", text: null, secretRedactionState: "unavailable" },
     ]);
   });
+
+  // GRE-4827: a copied preview lacks the live key. Issue comments and a single
+  // run's log must load with free text masked instead of 500ing the request.
+  it("masks issue comments instead of throwing when a registered value cannot be decrypted", async () => {
+    const createdAt = new Date("2026-11-09T12:00:00.000Z");
+    const { registry } = fixture([
+      { contextSnapshot: { paperclipSecretRedactions: [{ fingerprintSha256: "live", material: {} }] } },
+    ]);
+    resolveVersion.mockRejectedValueOnce(new Error("Secret decryption failed (master key fingerprint mismatch)"));
+    const comments = [
+      { id: "c1", issueId: "i1", authorAgentId: "a1", status: "open", body: `pasted ${secret}`, createdAt },
+      { id: "c2", issueId: "i1", authorAgentId: null, body: "no secret here", mentionedAgentIds: ["a2"], createdAt },
+    ];
+    expect(await registry.redactForIssue("company", "i1", comments)).toEqual([
+      { id: "c1", issueId: "i1", authorAgentId: "a1", status: "open", body: REDACTED_EVENT_VALUE, createdAt, secretRedactionState: "unavailable" },
+      { id: "c2", issueId: "i1", authorAgentId: null, body: REDACTED_EVENT_VALUE, mentionedAgentIds: ["a2"], createdAt, secretRedactionState: "unavailable" },
+    ]);
+  });
+
+  it("masks a single run's log instead of throwing when a registered value cannot be decrypted", async () => {
+    const { registry } = fixture([
+      { contextSnapshot: { paperclipSecretRedactions: [{ fingerprintSha256: "live", material: {} }] } },
+    ]);
+    resolveVersion.mockRejectedValueOnce(new Error("Secret decryption failed"));
+    expect(await registry.redactForRun("company", "run-1", { runId: "run-1", content: `tool returned ${secret}`, nextOffset: 42 }))
+      .toEqual({ runId: "run-1", content: REDACTED_EVENT_VALUE, nextOffset: 42, secretRedactionState: "unavailable" });
+  });
 });
