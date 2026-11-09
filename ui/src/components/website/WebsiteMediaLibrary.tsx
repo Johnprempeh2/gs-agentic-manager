@@ -117,7 +117,7 @@ export function WebsiteMediaLibrary({ companyId, siteId }: { companyId: string; 
                 <p className="text-xs text-muted-foreground">{formatBytes(item.byteSize)}</p>
               </div>
               {canEdit ? (
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
                   <Button size="xs" variant="ghost" onClick={() => { setMessage(null); setRenaming(item); }} aria-label={`Rename ${item.entryKey}`}>
                     <Pencil />
                     Rename

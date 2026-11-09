@@ -194,7 +194,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
                 </p>
               </div>
               {canEdit ? (
-                <div className="flex shrink-0 flex-wrap gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {redirect.state === "draft" ? (
                     <Button size="sm" variant="outline" disabled={step.isPending} onClick={() => step.mutate({ action: "review", redirect })}>Send for review</Button>
                   ) : null}
