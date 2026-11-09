@@ -74,7 +74,8 @@ function registerClient(key: string, client: RegisteredPostgresClient): void {
  * Swallows individual `end()` errors so one bad client cannot block the rest.
  */
 export async function closeRegisteredClients(url: string): Promise<void> {
-  const key = hostPortKey(url);
+  const key = hostPortKeyOrNull(url);
+  if (key === null) return;
   const refs = clientsByHostPort.get(key);
   if (!refs) return;
 

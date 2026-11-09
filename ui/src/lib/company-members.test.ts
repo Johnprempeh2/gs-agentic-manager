@@ -130,6 +130,7 @@ describe("company-members helpers", () => {
       {
         principalId: "user-1",
         status: "active",
+        membershipRole: null,
         user: { id: "user-1", name: "Taylor", email: "taylor@example.com", image: null },
       },
     ];
@@ -151,11 +152,13 @@ describe("company-members helpers", () => {
       {
         principalId: "user-1",
         status: "active",
+        membershipRole: "owner",
         user: { id: "user-1", name: "Taylor", email: "taylor@example.com", image: null },
       },
       {
         principalId: "local-board",
         status: "suspended",
+        membershipRole: "owner",
         user: { id: "local-board", name: "John Prempeh (legacy)", email: "local@paperclip.local", image: null },
       },
     ];

@@ -370,6 +370,8 @@ export function IssueDocumentsSection({
   }, [documentSubject, queryClient]);
 
   const syncDocumentCaches = useCallback((document: IssueDocument) => {
+    // Only a complete document can replace a list row; the refetch fills the gap.
+    if (typeof document?.key !== "string") return;
     if (documentSubject.hideSystemDocuments && isSystemIssueDocumentKey(document.key)) return;
     queryClient.setQueryData<IssueDocument[] | undefined>(
       documentSubject.documentsQueryKey,
@@ -461,7 +463,11 @@ export function IssueDocumentsSection({
   });
 
   const sortedDocuments = useMemo(() => {
-    return (documents ?? []).filter((doc) => !documentSubject.hideSystemDocuments || !isSystemIssueDocumentKey(doc.key)).sort((a, b) => {
+    // A keyless row cannot be rendered or edited; skip it instead of failing the whole page.
+    return (documents ?? []).filter((doc) =>
+      typeof doc?.key === "string"
+      && (!documentSubject.hideSystemDocuments || !isSystemIssueDocumentKey(doc.key)),
+    ).sort((a, b) => {
       if (a.key === "plan" && b.key !== "plan") return -1;
       if (a.key !== "plan" && b.key === "plan") return 1;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();

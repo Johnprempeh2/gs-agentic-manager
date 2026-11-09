@@ -208,6 +208,51 @@ describeEmbeddedPostgres("workspace file resources", () => {
     await tempDb?.cleanup();
   });
 
+  it("accepts issue identifiers and returns 404 for unknown or malformed issue ids", async () => {
+    const { projectRoot, executionRoot } = await makeWorkspace();
+    const graph = await seedGraph(db, { projectRoot, executionRoot });
+    await fs.writeFile(path.join(projectRoot, "notes.txt"), "IDENTIFIER_OK", "utf8");
+    const [company] = await db.select().from(companies).where(eq(companies.id, graph.companyId));
+    const identifier = `${company!.issuePrefix}-1`;
+    await db.update(issues).set({ issueNumber: 1, identifier }).where(eq(issues.id, graph.issueId));
+    const app = createApp(db, { type: "board", userId: "board-user", companyIds: [graph.companyId], source: "session", isInstanceAdmin: false });
+
+    for (const ref of [identifier, identifier.toLowerCase()]) {
+      const content = await request(app).get(`/api/issues/${ref}/file-resources/content`).query({ workspace: "project", path: "notes.txt" }).expect(200);
+      expect(content.body.content.data).toBe("IDENTIFIER_OK");
+      await request(app).get(`/api/issues/${ref}/file-resources/list`).query({ workspace: "project" }).expect(200);
+    }
+
+    for (const ref of [`${company!.issuePrefix}-999999`, "not-a-uuid"]) {
+      await request(app).get(`/api/issues/${ref}/file-resources/content`).query({ workspace: "project", path: "notes.txt" }).expect(404);
+      await request(app).get(`/api/issues/${ref}/file-resources/list`).query({ workspace: "project" }).expect(404);
+      await request(app).post(`/api/issues/${ref}/file-resources/availability`).send({ queries: [{ workspace: "project", path: "notes.txt" }] }).expect(404);
+    }
+  });
+
+  it("does not record the issue UUID behind an identifier when an agent is denied", async () => {
+    const { projectRoot, executionRoot } = await makeWorkspace();
+    const graph = await seedGraph(db, { projectRoot, executionRoot });
+    const [otherCompany] = await db.select().from(companies).where(eq(companies.id, graph.otherCompanyId));
+    const otherIssueId = crypto.randomUUID();
+    const identifier = `${otherCompany!.issuePrefix}-7`;
+    await db.insert(issues).values({ id: otherIssueId, companyId: graph.otherCompanyId, title: "Other company issue", issueNumber: 7, identifier });
+    const agentId = crypto.randomUUID();
+    await db.insert(agents).values({ id: agentId, companyId: graph.companyId, name: "Identifier probe agent", role: "engineer", adapterType: "process", adapterConfig: {} });
+    const agentApp = createApp(db, { type: "agent", agentId, companyId: graph.companyId, source: "agent_key" });
+
+    await request(agentApp).get(`/api/issues/${identifier}/file-resources/content`).query({ workspace: "project", path: "notes.txt" }).expect(403);
+    await request(agentApp).get(`/api/issues/${identifier}/file-resources/resolve`).query({ workspace: "project", path: "notes.txt" }).expect(403);
+    await request(agentApp).get(`/api/issues/${identifier}/file-resources/list`).query({ workspace: "project" }).expect(403);
+    await request(agentApp).post(`/api/issues/${identifier}/file-resources/availability`).send({ queries: [{ workspace: "project", path: "notes.txt" }] }).expect(403);
+
+    const denials = await db.select().from(activityLog).where(eq(activityLog.companyId, graph.companyId));
+    const fileDenials = denials.filter((row) => row.action.startsWith("issue.file_resource_") && row.action.endsWith("_denied"));
+    expect(fileDenials).toHaveLength(4);
+    expect(fileDenials.every((row) => row.entityId === identifier)).toBe(true);
+    expect(JSON.stringify(denials)).not.toContain(otherIssueId);
+  });
+
   it("resolves and reads a project file without exposing absolute paths", async () => {
     const { root, projectRoot, executionRoot } = await makeWorkspace();
     const graph = await seedGraph(db, { projectRoot, executionRoot });
@@ -1160,6 +1205,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
       slowResolveStarted = resolve;
     });
     const resolveLimitedService: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId: graph.companyId })),
       availability: vi.fn(async () => {
         throw new Error("not used");
@@ -1224,6 +1270,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
       slowContentStarted = resolve;
     });
     const contentLimitedService: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId: graph.companyId })),
       availability: vi.fn(async () => {
         throw new Error("not used");
@@ -1300,6 +1347,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
       slowDownloadStarted = resolve;
     });
     const service: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId: graph.companyId })),
       availability: vi.fn(async () => {
         throw new Error("not used");
@@ -1389,6 +1437,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
       slowListStarted = resolve;
     });
     const service: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId: graph.companyId })),
       availability: vi.fn(async () => {
         throw new Error("not used");
@@ -1665,6 +1714,7 @@ describeEmbeddedPostgres("file resource route guards", () => {
       slowReadStarted = resolve;
     });
     const service: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId })),
       availability: vi.fn(async () => {
         throw new Error("not used");
@@ -1738,6 +1788,7 @@ describeEmbeddedPostgres("file resource route guards", () => {
       slowAvailabilityStarted = resolve;
     });
     const service: WorkspaceFileResourceService = {
+      resolveIssueId: vi.fn(async (issueId: string) => issueId),
       getIssue: vi.fn(async () => ({ companyId })),
       availability: vi.fn(async () => {
         slowAvailabilityStarted?.();
