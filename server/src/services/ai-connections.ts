@@ -258,6 +258,10 @@ export function aiConnectionService(
     binding: AiConnectionBinding;
   }) {
     const { companyId, userId, agentId, binding } = input;
+    // The grant-kind checks below cover only these three modes. Callers parse
+    // the binding first, but an unknown mode must never skip those checks.
+    if (binding.mode !== "responsible_user" && binding.mode !== "shared" && binding.mode !== "delegated")
+      throw unprocessable("Select a supported AI connection mode", { code: "ai_connection_incompatible" });
     if (
       !isAiConnectionCompatible(
         binding,

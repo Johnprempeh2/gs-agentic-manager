@@ -12,6 +12,7 @@ import {
   agentWakeupRequests,
   activityLog,
   costEvents,
+  financeEvents,
   heartbeatRunEvents,
   heartbeatRuns,
   issueExecutionDecisions,
@@ -1094,6 +1095,22 @@ export function agentService(db: Db) {
           .from(agents)
           .where(eq(agents.id, id))
           .for("update");
+        // Cost and finance rows keep their agent and run links, so refuse before
+        // any cleanup instead of failing on a foreign key (upstream #19022).
+        const agentRuns = sql`select ${heartbeatRuns.id} from ${heartbeatRuns} where ${heartbeatRuns.agentId} = ${id}`;
+        const [retainedCost] = await tx.select({ id: costEvents.id }).from(costEvents).where(and(
+          eq(costEvents.companyId, existing.companyId),
+          or(eq(costEvents.agentId, id), sql`${costEvents.heartbeatRunId} in (${agentRuns})`),
+        )).limit(1);
+        const [retainedFinance] = await tx.select({ id: financeEvents.id }).from(financeEvents).where(and(
+          eq(financeEvents.companyId, existing.companyId),
+          or(eq(financeEvents.agentId, id), sql`${financeEvents.heartbeatRunId} in (${agentRuns})`),
+        )).limit(1);
+        if (retainedCost || retainedFinance) {
+          throw conflict("Cost history requires this agent record. Keep the agent terminated instead of permanently deleting it", {
+            code: "agent_cost_history_retained",
+          });
+        }
         await issueThreadInteractionService(tx as unknown as Db)
           .cancelPendingForDeletedAddressee(existing.companyId, id);
         await tx.update(agents).set({ reportsTo: null }).where(eq(agents.reportsTo, id));
@@ -1107,7 +1124,7 @@ export function agentService(db: Db) {
         await tx.delete(activityLog).where(
           or(
             eq(activityLog.agentId, id),
-            sql`${activityLog.runId} in (select ${heartbeatRuns.id} from ${heartbeatRuns} where ${heartbeatRuns.agentId} = ${id})`,
+            sql`${activityLog.runId} in (${agentRuns})`,
           ),
         );
         await tx.delete(issueExecutionDecisions).where(eq(issueExecutionDecisions.actorAgentId, id));

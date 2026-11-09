@@ -45,6 +45,11 @@ function startFakePostgresServer(): Promise<{ server: net.Server; port: number; 
 describe("closeRegisteredClients", () => {
   let server: net.Server | null = null;
 
+  it("resolves without throwing for a URL `new URL()` rejects, since createDb never registers clients under one", async () => {
+    await expect(closeRegisteredClients("")).resolves.toBeUndefined();
+    await expect(closeRegisteredClients("not a url")).resolves.toBeUndefined();
+  });
+
   afterEach(async () => {
     if (server) await new Promise((resolve) => server!.close(resolve));
     server = null;

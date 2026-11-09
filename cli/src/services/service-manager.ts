@@ -134,6 +134,7 @@ StartLimitBurst=5
 [Service]
 Type=notify
 NotifyAccess=all
+KillMode=mixed
 ExecStart="${escapeSystemd(input.shimPath)}" run --instance "${escapeSystemd(input.instanceId)}"
 Environment="GSAM_SERVICE_MANAGED=1"
 Environment="GSAM_INSTANCE_ID=${escapeSystemd(input.instanceId)}"

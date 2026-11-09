@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
+import { retryS3RequestTimeouts } from "./s3-request-timeout-retry.js";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -75,6 +76,7 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
     endpoint: config.endpoint,
     forcePathStyle: Boolean(config.forcePathStyle),
   });
+  retryS3RequestTimeouts(client);
 
   return {
     id: "s3",
