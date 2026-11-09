@@ -113,10 +113,18 @@ describe("editorOpenProblem (rule C1.1 on open)", () => {
 });
 
 describe("frameConnectionMessage", () => {
-  it("names the editor address when it does not answer, and the protocol on a refusal", () => {
-    expect(frameConnectionMessage({ phase: "no-answer" }, "https://editor.example.com")).toContain("https://editor.example.com");
-    expect(frameConnectionMessage({ phase: "refused-protocol", supported: [2] }, "x")).toContain("protocol 2");
-    expect(frameConnectionMessage({ phase: "refused-site" }, "x")).toBe("This address serves a different site.");
+  it("says what to do, and keeps addresses, versions and setting names under Details (GRE-2107 copy 4)", () => {
+    const noAnswer = frameConnectionMessage({ phase: "no-answer" }, "https://editor.example.com")!;
+    expect(noAnswer.text).toBe("The site's editor did not answer. Check the site is online, then try again.");
+    expect(noAnswer.text).not.toContain("GSAM_EDITOR_ORIGINS");
+    expect(noAnswer.details).toContain("https://editor.example.com");
+    const protocol = frameConnectionMessage({ phase: "refused-protocol", supported: [2] }, "x")!;
+    expect(protocol.text).not.toMatch(/protocol|engine/);
+    expect(protocol.details).toBe("Details: site editor 2, GSAM expects 1.");
+    expect(frameConnectionMessage({ phase: "refused-site" }, "x")).toEqual({
+      text: "The editor at this address belongs to a different site. Check the site settings.",
+      details: null,
+    });
     expect(frameConnectionMessage({ phase: "connecting" }, "x")).toBeNull();
   });
 });

@@ -49,8 +49,6 @@ import {
   type WebsiteProperty,
   type WebsiteRevision,
   type WebsiteSite,
-  SITE_CONTRACT_OUT_OF_DATE_MESSAGE,
-  siteContractDetail,
 } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { useConfirm } from "../../context/ConfirmContext";
@@ -75,7 +73,11 @@ import {
   blockMotionOptions,
   editorOpenProblem,
   fetchAssetBlob,
+  EDITOR_ERR,
+  editorOutOfDateDetails,
   frameConnectionMessage,
+  siteOutOfDateDetails,
+  type FrameProblem,
   frameDraft,
   insertMediaAssetUrl,
   insertMediaEntry,
@@ -118,7 +120,7 @@ import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type Picked
 // own Puck editor in a frame across the whole canvas (GRE-1916 contract), and
 // one drawer for History, Media, Motion and click to change that opens only
 // when asked for. Every save goes through GSAM's API; the frame holds no
-// login, and nothing publishes from here: Request publish asks a person with
+// login, and nothing publishes from here: Send for review asks a person with
 // Publish rights to approve the page.
 
 const ORIGIN_CHANGED_NOTICE = "The editor address for this site changed. Reload to continue.";
@@ -308,6 +310,25 @@ export function FullScreen({ children }: { children: ReactNode }) {
 
 function ScreenMessage({ children }: { children: ReactNode }) {
   return <div className="flex flex-1 items-start justify-center overflow-auto p-6 text-sm text-muted-foreground">{children}</div>;
+}
+
+/** A frame that did not open (copy 4): what to do, "Try again", and the versions under a closed "Details". */
+function FrameProblemScreen({ problem, onRetry, testId }: { problem: FrameProblem; onRetry: () => void; testId: string }) {
+  return (
+    <div data-testid={testId}>
+      <EmptyState icon={TriangleAlert} message={problem.text} action="Try again" onAction={onRetry} hideActionIcon />
+      {problem.details ? <FrameProblemDetails details={problem.details} className="text-center" /> : null}
+    </div>
+  );
+}
+
+function FrameProblemDetails({ details, className }: { details: string; className?: string }) {
+  return (
+    <details className={cn("text-xs", className)} data-testid="website-frame-problem-details">
+      <summary className="cursor-pointer">Details</summary>
+      <p className="mt-1 break-all">{details}</p>
+    </details>
+  );
 }
 
 function TopBar({ children }: { children: ReactNode }) {
@@ -577,7 +598,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     mutationFn: (target: WebsitePage) => websiteModuleApi.submitPage(companyId, site.id, target.id),
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
-      setMessage({ text: `${updated.title} is waiting for approval. A person with Publish rights reviews it and publishes it; nothing is live yet.`, tone: "success" });
+      setMessage({ text: "Sent for review. A person with Publish rights can approve it.", tone: "success" });
     },
     onError: (error) => setMessage({ text: errorStateMessage(error), tone: "warn" }),
   });
@@ -585,13 +606,13 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const askToPublish = async () => {
     if (!page) return;
     if (dirty) {
-      setMessage({ text: "Save the page first. Request publish sends the saved version.", tone: "warn" });
+      setMessage({ text: "Save the page first. Send for review sends the saved version.", tone: "warn" });
       return;
     }
     const ok = await confirm({
-      title: `Request publish for ${page.title}?`,
-      description: "A person with Publish rights reviews the saved version and publishes it. Nothing goes live now.",
-      confirmLabel: "Request publish",
+      title: `Send ${page.title} for review?`,
+      description: "A person with Publish rights can approve the saved version. Nothing goes live now.",
+      confirmLabel: "Send for review",
     });
     if (ok) requestPublish.mutate(page);
   };
@@ -809,7 +830,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             data-testid="website-request-publish"
           >
             <Send />
-            {waiting ? "Waiting for approval" : "Request publish"}
+            {waiting ? "Waiting for approval" : "Send for review"}
           </Button>
           <MoreMenu
             mode={mode}
@@ -870,29 +891,15 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
         <div className={cn("relative min-w-0 flex-1", width ? "bg-muted" : "bg-background")}>
           {notice ? null : siteOutOfDate ? (
             <ScreenMessage>
-              <div data-testid="website-site-out-of-date">
-                <EmptyState
-                  icon={TriangleAlert}
-                  title={SITE_CONTRACT_OUT_OF_DATE_MESSAGE}
-                  message={`${siteContractDetail(connection)} Deploy the website from its main branch, then press Retry.`}
-                  action="Retry"
-                  onAction={reload}
-                  hideActionIcon
-                />
-              </div>
+              <FrameProblemScreen testId="website-site-out-of-date" problem={{ text: EDITOR_ERR.protocol, details: siteOutOfDateDetails(connection) }} onRetry={reload} />
             </ScreenMessage>
           ) : outOfDate ? (
             <ScreenMessage>
-              <div data-testid="website-editor-out-of-date">
-                <EmptyState
-                  icon={TriangleAlert}
-                  title="Editor host is out of date"
-                  message={`Redeploy the editor host (${site.editorFrameOrigin}) from the website's main branch, then press Retry.`}
-                  action="Retry"
-                  onAction={reload}
-                  hideActionIcon
-                />
-              </div>
+              <FrameProblemScreen
+                testId="website-editor-out-of-date"
+                problem={{ text: EDITOR_ERR.protocol, details: editorOutOfDateDetails(connection.contract, site.editorFrameOrigin!) }}
+                onRetry={reload}
+              />
             </ScreenMessage>
           ) : (
             <EditorFrame
@@ -926,7 +933,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                   // The import's save fills the empty draft.
                   setDraftEmpty(sessionRef.current?.draftEmpty ?? null);
                   setImporting((was) => {
-                    if (was) setMessage({ text: "The live page is now in the draft. Nothing is published.", tone: "success" });
+                    if (was) setMessage({ text: "The live page is now in the draft. Nothing is live yet.", tone: "success" });
                     return false;
                   });
                 } else if (next.status === "failed" || next.status === "conflict") setImporting(false);
@@ -967,7 +974,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
                   icon={CloudDownload}
                   title="Live content, not in GSAM"
                   page={page}
-                  help="This page has live content that isn't in GSAM yet. Import it to change the words here. Nothing is published."
+                  help="This page has live content that isn't in GSAM yet. Import it to change the words here. Nothing goes live."
                   action={{ label: importing ? "Importing" : "Import it", onClick: importLive, disabled: importing }}
                 />
               ) : (
@@ -1383,7 +1390,7 @@ function MoreMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onRequestPublish} disabled={waiting} className="sm:hidden">
           <Send />
-          {waiting ? "Waiting for approval" : "Request publish"}
+          {waiting ? "Waiting for approval" : "Send for review"}
         </DropdownMenuItem>
         {mode === "edit" ? (
           <>
@@ -1565,7 +1572,7 @@ function ProblemStrip({
 }: {
   mode: Mode;
   connection: WebsiteFrameConnection;
-  connectionMessage: string | null;
+  connectionMessage: FrameProblem | null;
   saveState: WebsiteFrameSaveState;
   dirty: boolean;
   frameError: string | null;
@@ -1579,8 +1586,8 @@ function ProblemStrip({
 
   if (connectionMessage) {
     tone = connection.phase === "no-answer" ? "warning" : "danger";
-    text = connectionMessage;
-    action = { label: "Retry", onClick: onReconnect };
+    text = connectionMessage.text;
+    action = { label: "Try again", onClick: onReconnect };
   } else if (connection.phase === "connecting") {
     return null;
   } else if (frameError) {
@@ -1609,6 +1616,7 @@ function ProblemStrip({
   return (
     <Strip tone={tone} action={action} testId="website-save-banner" state={connectionMessage ? connection.phase : saveState.status}>
       {text}
+      {connectionMessage?.details ? <FrameProblemDetails details={connectionMessage.details} /> : null}
     </Strip>
   );
 }
@@ -1755,7 +1763,7 @@ function EditorFrame({
   if (notLive) {
     return (
       <div className="p-6">
-        <EmptyState icon={FileText} title="This page is not live yet" message="It has no published version. Preview the draft instead." />
+        <EmptyState icon={FileText} title="This page is not live yet" message="It has no live version. Preview the draft instead." />
       </div>
     );
   }
