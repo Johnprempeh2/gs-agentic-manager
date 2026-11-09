@@ -1428,6 +1428,16 @@ describe("WebsitePagesTab (GRE-2296)", () => {
     expect(where()).toBe("/website/sites/site-1/pages/page-2/design");
   });
 
+  it("needs no editor address: live design frames the page itself", async () => {
+    api.sites.mockResolvedValue([{ ...site, editorFrameOrigin: null }]);
+    api.pages.mockResolvedValue([page, about]);
+    await renderTab();
+    expect(container.textContent).not.toContain("Set the editor address");
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Edit About"]')!.click());
+    await flush();
+    expect(where()).toBe("/website/sites/site-1/pages/page-2/design");
+  });
+
   it("Edit pages opens the first page in live design", async () => {
     api.pages.mockResolvedValue([page, about]);
     await renderTab();

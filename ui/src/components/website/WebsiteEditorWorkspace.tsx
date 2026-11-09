@@ -193,7 +193,7 @@ export function WebsitePagesTab({
   const pagesQuery = useQuery({
     queryKey: queryKeys.website.pages(companyId, site?.id ?? ""),
     queryFn: () => websiteModuleApi.pages(companyId, site!.id),
-    enabled: !!site?.editorFrameOrigin,
+    enabled: !!site,
   });
 
   // The old in-page editor's links (`?tab=editor&page=` and GS Studio's `&motion=`) open the full-screen editor.
@@ -205,7 +205,8 @@ export function WebsitePagesTab({
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading the site</p>;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
-  if (!site || !site.editorFrameOrigin) return <SiteNotReady site={site} onOpenTab={onOpenTab} />;
+  // Live design frames the page itself, so the Pages tab needs no editor address.
+  if (!site) return <SiteNotReady site={site} onOpenTab={onOpenTab} />;
   if (pagesQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading pages</p>;
   if (pagesQuery.error) return <ErrorState error={pagesQuery.error} onRetry={() => void pagesQuery.refetch()} />;
   const pages = pagesQuery.data ?? [];
