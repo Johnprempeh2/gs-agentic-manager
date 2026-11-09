@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "@/api/access";
-import { websiteCommerceApi, type CommerceRow, type CommerceWrite } from "@/api/website-commerce";
+import { websiteCommerceApi, type CommerceRow, type CommerceWrite, type CommerceWriteResult } from "@/api/website-commerce";
 import { isDefiniteAnswer, isPersonAccess, newIdempotencyKey } from "@/lib/commerce-write";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -21,7 +21,7 @@ export function useCommercePerson(): boolean {
  * Idempotency-Key, so the site writes it once; a new change, or any after a definite answer, takes a new key.
  * Every success refreshes this site's website data and commerce reads.
  */
-export function useCommerceWrite(companyId: string, siteId: string, options: { onSuccess?: (item: CommerceRow) => void } = {}) {
+export function useCommerceWrite(companyId: string, siteId: string, options: { onSuccess?: (item: CommerceRow, result: CommerceWriteResult) => void } = {}) {
   const queryClient = useQueryClient();
   const pending = useRef<{ signature: string; key: string } | null>(null);
   return useMutation({
@@ -33,7 +33,7 @@ export function useCommerceWrite(companyId: string, siteId: string, options: { o
     onSuccess: (result) => {
       pending.current = null;
       void queryClient.invalidateQueries({ queryKey: queryKeys.website.siteData(companyId, siteId) });
-      options.onSuccess?.(result.item);
+      options.onSuccess?.(result.item, result);
     },
     onError: (error) => {
       if (isDefiniteAnswer(error)) pending.current = null;

@@ -130,6 +130,12 @@ const STATUS_TONES: Record<string, string> = {
   rejected: "bg-status-neutral-soft text-status-neutral-foreground",
   done: "bg-status-success-soft text-status-success-foreground",
   confirmed: "bg-status-success-soft text-status-success-foreground",
+  // commerce settings (GRE-4784): enquiries, licences, the client timeline and portal receipts
+  contacted: "bg-status-review-soft text-status-review-foreground",
+  closed: "bg-status-neutral-soft text-status-neutral-foreground",
+  issued: "bg-status-success-soft text-status-success-foreground",
+  shared: "bg-status-success-soft text-status-success-foreground",
+  queued: "bg-status-info-soft text-status-info-foreground",
 };
 
 export function statusTone(status: string): string {
