@@ -52,7 +52,7 @@ import {
   websiteTabFrom,
   type WebsiteTab,
 } from "../components/website/WebsiteHub";
-import { WebsitePagesTab, useOpenWebsiteEditor } from "../components/website/WebsiteEditorWorkspace";
+import { WebsitePagesTab } from "../components/website/WebsiteEditorWorkspace";
 import { WebsiteDetailsForm, WebsiteGa4Link, WebsiteSetupForm, useCanManageWebsite } from "../components/website/WebsiteSetup";
 import { WebsiteCollectionsTab } from "../components/website/WebsiteCollections";
 import { WebsiteHomeTab } from "../components/website/WebsiteHome";
@@ -631,7 +631,6 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   });
   const project = projectsQuery.data?.find((entry) => entry.id === property.projectId) ?? null;
   const siteUrl = liveSiteUrl(property.siteUrl);
-  const openEditor = useOpenWebsiteEditor();
   const navigate = useNavigate();
   const openTab = (next: WebsiteTab) => {
     const params = new URLSearchParams(searchParams);

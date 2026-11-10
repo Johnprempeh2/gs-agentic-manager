@@ -55,7 +55,7 @@ import { websiteModuleApi } from "../../api/website";
 import { useConfirm } from "../../context/ConfirmContext";
 import { useCompanyLiveEvent } from "../../context/LiveUpdatesProvider";
 import { queryKeys } from "../../lib/queryKeys";
-import { Navigate, useLocation, useNavigate, useSearchParams } from "@/lib/router";
+import { Navigate, useNavigate, useSearchParams } from "@/lib/router";
 import { cn, formatTime, relativeTime } from "@/lib/utils";
 import {
   WebsiteFrameHostSession,
@@ -140,17 +140,6 @@ const PAGE_STATUS_COPY: Record<WebsitePageStatus, { label: string; tone: string 
 };
 
 /* ---- Pages tab ---- */
-
-/** Where the full-screen editor goes back to: the page that opened it. */
-export function useOpenWebsiteEditor() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  return useCallback(
-    (input: { propertyId?: string | null; pageId?: string | null; motion?: string | null } = {}) =>
-      navigate(websiteEditorPath(input), { state: { from: `${location.pathname}${location.search}` } }),
-    [location.pathname, location.search, navigate],
-  );
-}
 
 function SiteNotReady({ site, onOpenTab }: { site: WebsiteSite | null; onOpenTab: (tab: WebsiteTab) => void }) {
   if (!site) {
@@ -370,7 +359,11 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   /**
    * GRE-4822: this editor reads blocks only. A page in the HTML format (release schema 2)
    * has none, so it would open as "Not built yet" over a live page; it opens in live design.
+   * On a site that builds HTML pages, every page does: a page planned by the sitemap starts
+   * as an empty block document and an older page may still hold blocks, and both used to land
+   * here with "Add block". Live design builds the first and shows the second as it is.
    */
+  const htmlSite = site.releaseSchemaVersion >= 2;
   const detailQuery = useQuery({
     queryKey: queryKeys.website.page(companyId, site.id, page?.id ?? ""),
     queryFn: () => websiteModuleApi.page(companyId, site.id, page!.id),
@@ -756,7 +749,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     else setMessage({ text: "GSAM could not ask the site's editor to import this page. Reload and try again.", tone: "warn" });
   };
 
-  if (page && htmlPage) return <Navigate replace to={websitePageDesignPath(site.id, page.id)} />;
+  if (page && (htmlPage || htmlSite)) return <Navigate replace to={websitePageDesignPath(site.id, page.id)} />;
 
   return (
     <FullScreen>
