@@ -1217,7 +1217,7 @@ export function Cases() {
               />
             </div>
 
-            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1" data-tour="cases-toolbar">
               <Button
                 type="button"
                 variant="outline"
@@ -1346,7 +1346,7 @@ export function Cases() {
           {filtered.length === 0 ? (
             <EmptyState icon={SearchX} message="No cases match these filters." action="Clear filters" onAction={clearFilters} />
           ) : (
-            <div ref={caseListRef}>
+            <div ref={caseListRef} data-tour="cases-list">
               <CaseColumnHeader visibleColumnSet={visibleColumnSet} trailingColumns={trailingColumns} />
               {viewState.treeView ? (
                 treeRows.map(({ row, depth, childCount, collapsed }) => {

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { useCommerceSite } from "@/hooks/useCommerceSite";
+import { useCanRelease } from "@/hooks/useReleases";
 import { useTourSeen } from "@/hooks/useTourSeen";
 import { CLIENT_CASE_TYPE } from "@/lib/client-case";
 import { ALL_TOURS, type TourDefinition } from "@/lib/feature-tours";
@@ -30,11 +31,11 @@ export const START_HERE_TOUR_IDS = ["welcome", "decisions", "tasks", "agents"] a
 export const AREAS: Array<{ label: string; note: string; ids: string[] }> = [
   { label: "Getting started", note: "The welcome tour, and how to find things and catch up.", ids: ["welcome", "search-ask", "search", "since-last-visit"] },
   { label: "Today", note: "What is waiting on you, and your day.", ids: ["decisions", "my-tasks", "inbox", "calendar", "blocked", "approvals", "morning"] },
-  { label: "Work", note: "Tasks, projects and goals.", ids: ["dashboard", "tasks", "task-detail", "projects", "goals", "memory", "strategy-board"] },
-  { label: "Team", note: "The agents, what they finished, and chats.", ids: ["agents", "agent-detail", "scorecard", "weekly-report", "team-chat"] },
-  { label: "Clients", note: "The organisations we work with and what was made for them.", ids: ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images"] },
-  { label: "Website and Commerce", note: "The website's pages and what it sells.", ids: ["website-home", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-releases", "commerce-catalogue", "commerce-sales", "website"] },
-  { label: "Set-up", note: "Work that repeats, and the tools GSAM is connected to.", ids: ["routines", "integrations", "github-share-with-agents"] },
+  { label: "Work", note: "Tasks, projects and goals.", ids: ["dashboard", "tasks", "task-detail", "projects", "goals", "memory", "strategy-board", "status", "workflows", "cases", "artifacts", "links"] },
+  { label: "Team", note: "The agents, what they finished, and chats.", ids: ["agents", "agent-detail", "scorecard", "weekly-report", "team-chat", "conference-room"] },
+  { label: "Clients", note: "The organisations we work with and what was made for them.", ids: ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images", "deep-dive"] },
+  { label: "Website and Commerce", note: "The website's pages and what it sells.", ids: ["website-home", "website-preview", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-style", "website-documents", "website-people", "website-releases", "commerce-catalogue", "commerce-catalogue-setup", "commerce-sales", "commerce-clients", "website"] },
+  { label: "Set-up", note: "Work that repeats, and the tools GSAM is connected to.", ids: ["routines", "integrations", "connectors", "skills", "github-share-with-agents", "settings", "gsam-releases"] },
 ];
 
 type StartTarget = { path: string } | { nothing: string };
@@ -121,8 +122,13 @@ export function Tutorials() {
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const { commerce } = useCommerceSite(selectedCompanyId);
-  // The catalogue only exists where the organisation has a shop.
-  const tours = ALL_TOURS.filter((tour) => (!tour.flag || settings?.[tour.flag] === true) && (!tour.id.startsWith("commerce-") || commerce !== null));
+  const { canRelease } = useCanRelease(selectedCompanyId);
+  // Commerce only exists where the organisation has a shop; GSAM releases are for owners and admins;
+  // the Deep Dive also needs Cases on.
+  const tours = ALL_TOURS.filter((tour) => (!tour.flag || settings?.[tour.flag] === true)
+    && (!tour.id.startsWith("commerce-") || commerce !== null)
+    && (tour.id !== "gsam-releases" || canRelease)
+    && (tour.id !== "deep-dive" || settings?.enableCases === true));
   const groups = [
     ...AREAS.map((area) => ({ ...area, list: area.ids.flatMap((id) => tours.filter((tour) => tour.id === id)) })),
     { label: "More", note: "Other tours.", list: tours.filter((tour) => !AREAS.some((area) => area.ids.includes(tour.id))) },

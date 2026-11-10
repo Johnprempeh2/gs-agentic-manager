@@ -349,7 +349,7 @@ function MailboxesCard({
   onOpen: () => void;
 }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center" data-tour="connectors-mailboxes">
       <Mail className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold text-foreground">Mailboxes</h2>
@@ -369,7 +369,7 @@ function MailboxesCard({
 
 function AgentAccessLinkCard({ onOpen }: { onOpen: () => void }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center" data-tour="connectors-agent-access">
       <KeyRound className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold text-foreground">Agent access</h2>
@@ -925,7 +925,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           ["unfinished", "Not finished", unfinishedRows],
         ] as const).map(([section, title, sectionRows]) =>
           sectionRows.length > 0 ? (
-            <section key={section} className="space-y-3">
+            <section key={section} className="space-y-3" data-tour="connectors-accounts">
               <h2 className="text-sm font-semibold text-foreground">{title}</h2>
               <div className="space-y-3" role="list" aria-label={title}>
                 {sectionRows.map((row) => (
@@ -963,6 +963,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
               aria-expanded={catalogueOpen}
               aria-controls="connector-catalogue"
               onClick={() => setShowCatalogue((open) => !open)}
+              data-tour="connectors-add"
             >
               <Plus />
               Add a connector

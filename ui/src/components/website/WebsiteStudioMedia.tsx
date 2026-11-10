@@ -288,7 +288,7 @@ export function WebsiteMediaPicker({
       { siteId: site.id, item: picked, alt: fields.alt, caption: fields.caption, focalPoint: fields.focalPoint },
       {
         onSuccess: () => {
-          onAdded(`Added from ${sourceLabel}. It is now in Website media and goes live when you Deploy.`, {
+          onAdded(`Added from ${sourceLabel}. It is now in Website media and goes live after the next Publish and Deploy.`, {
             assetId: picked.assetId,
             contentPath: picked.contentPath,
             alt,

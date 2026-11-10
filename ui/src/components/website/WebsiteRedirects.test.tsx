@@ -91,7 +91,7 @@ describe("WebsiteRedirects (GRE-4785)", () => {
 
     await click(buttonByText("Approve"));
     expect(moduleApiMock.approveEntry).toHaveBeenCalledWith("co-1", "site-1", "r2");
-    expect(container.textContent).toContain("Approved /blog. It goes live when you Publish.");
+    expect(container.textContent).toContain("Approved /blog. Publish puts it on staging, and Deploy puts it live.");
   });
 
   it("checks the addresses before it saves, then adds the redirect as a draft", async () => {
@@ -120,7 +120,7 @@ describe("WebsiteRedirects (GRE-4785)", () => {
     expect(moduleApiMock.saveRedirect).toHaveBeenCalledWith("co-1", "site-1", "r1", { from: "/old-pricing", to: "/prices", status: 301, baseRevisionId: "r1-r1" });
 
     await click(container.querySelector('[aria-label="Delete redirect from /old-pricing"]'));
-    expect(document.body.textContent).toContain("stops sending visitors to /pricing when you next Publish");
+    expect(document.body.textContent).toContain("stops sending visitors to /pricing after the next Publish and Deploy");
     await click(buttonByText("Delete"));
     expect(moduleApiMock.deleteRedirect).toHaveBeenCalledWith("co-1", "site-1", "r1");
   });

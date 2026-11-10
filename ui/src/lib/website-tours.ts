@@ -234,7 +234,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
   id: "website-collections",
   title: "Website collections",
   description: "The lists behind the site, such as products, team and redirects, and how a change goes live.",
-  version: 1,
+  version: 2,
   flag: "enableWebsiteView",
   autoStart: false,
   label: "the collections",
@@ -252,7 +252,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
     {
       target: "website-collection-new",
       title: "Add one",
-      body: "A new entry starts as a draft. Send it for review, and once a person approves it, it goes live with the next release.",
+      body: "A new entry starts as a draft. Send it for review. Once a person approves it, Publish puts it on staging and Deploy puts it on the live site.",
     },
   ],
 };
@@ -261,8 +261,8 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
 export const WEBSITE_RELEASES_TOUR: TourDefinition = {
   id: "website-releases",
   title: "Website releases",
-  description: "How the site is connected, what each release put live, and who may publish.",
-  version: 1,
+  description: "How the site is connected, what each Publish sent to staging, and who may publish.",
+  version: 2,
   flag: "enableWebsiteView",
   autoStart: false,
   label: "the releases",
@@ -275,17 +275,144 @@ export const WEBSITE_RELEASES_TOUR: TourDefinition = {
     {
       target: "website-releases",
       title: "Releases",
-      body: "Each release is one update of the live site. Saved drafts are not live until a release takes them there.",
+      body: "Each release is one Publish. Saved drafts stay drafts until they are approved and a Publish takes them to staging.",
     },
     {
       target: "website-publish",
       title: "Publish",
-      body: "Puts every approved change live in one go. It costs credits each time, so it is for the site's owner to press, after the changes are approved.",
+      body: "Puts every approved change on staging in one go. Deploy then takes staging to the live site. Each Publish costs credits, so it is for the site's owner to press, after the changes are approved.",
     },
     {
       target: "website-release-row",
       title: "One release",
-      body: "When it went live and who sent it. Details lists the checks it passed. An owner can roll the site back to an older release from here.",
+      body: "When it was sent and who sent it. Details lists the checks it passed. An owner can roll the site back to an older release from here.",
+    },
+  ],
+};
+
+/** Website, Preview tab: the live site and the one being worked on, in a frame. */
+export const WEBSITE_PREVIEW_TOUR: TourDefinition = {
+  id: "website-preview",
+  title: "Website preview",
+  description: "The live site and the one being worked on, at laptop, tablet or phone width.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the preview",
+  steps: [
+    {
+      target: "website-preview-controls",
+      title: "Which site, and how wide",
+      body: "Live is the public site. In development is the site being worked on. Side by side shows both. Laptop, Tablet and Phone set the width.",
+    },
+    {
+      target: "website-preview-frame",
+      title: "The site itself",
+      body: "The pages load here as a visitor sees them, and you can click around. If a site will not load in the frame, open it in a new tab instead.",
+    },
+    {
+      target: "Live preview",
+      title: "The workspace preview",
+      body: "The website project's own preview, run from its workspace. Start it here when it is not running.",
+    },
+    {
+      target: "Deploy previews",
+      title: "Preview links",
+      body: "Preview links agents post on website tasks. Show here loads one in the frame above.",
+    },
+  ],
+};
+
+/** Website, Style tab: the colours, fonts and building blocks read from the site. */
+export const WEBSITE_STYLE_TOUR: TourDefinition = {
+  id: "website-style",
+  title: "Website style",
+  description: "The colours, fonts and building blocks the site uses, read from its own stylesheet.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the style",
+  steps: [
+    {
+      target: "website-style-source",
+      title: "Where it was read from",
+      body: "The site's address, how many stylesheets GSAM read and when. Read again picks up a change. Click any value on this tab to copy it.",
+    },
+    {
+      target: "website-style-colour",
+      title: "Colours",
+      body: "Each colour the site uses, grouped by what it is for. Ask an agent opens a task to change one.",
+    },
+    {
+      target: "website-style-contrast-pair",
+      title: "Text on background",
+      body: "Each text colour on the background it sits on. Body text needs AA, a contrast of at least 4.5 to 1.",
+    },
+    {
+      target: "website-style-font",
+      title: "Fonts",
+      body: "The families the site loads, drawn in the site's own fonts, with the type scale below them.",
+    },
+    {
+      target: "website-style-block",
+      title: "Building blocks",
+      body: "The buttons, links, cards and pills the site repeats, drawn as its stylesheet draws them, with the class to use.",
+    },
+  ],
+};
+
+/** Website, Documents tab: the client portal's documents. */
+export const WEBSITE_DOCUMENTS_TOUR: TourDefinition = {
+  id: "website-documents",
+  title: "Portal documents",
+  description: "The engagement packs, NDAs and terms each client reads in the portal, and who approves them.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the portal documents",
+  steps: [
+    {
+      target: "website-documents-new",
+      title: "Start a draft",
+      body: "Agents and staff write a draft for one client company. Submit sends it for approval.",
+    },
+    {
+      target: "website-documents-client",
+      title: "One client at a time",
+      body: "Pick a client company to see only its documents.",
+    },
+    {
+      target: "Portal documents",
+      title: "Each document and its state",
+      body: "Draft, Waiting for approval, Published, Withdrawn or Replaced. A portal approver selects Approve and publish to show a document to the client, and can withdraw it later.",
+    },
+  ],
+};
+
+/** Website, People tab: website admin staff, portal approvers and client sign-ins. */
+export const WEBSITE_PEOPLE_TOUR: TourDefinition = {
+  id: "website-people",
+  title: "Website people",
+  description: "Who signs in to the website admin, who approves portal documents, and who sees each client company.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "people and access",
+  steps: [
+    {
+      target: "website-access-staff",
+      title: "Staff",
+      body: "Everyone who works in the website admin, and what their role lets them do. Staff are added on the website itself.",
+    },
+    {
+      target: "website-access-approvers",
+      title: "Portal approvers",
+      body: "Staff who approve and publish documents in the client portal. They still sign in to the website to do it.",
+    },
+    {
+      target: "website-access-clients",
+      title: "Client companies",
+      body: "Who from each client company signs in to the portal, and who manages the company there. Only a person with Publish rights changes access.",
     },
   ],
 };
@@ -293,10 +420,14 @@ export const WEBSITE_RELEASES_TOUR: TourDefinition = {
 /** The tour for each Website tab that has one. Website.tsx mounts it beside the title; Tutorials opens the tab. */
 export const WEBSITE_TAB_TOURS: Partial<Record<WebsiteTab, TourDefinition>> = {
   home: WEBSITE_HOME_TOUR,
+  preview: WEBSITE_PREVIEW_TOUR,
   sitemap: WEBSITE_SITEMAP_TOUR,
   editor: WEBSITE_PAGES_TOUR,
   progress: WEBSITE_PROGRESS_TOUR,
   collections: WEBSITE_COLLECTIONS_TOUR,
+  style: WEBSITE_STYLE_TOUR,
+  documents: WEBSITE_DOCUMENTS_TOUR,
+  people: WEBSITE_PEOPLE_TOUR,
   releases: WEBSITE_RELEASES_TOUR,
 };
 
@@ -329,6 +460,82 @@ export const COMMERCE_SALES_TOUR: TourDefinition = {
   ],
 };
 
+/** Commerce, Catalogue: every section but Offerings, which has its own tour. In CORE_TOURS. */
+export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
+  id: "commerce-catalogue-setup",
+  title: "Commerce catalogue set-up",
+  description: "Vendors, categories, pricing rules, customer tiers, the display rate and price-book imports.",
+  version: 1,
+  flag: "enableWebsiteView",
+  route: { match: /^\/commerce\/(vendors|categories|pricing-rules|customer-tiers|currency|imports)\/?$/, path: "/commerce/vendors" },
+  autoStart: false,
+  label: "the catalogue set-up",
+  steps: [
+    {
+      title: "Behind the offerings",
+      body: "These sections hold what the offerings draw on: who makes them, how they are grouped and how they are priced. Offerings has its own tour.",
+    },
+    {
+      target: "Commerce records",
+      title: "One section at a time",
+      body: "Vendors, Categories, Pricing rules, Customer tiers, Currency and Price-book import. Pick one here.",
+    },
+    {
+      target: ["commerce-catalogue-list", "commerce-tiers"],
+      title: "The list",
+      body: "Select a row to open it, or add one with the New button. Vendors, categories and pricing rules start as drafts, and only published ones show on the website. Customer tiers save straight away.",
+    },
+    {
+      target: "Display rate",
+      title: "The display rate",
+      body: "Prices are kept in USD, and the website shows GBP at this rate. Only a person changes it, and every change is kept in the history below.",
+    },
+    {
+      target: "commerce-import-new",
+      title: "Price-book import",
+      body: "Choose a price book as a CSV file. GSAM compares it with the catalogue and shows the plan as a dry run. Nothing changes until a person applies it.",
+    },
+  ],
+};
+
+/** Commerce, Clients: client companies, enquiries and leads, and portal receipts. In CORE_TOURS. */
+export const COMMERCE_CLIENTS_TOUR: TourDefinition = {
+  id: "commerce-clients",
+  title: "Commerce clients",
+  description: "The client companies on the website, their enquiries and leads, and the receipts for documents they accept.",
+  version: 1,
+  flag: "enableWebsiteView",
+  route: { match: /^\/commerce\/(customers|enquiries|portal-acceptances)\/?$/, path: "/commerce/customers" },
+  autoStart: false,
+  label: "Commerce clients",
+  steps: [
+    {
+      title: "Who buys",
+      body: "Clients is the companies who buy from the website, the enquiries that come in, and the receipts for portal documents they accept.",
+    },
+    {
+      target: "Commerce records",
+      title: "Three lists",
+      body: "Client companies, Enquiries and leads, and Portal receipts. Pick one here.",
+    },
+    {
+      target: "commerce-clients",
+      title: "Client companies",
+      body: "Open a company for its details, its people, its timeline and its licences. New client adds one on the website.",
+    },
+    {
+      target: "commerce-enquiries",
+      title: "Enquiries and leads",
+      body: "Service enquiries and leads from the website, open ones first. Show narrows them by status. Set a status as you work each one.",
+    },
+    {
+      target: "commerce-receipts",
+      title: "Portal receipts",
+      body: "Each time a client accepts a portal document, the website emails them a receipt. A person can send one again if it did not arrive.",
+    },
+  ],
+};
+
 export const WEBSITE_MODULE_TOURS = [
   WEBSITE_HOME_TOUR,
   WEBSITE_SITEMAP_TOUR,
@@ -337,6 +544,12 @@ export const WEBSITE_MODULE_TOURS = [
   WEBSITE_PROGRESS_TOUR,
   WEBSITE_COLLECTIONS_TOUR,
   WEBSITE_RELEASES_TOUR,
+  WEBSITE_PREVIEW_TOUR,
+  WEBSITE_STYLE_TOUR,
+  WEBSITE_DOCUMENTS_TOUR,
+  WEBSITE_PEOPLE_TOUR,
   COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_CATALOGUE_SETUP_TOUR,
   COMMERCE_SALES_TOUR,
+  COMMERCE_CLIENTS_TOUR,
 ];

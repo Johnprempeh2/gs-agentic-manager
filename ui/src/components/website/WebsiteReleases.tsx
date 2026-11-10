@@ -612,7 +612,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       ) : releases.length === 0 ? (
         <div className="space-y-1 text-sm" data-testid="website-releases-empty">
           <p className="font-medium">No releases yet</p>
-          <p className="text-xs text-muted-foreground">Your first Publish shows here, with what went live and who sent it.</p>
+          <p className="text-xs text-muted-foreground">Your first Publish shows here, with what it sent and who sent it.</p>
         </div>
       ) : (
         <ul className="divide-y text-sm">
@@ -634,7 +634,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
           <AlertDialogHeader>
             <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.name)}</AlertDialogTitle>
             <AlertDialogDescription>
-              This updates the live site. It takes about a minute and costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
+              This puts the approved changes on staging, which rebuilds in a few minutes. Deploy then takes them to the live site. A Publish costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

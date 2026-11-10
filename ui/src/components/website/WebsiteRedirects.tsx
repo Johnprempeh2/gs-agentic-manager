@@ -20,7 +20,7 @@ import { ErrorState, errorStateMessage } from "../ErrorState";
 import { ENTRY_STATUS_LABEL } from "./WebsiteCollections";
 
 // Redirects (GRE-4785, GRE-4079 step 5d): old addresses that send visitors on. Each change is a draft of a
-// `redirect` entry; a person with Publish rights approves it, and it goes live with the next Publish.
+// `redirect` entry; a person with Publish rights approves it, Publish puts it on staging and Deploy puts it live.
 
 export const REDIRECT_STATUS_LABEL: Record<WebsiteRedirectStatus, string> = {
   301: "Permanent (301)",
@@ -80,7 +80,7 @@ function RedirectForm({ companyId, siteId, redirect, open, onClose, onSaved }: {
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>{redirect ? "Change redirect" : "Add redirect"}</DialogTitle>
-            <DialogDescription>Visitors who open the old path go to the new address. It goes live after approval, when you Publish.</DialogDescription>
+            <DialogDescription>Visitors who open the old path go to the new address. Once approved, Publish puts it on staging and Deploy puts it live.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
             <label htmlFor={`${id}-from`} className="text-sm font-medium">Old path</label>
@@ -143,7 +143,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
     onSuccess: (_result, { action, redirect }) => {
       setMessage(
         action === "review" ? `Sent ${redirect.from} for review.`
-          : action === "approve" ? `Approved ${redirect.from}. It goes live when you Publish.`
+          : action === "approve" ? `Approved ${redirect.from}. Publish puts it on staging, and Deploy puts it live.`
             : `Deleted ${redirect.from}. It stops working on the site when you Publish.`,
       );
       refresh();
@@ -157,7 +157,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
         <div>
           <h3 className="text-base font-semibold">Redirects</h3>
           <p className="text-sm text-muted-foreground">
-            Old addresses that send visitors to a new one. A person with Publish rights approves each change, and it goes live when you Publish.
+            Old addresses that send visitors to a new one. A person with Publish rights approves each change. Publish puts it on staging, and Deploy puts it live.
           </p>
         </div>
         {canEdit ? (
@@ -211,7 +211,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
                     variant="ghost"
                     destructive
                     title="Delete this redirect?"
-                    description={`${redirect.from} stops sending visitors to ${redirect.to} when you next Publish. Its history stays.`}
+                    description={`${redirect.from} stops sending visitors to ${redirect.to} after the next Publish and Deploy. Its history stays.`}
                     confirmLabel="Delete"
                     disabled={step.isPending}
                     onConfirm={() => step.mutate({ action: "delete", redirect })}

@@ -770,10 +770,10 @@ export function WebsitePreviewTab({ companyId, property }: { companyId: string; 
 
   return (
     <div className="space-y-6" data-testid="website-preview" data-preview-mode={mode}>
-      <section className="space-y-4" aria-labelledby="website-preview-frame">
+      <section className="space-y-4" aria-labelledby="website-preview-frame" data-tour="website-preview-frame">
         {/* The site leads; the controls stay quiet above it. */}
         <h2 id="website-preview-frame" className="sr-only">Preview</h2>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2" data-tour="website-preview-controls">
           <Toggle label="Which site" options={WEBSITE_PREVIEW_MODES} value={mode} onChange={chooseMode} />
           <div className="flex flex-wrap items-center gap-1">
             <Toggle

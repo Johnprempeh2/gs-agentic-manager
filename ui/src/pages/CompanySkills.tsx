@@ -1198,7 +1198,7 @@ export function DiscoveryGrid({
     // the natural page flow.
     <div className="flex min-h-(--sz-calc-30) md:h-(--sz-calc-33) md:min-h-0 md:overflow-hidden">
       {showFolderRail ? (
-        <div className="hidden shrink-0 pl-4 pt-4 md:block">
+        <div className="hidden shrink-0 pl-4 pt-4 md:block" data-tour="skills-folders">
           <SkillFolderRail
             result={folderResult}
             selection={folderSelection}
@@ -1245,7 +1245,7 @@ export function DiscoveryGrid({
             <h1 className="text-lg font-semibold text-foreground">{viewTitle}</h1>
             <p className="text-xs text-muted-foreground">{viewDescription}</p>
           </div>
-          <div className="flex h-9 min-w-(--sz-12rem) flex-1 items-center gap-2 rounded-md border border-border px-2.5">
+          <div className="flex h-9 min-w-(--sz-12rem) flex-1 items-center gap-2 rounded-md border border-border px-2.5" data-tour="skills-search">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <input
               value={search}
@@ -1310,7 +1310,7 @@ export function DiscoveryGrid({
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="default">
+              <Button size="sm" variant="default" data-tour="skills-new">
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 New
                 <ChevronDown className="ml-1 h-3.5 w-3.5" />

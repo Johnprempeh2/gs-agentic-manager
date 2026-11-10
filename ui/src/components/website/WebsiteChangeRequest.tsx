@@ -444,7 +444,7 @@ export function WebsiteChangeRequestPanel({
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            The website agent changes {block ? "this" : "the page"} on {page.title} ({page.slug}) as a draft for you to see here. Nothing goes live until a person approves it and starts a Publish.
+            The website agent changes {block ? "this" : "the page"} on {page.title} ({page.slug}) as a draft for you to see here. Nothing goes live until a person approves it, Publishes it to staging and Deploys it.
           </p>
         </form>
       ) : null}

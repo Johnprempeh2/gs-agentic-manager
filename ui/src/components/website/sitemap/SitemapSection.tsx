@@ -169,7 +169,7 @@ function ApproveDialog({ option, pages, pending, error, onCancel, onApprove }: {
         <AlertDialogHeader className="text-left sm:text-left">
           <AlertDialogTitle className="text-base leading-snug">Approve {option?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its pages become the site's pages and menus: {approveImpactText(impact)} Visitors see it after you Deploy.
+            Its pages become the site's pages and menus: {approveImpactText(impact)} Visitors see it after the next Publish and Deploy.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
@@ -316,7 +316,7 @@ export function SitemapSection({ companyId, site, options, pages, framing, canAp
       setApprovingId(null);
       setOptionId(result.option.id);
       setNotice(
-        `Approved ${result.option.name}: ${countOf(result.summary.created, "new page")} planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live when you Deploy.`,
+        `Approved ${result.option.name}: ${countOf(result.summary.created, "new page")} planned, ${result.summary.updated} updated, ${result.summary.archived} archived. It goes live after the next Publish and Deploy.`,
       );
       refresh();
     },

@@ -306,7 +306,7 @@ export function CompanySettings() {
 
         <TabsContent value="general" className="space-y-8">
           {/* General */}
-          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
+          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5" data-tour="settings-name">
             <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Name and description
             </div>

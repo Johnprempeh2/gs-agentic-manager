@@ -42,7 +42,7 @@ export function reviewCountText(pages: number, entries: number) {
 
 function resultText(result: WebsiteReviewApproveResult) {
   const approved = reviewCountText(result.approvedPageIds.length, result.approvedEntryIds.length);
-  const head = `Approved ${approved}. They go live when you Deploy.`;
+  const head = `Approved ${approved}. Publish puts them on staging, and Deploy puts them live.`;
   return result.skipped.length ? `${head} ${plural(result.skipped.length, "item was", "items were")} not approved.` : head;
 }
 
@@ -97,7 +97,7 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
   const onApprove = async () => {
     const ok = await confirm({
       title: chosen.length ? `Approve ${plural(target.length, "selected item", "selected items")}?` : `Approve all ${plural(target.length, "item", "items")} in review?`,
-      description: `${reviewCountText(pageCount, entryCount)} become approved, each in your name. Nothing goes live until someone selects Publish.`,
+      description: `${reviewCountText(pageCount, entryCount)} become approved, each in your name. Nothing goes live until someone Publishes to staging and then Deploys.`,
       confirmLabel: `Approve ${target.length}`,
     });
     if (ok) approve.mutate(chosen.length ? chosen : null);

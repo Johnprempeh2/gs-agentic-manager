@@ -95,7 +95,7 @@ export function Links() {
         <p className="text-sm text-muted-foreground">
           Every link we share: sites, client portals, previews and decks, by client.
         </p>
-        <Button size="sm" onClick={() => setAdding(true)}>
+        <Button size="sm" onClick={() => setAdding(true)} data-tour="links-add">
           <Plus />
           Add link
         </Button>

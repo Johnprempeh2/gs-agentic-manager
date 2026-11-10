@@ -2,7 +2,28 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ALL_TOURS, CORE_TOURS, INBOX_TOUR, coreTourForPath } from "./feature-tours";
-import { WEBSITE_MODULE_TOURS, WEBSITE_TAB_TOURS } from "./website-tours";
+import { AREA_TOURS } from "./area-tours";
+import {
+  COMMERCE_CATALOGUE_SETUP_TOUR,
+  COMMERCE_CLIENTS_TOUR,
+  WEBSITE_DOCUMENTS_TOUR,
+  WEBSITE_MODULE_TOURS,
+  WEBSITE_PEOPLE_TOUR,
+  WEBSITE_PREVIEW_TOUR,
+  WEBSITE_STYLE_TOUR,
+  WEBSITE_TAB_TOURS,
+} from "./website-tours";
+
+/** The tours added in round 3 (10 Nov): 3 to 5 stops each, never opening by themselves. */
+const ROUND_3_TOURS = [
+  ...AREA_TOURS,
+  WEBSITE_PREVIEW_TOUR,
+  WEBSITE_STYLE_TOUR,
+  WEBSITE_DOCUMENTS_TOUR,
+  WEBSITE_PEOPLE_TOUR,
+  COMMERCE_CATALOGUE_SETUP_TOUR,
+  COMMERCE_CLIENTS_TOUR,
+];
 
 describe("everyday page tours", () => {
   it("finds the tour for each everyday page", () => {
@@ -23,6 +44,23 @@ describe("everyday page tours", () => {
     expect(coreTourForPath("/inbox/mine")?.id).toBe("inbox");
     expect(coreTourForPath("/inbox/unread")?.id).toBe("inbox");
     expect(coreTourForPath("/inbox/requests")).toBeNull();
+    expect(coreTourForPath("/links")?.id).toBe("links");
+    expect(coreTourForPath("/board-chat")?.id).toBe("conference-room");
+    expect(coreTourForPath("/status")?.id).toBe("status");
+    expect(coreTourForPath("/status/card-1")).toBeNull();
+    expect(coreTourForPath("/skills")?.id).toBe("skills");
+    expect(coreTourForPath("/skills/studio")).toBeNull();
+    expect(coreTourForPath("/apps")?.id).toBe("connectors");
+    expect(coreTourForPath("/apps/mailboxes")).toBeNull();
+    expect(coreTourForPath("/workflows")?.id).toBe("workflows");
+    expect(coreTourForPath("/artifacts")?.id).toBe("artifacts");
+    expect(coreTourForPath("/cases")?.id).toBe("cases");
+    expect(coreTourForPath("/cases/CASE-1")).toBeNull();
+    expect(coreTourForPath("/deep-dive")?.id).toBe("deep-dive");
+    expect(coreTourForPath("/deep-dive/findings")).toBeNull();
+    expect(coreTourForPath("/releases")?.id).toBe("gsam-releases");
+    expect(coreTourForPath("/company/settings")?.id).toBe("settings");
+    expect(coreTourForPath("/company/settings/members")).toBeNull();
   });
 
   it("finds the item tours for a task and an agent", () => {
@@ -53,11 +91,15 @@ describe("everyday page tours", () => {
       }
     }
     // The newer tours also keep to the house words; older tours predate the rule.
-    for (const tour of [...WEBSITE_MODULE_TOURS, INBOX_TOUR]) {
+    for (const tour of [...WEBSITE_MODULE_TOURS, ...AREA_TOURS, INBOX_TOUR]) {
       expect(tour.steps.length).toBeGreaterThanOrEqual(3);
       for (const text of [tour.title, tour.description, ...tour.steps.flatMap((step) => [step.title, step.body])]) {
         expect(text).not.toMatch(/\b(leverage|robust|seamless|unlock|empower|journey|landscape)/i);
       }
+    }
+    for (const tour of ROUND_3_TOURS) {
+      expect(tour.steps.length).toBeLessThanOrEqual(5);
+      expect(tour.autoStart).toBe(false);
     }
   });
 });
@@ -68,7 +110,12 @@ describe("website and commerce tours", () => {
     expect(coreTourForPath("/commerce/quotes")?.id).toBe("commerce-sales");
     expect(coreTourForPath("/commerce/invoices")?.id).toBe("commerce-sales");
     expect(coreTourForPath("/commerce/quotes/q1")).toBeNull();
-    expect(coreTourForPath("/commerce/vendors")).toBeNull();
+    expect(coreTourForPath("/commerce/vendors")?.id).toBe("commerce-catalogue-setup");
+    expect(coreTourForPath("/commerce/imports")?.id).toBe("commerce-catalogue-setup");
+    expect(coreTourForPath("/commerce/imports/job-1")).toBeNull();
+    expect(coreTourForPath("/commerce/customers")?.id).toBe("commerce-clients");
+    expect(coreTourForPath("/commerce/enquiries")?.id).toBe("commerce-clients");
+    expect(coreTourForPath("/commerce/customers/c1")).toBeNull();
     expect(coreTourForPath("/website/sites/s1/pages/p1/design")).toBeNull();
   });
 
@@ -80,11 +127,12 @@ describe("website and commerce tours", () => {
       .join("\n");
     // The catalogue writes its search label with a template, so the name is not in the source as text.
     const notLiteral = ["Search offerings"];
-    const targets = [...WEBSITE_MODULE_TOURS, INBOX_TOUR].flatMap((tour) => tour.steps.flatMap((step) => step.target ?? []));
-    expect(targets.length).toBeGreaterThan(30);
+    const targets = [...WEBSITE_MODULE_TOURS, ...AREA_TOURS, INBOX_TOUR].flatMap((tour) => tour.steps.flatMap((step) => step.target ?? []));
+    expect(targets.length).toBeGreaterThan(90);
+    // `testId` is the prop a few sections pass straight on to `data-testid` (the People tab, the preview panes).
     const missing = targets.filter((target) =>
       !notLiteral.includes(target)
-      && !["data-testid", "data-tour", "aria-label", "ariaLabel"].some((attribute) => source.includes(`${attribute}="${target}"`)));
+      && !["data-testid", "data-tour", "aria-label", "ariaLabel", "testId"].some((attribute) => source.includes(`${attribute}="${target}"`)));
     expect(missing).toEqual([]);
   });
 
