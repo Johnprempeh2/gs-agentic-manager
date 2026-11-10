@@ -131,6 +131,8 @@ export interface LiveDesignView {
   stagedCount: number;
   /** Edits Undo took back that Redo can put back (none after a new edit, a save or a restore). */
   redoCount?: number;
+  /** Edits not saved yet that came back from last time (a restart, a crash or a closed tab), until the next change. */
+  restoredCount?: number;
 }
 
 /**

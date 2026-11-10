@@ -50,6 +50,8 @@ export interface StagedEdit {
   id: string;
   element: Record<string, unknown> | null;
   ops: Array<Record<string, unknown>>;
+  /** Who made it: edits not saved yet are kept per page and per person, so they survive a restart. */
+  userId?: string | null;
 }
 
 /**
@@ -99,6 +101,8 @@ interface Session {
   staged: StagedEdit[];
   /** Edits taken back with Undo, newest last, for Redo. Cleared by any new edit, save or restore. */
   redo: StagedEdit[];
+  /** Edits put back from the store when the editor opened (after a restart, a crash or a closed tab), until the next change. */
+  restoredCount: number;
   /** The project's DESIGN.md as the agent last sent it, for Impeccable's design panel. */
   designMd: string | null;
   /** Set while the agent writes John's applied edits into the page. */
@@ -214,6 +218,7 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     codeTasks: s.codeTasks,
     stagedCount: opCount(s),
     redoCount: s.redo.length,
+    restoredCount: s.restoredCount,
     queued: s.queue.flatMap((e) =>
       e.type === "generate" ? [`${e.request.label || e.request.tag}: ${e.request.prompt}`] : e.type === "steer" && !e.requestId ? [e.about ? `${e.about.label}: ${e.message}` : e.message] : [],
     ),
@@ -270,31 +275,102 @@ export function isLiveDesignAgentConnected(s: Session) {
  * when no agent run is polling, so the caller wakes the agent.
  */
 
-// Chats and code tasks are kept in one small file so a GSAM restart or release does not lose them.
+// Chats, code tasks and edits not saved yet are kept in one small file so a GSAM restart, a crash
+// or a closed tab does not lose them.
 // ponytail: one JSON file rewritten on change; move to the database if it grows past a few MB.
 const chats = new Map<string, LiveDesignMessage[]>();
-const storeFile = () => path.resolve(resolvePaperclipInstanceRoot(), "live-design-chats.json");
-let storeLoaded = !!process.env.VITEST;
+/** Edits not saved yet, by `page|person`: the version they were made on, and Undo's redo line. */
+interface PendingEdits { versionId: string; staged: StagedEdit[]; redo: StagedEdit[]; at: string }
+const pendingEdits = new Map<string, PendingEdits>();
+let storeFileOverride: string | null = null;
+const storeFile = () => storeFileOverride ?? path.resolve(resolvePaperclipInstanceRoot(), "live-design-chats.json");
+const storeOff = () => !!process.env.VITEST && !storeFileOverride;
+let storeLoaded = storeOff();
 let saveTimer: NodeJS.Timeout | null = null;
 function loadStore() {
   if (storeLoaded) return;
   storeLoaded = true;
   try {
-    const saved = JSON.parse(fs.readFileSync(storeFile(), "utf8")) as { chats?: Record<string, LiveDesignMessage[]>; codeTasks?: Record<string, LiveDesignCodeTask[]> };
+    const saved = JSON.parse(fs.readFileSync(storeFile(), "utf8")) as {
+      chats?: Record<string, LiveDesignMessage[]>;
+      codeTasks?: Record<string, LiveDesignCodeTask[]>;
+      pendingEdits?: Record<string, PendingEdits>;
+    };
     for (const [k, v] of Object.entries(saved.chats ?? {})) chats.set(k, v);
     for (const [k, v] of Object.entries(saved.codeTasks ?? {})) pageCodeTasks.set(k, v);
+    for (const [k, v] of Object.entries(saved.pendingEdits ?? {})) pendingEdits.set(k, v);
   } catch {
     // No file yet, or unreadable: start empty.
   }
 }
-function saveStore() {
-  if (process.env.VITEST || saveTimer) return;
+function writeStoreNow() {
+  const body = JSON.stringify({ chats: Object.fromEntries(chats), codeTasks: Object.fromEntries(pageCodeTasks), pendingEdits: Object.fromEntries(pendingEdits) });
+  try {
+    fs.writeFileSync(storeFile() + ".tmp", body);
+    fs.renameSync(storeFile() + ".tmp", storeFile());
+  } catch {
+    // A full disk or a missing folder: the session still works, only the restart copy is behind.
+  }
+}
+/** `now`: written before returning (edits not saved yet must survive a crash a moment later). */
+function saveStore(now = false) {
+  if (storeOff()) return;
+  if (now) {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    writeStoreNow();
+    return;
+  }
+  if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    const body = JSON.stringify({ chats: Object.fromEntries(chats), codeTasks: Object.fromEntries(pageCodeTasks) });
-    fs.promises.writeFile(storeFile() + ".tmp", body).then(() => fs.promises.rename(storeFile() + ".tmp", storeFile())).catch(() => {});
+    writeStoreNow();
   }, 2000);
   saveTimer.unref?.();
+}
+
+const pendingKey = (pageKey: string, userId: string | null | undefined) => `${pageKey}|${userId ?? ""}`;
+
+/** Copy the session's edits not saved yet to the store, one entry per person; none left clears the page's entries. */
+function keepPendingEdits(s: Session) {
+  loadStore();
+  for (const k of [...pendingEdits.keys()]) if (k.startsWith(`${s.issueId}|`)) pendingEdits.delete(k);
+  const people = new Set([...s.staged, ...s.redo].map((e) => e.userId ?? ""));
+  for (const person of people) {
+    const mine = (e: StagedEdit) => (e.userId ?? "") === person;
+    const staged = s.staged.filter(mine);
+    // Only a Redo line with nothing waiting is not worth keeping: there is nothing to save.
+    if (!staged.length) continue;
+    pendingEdits.set(pendingKey(s.issueId, person), { versionId: s.attachmentId, staged, redo: s.redo.filter(mine), at: new Date().toISOString() });
+  }
+  saveStore(true);
+}
+
+/** Any change to the edits not saved yet: the restored note goes, and the store follows. */
+function editsChanged(s: Session) {
+  s.restoredCount = 0;
+  keepPendingEdits(s);
+}
+
+/** The person's edits not saved yet on this page, put back when they open it again on the same version. */
+function restorePendingEdits(s: Session, userId: string | null) {
+  const key = pendingKey(s.issueId, userId);
+  const kept = pendingEdits.get(key);
+  if (!kept || s.editsRequestId) return;
+  // Already in the open session (a second device): nothing to put back.
+  if ([...s.staged, ...s.redo].some((e) => (e.userId ?? "") === (userId ?? ""))) return;
+  const count = kept.staged.reduce((n, e) => n + e.ops.length, 0);
+  if (kept.versionId !== s.attachmentId) {
+    // The page has a newer version (an agent or someone else saved): the edits may not fit it, so they are not put back.
+    pendingEdits.delete(key);
+    say(s, "gsam", `${count} edit${count === 1 ? "" : "s"} not saved last time ${count === 1 ? "was" : "were"} made on an earlier version of this page, so ${count === 1 ? "it was" : "they were"} not put back: ${kept.staged.map(editSummary).join("; ")}.`);
+    saveStore(true);
+    return;
+  }
+  s.staged.push(...kept.staged);
+  s.redo.push(...kept.redo);
+  s.restoredCount = count;
+  say(s, "gsam", `Restored ${count} unsaved edit${count === 1 ? "" : "s"} from last time. Save to draft keeps ${count === 1 ? "it" : "them"}; Discard all drops ${count === 1 ? "it" : "them"}.`);
 }
 const pageCodeTasks = new Map<string, LiveDesignCodeTask[]>();
 function codeTasksFor(issueId: string) {
@@ -316,8 +392,10 @@ export function startLiveDesign(input: {
   agentId: string;
   source?: LivePageSource;
   islands?: string | null;
+  /** The person opening the editor: their edits not saved yet come back. */
+  userId?: string | null;
 }) {
-  const { islands = null, ...ids } = input;
+  const { islands = null, userId = null, ...ids } = input;
   sweep();
   loadStore();
   let s = [...sessions.values()].find(
@@ -340,6 +418,7 @@ export function startLiveDesign(input: {
       frameWaiters: [],
       staged: [],
       redo: [],
+      restoredCount: 0,
       designMd: null,
       editsRequestId: null,
       viewers: 0,
@@ -355,7 +434,7 @@ export function startLiveDesign(input: {
     s.source = input.source ?? null;
     sessions.set(s.id, s);
     // The last session went away with John's message unanswered (a GSAM restart drops open sessions,
-    // their unsaved edits and waiting requests): say so, never leave it looking taken.
+    // and waiting requests; edits not saved yet come back from the store): say so, never leave it looking taken.
     if (s.messages.at(-1)?.from === "john") {
       say(s, "gsam", "Your last message got no answer before the editor reconnected, so nothing from it was saved or deployed. Send it again if you still want it.");
     }
@@ -363,6 +442,7 @@ export function startLiveDesign(input: {
   s.attachmentId = input.attachmentId;
   if (input.source) s.source = input.source;
   s.islands = islands;
+  restorePendingEdits(s, userId);
   s.touchedAt = Date.now();
   s.viewers += 1;
   return { session: s, needsWake: !isConnected(s) };
@@ -464,6 +544,7 @@ export function restoreLiveDesign(s: Session, attachmentId: string, version: num
   }
   if (s.staged.length) throw new LiveDesignConflict("Apply or discard your text edits first, then restore.");
   s.redo = [];
+  editsChanged(s);
   s.attachmentId = attachmentId;
   s.appliedAttachmentId = attachmentId;
   s.touchedAt = Date.now();
@@ -687,6 +768,7 @@ export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
   s.staged.push({ ...edit, ops: edit.ops.slice(0, 50) });
   // A new edit starts a new line of history, as in any editor.
   s.redo = [];
+  editsChanged(s);
   s.touchedAt = Date.now();
   for (const op of edit.ops) {
     if (op.removeElement === true) say(s, "john", describeRemoval(op));
@@ -715,6 +797,7 @@ export function undoLiveDesignEdit(s: Session) {
   const last = s.staged.pop();
   if (!last) return s;
   s.redo.push(last);
+  editsChanged(s);
   s.touchedAt = Date.now();
   say(s, "gsam", `Undone: ${editSummary(last)}.`);
   frame(s, { type: "manual_edit_discarded", pendingCount: opCount(s) });
@@ -728,6 +811,7 @@ export function redoLiveDesignEdit(s: Session) {
   const next = s.redo.pop();
   if (!next) return s;
   s.staged.push(next);
+  editsChanged(s);
   s.touchedAt = Date.now();
   say(s, "gsam", `Redone: ${editSummary(next)}.`);
   frame(s, { type: "manual_edit_stashed", pendingCount: opCount(s) });
@@ -739,7 +823,7 @@ export function redoLiveDesignEdit(s: Session) {
  * saved yet (the person sees it on the page, then saves or undoes it), with no agent round trip.
  * `done: false` means it is not that simple, or not certain: the caller sends it to the agent as before.
  */
-export async function quickLiveDesignEdit(s: Session, message: string): Promise<{ done: true } | { done: false; reason: string }> {
+export async function quickLiveDesignEdit(s: Session, message: string, userId: string | null = null): Promise<{ done: true } | { done: false; reason: string }> {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
   const change = parseQuickChange(message);
   if (!change) return { done: false, reason: "not a simple change of words" };
@@ -751,7 +835,7 @@ export async function quickLiveDesignEdit(s: Session, message: string): Promise<
   // It must save the way a hand edit saves, on top of the edits already waiting.
   const check = applyEditsToPage(saved, [...staged, op]);
   if ("failed" in check) return { done: false, reason: check.failed };
-  stageLiveDesignEdit(s, { id: `quick-${randomUUID().slice(0, 8)}`, element: null, ops: [op] });
+  stageLiveDesignEdit(s, { id: `quick-${randomUUID().slice(0, 8)}`, element: null, ops: [op], userId });
   say(s, "gsam", "Done at once, without the agent. It shows on the page now.");
   return { done: true };
 }
@@ -782,6 +866,7 @@ export function discardLiveDesignEdits(s: Session, ref: string | null) {
     s.staged = [];
   }
   s.redo = [];
+  editsChanged(s);
   if (dropped.length) say(s, "gsam", "Edits undone.");
   frame(s, { type: "manual_edit_discarded", pendingCount: opCount(s) });
   return { entries: dropped, remainingCount: opCount(s) };
@@ -836,6 +921,7 @@ export async function saveLiveDesignEditsDirect(s: Session, userId: string | nul
     settle();
     s.staged = [];
     s.redo = [];
+    editsChanged(s);
     s.attachmentId = id;
     s.appliedAttachmentId = id;
     s.touchedAt = Date.now();
@@ -871,6 +957,7 @@ function replyEdits(s: Session, reply: LiveDesignReply, savedVersion: number | n
     settle();
     s.staged = [];
     s.redo = [];
+    editsChanged(s);
     s.appliedAttachmentId = reply.appliedAttachmentId;
     s.attachmentId = reply.appliedAttachmentId;
     say(s, "gsam", s.source?.kind === "website-page" ? savedLine(savedVersion) : "Edits saved into the page as a new version of the file.");
@@ -1053,4 +1140,12 @@ export function resetLiveDesignSessions() {
   sessions.clear();
   chats.clear();
   pageCodeTasks.clear();
+  pendingEdits.clear();
+  storeLoaded = storeOff();
+}
+
+/** Test seam: keep the store in this file (null: back to off under tests). */
+export function setLiveDesignStoreFile(file: string | null) {
+  storeFileOverride = file;
+  storeLoaded = storeOff();
 }

@@ -21161,6 +21161,12 @@ export function issueRoutes(
     return deployBlockers(token, site.blobsStoreName);
   }
 
+  /** The person behind a board request, for keeping their edits not saved yet. */
+  const boardUserId = (req: Request) => {
+    const actor = getActorInfo(req);
+    return actor.actorType === "user" ? actor.actorId : null;
+  };
+
   function liveSessionForBoard(req: Request) {
     assertBoard(req);
     const session = getLiveDesign(req.params.sessionId as string);
@@ -21320,6 +21326,7 @@ export function issueRoutes(
       agentId,
       islands,
       source: attachmentPageSource(issue, attachment.originalFilename ?? "page.html", deliverableKind),
+      userId: boardUserId(req),
     });
     setLiveDesignDeliverable(session, deliverableId);
     if (needsWake) await wakeLiveDesignAgent(heartbeat, { session, onTaskIssueId: onTask ? issue.id : null, fileName: attachment.originalFilename ?? "the page", actorId: getActorInfo(req).actorId });
@@ -21422,7 +21429,7 @@ export function issueRoutes(
         return;
       }
     }
-    const answer = handleImpeccableRequest(session, { ...body, screenshotAttachmentId });
+    const answer = handleImpeccableRequest(session, { ...body, screenshotAttachmentId, userId: boardUserId(req) });
     // A request with no agent listening (it stopped, or never joined): wake one again.
     if (body.path.startsWith("/events") || body.path.startsWith("/manual-edit-commit")) {
       const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer)"/.test(body.body ?? "");
@@ -21482,7 +21489,7 @@ export function issueRoutes(
   router.post("/live-design/:sessionId/quick", validate(liveDesignSteerSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
     try {
-      const quick = await quickLiveDesignEdit(session, req.body.message);
+      const quick = await quickLiveDesignEdit(session, req.body.message, boardUserId(req));
       res.json({ ...viewLiveDesign(session), quick });
     } catch (err) {
       if (!sendLiveConflict(res, err)) throw err;
