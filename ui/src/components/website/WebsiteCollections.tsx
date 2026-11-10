@@ -239,13 +239,13 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
           <>
             <div className="flex flex-wrap items-center gap-3">
               <Input type="search" className="max-w-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, category or code" aria-label={`Search ${selected.label.toLowerCase()}`} />
-              <p className="text-xs text-muted-foreground" role="status">{search.trim() ? `${shown.length} of ${entries.data.length}` : entries.data.length} {selected.label.toLowerCase()}</p>
+              <p className="text-xs text-muted-foreground" role="status">{search.trim() ? `${shown.length} of ${entries.data.length}` : entries.data.length} {entries.data.length === 1 ? selected.singular.toLowerCase() : selected.label.toLowerCase()}</p>
             </div>
             {shown.length ? <ul className="divide-y">{shown.map((entry) => {
               const reading = entryReading(entry);
               return <li key={entry.id} className="flex items-center justify-between gap-3 py-3 text-sm">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate"><span className="font-medium">{reading.title}</span><span className="ml-2 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span></p>
+                  <p className="flex min-w-0 items-baseline gap-2"><span className="min-w-0 truncate font-medium">{reading.title}</span><span className="shrink-0 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span></p>
                   {reading.line ? <p className="truncate text-muted-foreground">{reading.line}</p> : null}
                   <p className="break-words text-xs text-muted-foreground">
                     {reading.meta ? `${reading.meta} · ` : null}Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}

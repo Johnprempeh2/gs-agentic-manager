@@ -94,6 +94,17 @@ describe("dismissing a suggestion from the keyboard", () => {
     expect(focused()).toBe("sitemap-now-suggested");
   });
 
+  it("moves the keyboard to the next group's heading when a group empties", () => {
+    const twoGroups = [...pages, page("p6", "/schools", "Schools hub", "planned")];
+    act(() => root.render(<SitemapNow site={site} pages={twoGroups} approvedTree={null} />));
+    // Groups sort by address: /pricing (Pricing), then /schools (Schools hub).
+    press("Dismiss the suggestion Pricing");
+    expect(document.activeElement?.tagName).toBe("SUMMARY");
+    expect(document.activeElement?.textContent).toContain("/schools");
+    press("Dismiss the suggestion Schools hub");
+    expect(focused()).toBe("sitemap-now-suggested");
+  });
+
   it("keeps the keyboard on the same button when the row stays: Bring back, then Dismiss again", () => {
     press("Dismiss the suggestion Schools");
     act(() => [...container.querySelectorAll("button")].find((entry) => entry.textContent === "Show 1 dismissed suggestion")!.click());

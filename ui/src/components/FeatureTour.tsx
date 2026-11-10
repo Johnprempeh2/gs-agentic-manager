@@ -85,18 +85,37 @@ export function FeatureTour({
 
   // Before the page has drawn any of the tour's elements, wait (return false)
   // unless a person asked for the tour: then the general cards are enough.
+  const resolve = useCallback(() => tour.steps.flatMap((step): ShownStep[] => {
+    if (!step.target) return [{ ...step, el: null }];
+    const el = [step.target].flat().map(findTourTarget).find(Boolean);
+    return el ? [{ ...step, el }] : [];
+  }), [tour]);
+
   const start = useCallback((asked = false) => {
-    const shown = tour.steps.flatMap((step): ShownStep[] => {
-      if (!step.target) return [{ ...step, el: null }];
-      const el = [step.target].flat().map(findTourTarget).find(Boolean);
-      return el ? [{ ...step, el }] : [];
-    });
+    const shown = resolve();
     const targeted = tour.steps.some((step) => step.target);
     if (shown.length === 0 || (targeted && !asked && !shown.some((step) => step.el))) return false;
     setIndex(0);
     setSteps(shown);
     return true;
-  }, [tour]);
+  }, [tour, resolve]);
+
+  // A step whose element draws late (a list after its data loads) joins the open
+  // tour when it appears, for about three seconds, keeping the person on their step.
+  useEffect(() => {
+    if (!steps || steps.length === tour.steps.length) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      const found = resolve();
+      if (found.length > steps.length) {
+        setIndex(Math.max(0, found.findIndex((step) => step.title === steps[index]?.title)));
+        setSteps(found);
+      }
+      if (found.length > steps.length || tries >= 20) window.clearInterval(timer);
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [steps, index, tour, resolve]);
 
   // Started from Tutorials (?tour=<id>): start now, seen or not, giving the page's
   // content a moment to load, then drop the parameter so a reload does not replay it.

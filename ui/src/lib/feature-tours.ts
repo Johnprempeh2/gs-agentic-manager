@@ -236,12 +236,12 @@ export const WEBSITE_TOUR: TourDefinition = {
     {
       target: "website-connect",
       title: "Connect Google first",
-      body: "Nothing shows until Google is connected. Sign in once with read only access, and the reports are pulled every day.",
+      body: "Nothing shows until Google is connected. Sign in once with read only access, and the reports are updated every day.",
     },
     {
       target: "website-pull",
       title: "When the data is from",
-      body: "When the reports were last pulled from Google and when the next pull is due. The figures come from that daily pull, not live.",
+      body: "When the figures were last updated from Google and when the next update is due. They come from that daily update, not live.",
     },
   ],
 };
