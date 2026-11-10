@@ -18,6 +18,9 @@ export const liveDesignApi = {
   steer: (id: string, message: string) => api.post<LiveDesignView>(`${session(id)}/steer`, { message }),
   /** Only the Deploy button sends this; a typed message never deploys. */
   deploy: (id: string) => api.post<LiveDesignView>(`${session(id)}/steer`, { message: LIVE_DEPLOY_REQUEST, deploy: true }),
+  /** Take back the newest edit not saved yet, or put it back. */
+  undo: (id: string) => api.post<LiveDesignView>(`${session(id)}/undo`, {}),
+  redo: (id: string) => api.post<LiveDesignView>(`${session(id)}/redo`, {}),
   end: (id: string) => api.post<LiveDesignView>(`${session(id)}/end`, {}),
   /** Impeccable's page scripts calling their helper, which GSAM stands in for. */
   helper: (id: string, request: LiveDesignHelperRequest) =>

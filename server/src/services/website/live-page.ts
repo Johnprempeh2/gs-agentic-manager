@@ -1,4 +1,5 @@
 import { isWebsiteHtmlPage, WEBSITE_HTML_PAGE_FORMAT, type WebsiteChrome } from "@greatstone/shared";
+import { previewEdits, STAGED_REMOVED_CSS } from "../live-design-direct.js";
 import { LiveDesignConflict, type LivePageSource } from "../live-design.js";
 
 /**
@@ -242,11 +243,12 @@ export async function websitePageFrame(
   revisionId: string,
   assetOrigin: string | null,
   signMedia?: (file: string) => string | null,
+  staged: StagedOps = [],
 ) {
   const found = await store.readRevision(page.companyId, page.documentId, revisionId);
   if (!found) throw new LiveDesignConflict("That version of the page is gone.");
   const chrome = await loadChrome();
-  const doc = pageDocument(page, pagePart(page, found.content), chrome, chrome?.stylesheet ?? "");
+  const doc = pageDocument(page, previewPart(pagePart(page, found.content), staged), chrome, chrome?.stylesheet ?? "");
   // The sandboxed frame sends no sign-in cookie, so each media link carries its own signature.
   const media = `/api/companies/${page.companyId}/website/sites/${page.siteId}/media/`;
   const withMedia = doc.replace(/(["'(\s,])\/media\/([a-f0-9]{64}\.[a-z0-9]{1,8}(?![\w.?#]))?/g, (_match, lead: string, file?: string) => {
@@ -258,15 +260,28 @@ export async function websitePageFrame(
 }
 
 /** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
-export async function websitePageDraft(store: Store, page: PageLike, loadChrome: ChromeLoader, revisionId: string) {
+export async function websitePageDraft(store: Store, page: PageLike, loadChrome: ChromeLoader, revisionId: string, staged: StagedOps = []) {
   const found = await store.readRevision(page.companyId, page.documentId, revisionId);
   if (!found) throw new LiveDesignConflict("That version of the page is gone.");
   const chrome = await loadChrome();
   return {
-    page: { ...pagePart(page, found.content), slug: page.slug, path: page.slug, title: page.title },
+    page: { ...previewPart(pagePart(page, found.content), staged), slug: page.slug, path: page.slug, title: page.title },
     chrome: chrome?.chrome ?? null,
     stylesheet: chrome?.stylesheet ?? null,
   };
+}
+
+type StagedOps = Array<Record<string, unknown>>;
+
+/** The page's own part with the editor's edits not saved yet, so the frame shows them after it reloads (Undo, Redo). */
+export function previewPart(part: { html: string; css: string }, staged: StagedOps) {
+  if (!staged.length) return part;
+  const open = '<main id="gs-page">';
+  const close = "</main>";
+  const whole = `${open}${part.html}${close}`;
+  const shown = previewEdits(whole, staged);
+  if (shown === whole) return part;
+  return { html: shown.slice(open.length, shown.length - close.length), css: `${part.css}\n${STAGED_REMOVED_CSS}` };
 }
 
 /** The origin of a site address, or null when there is none or it is not https. */

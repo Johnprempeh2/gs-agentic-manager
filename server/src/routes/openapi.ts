@@ -10940,6 +10940,8 @@ for (const [method, path, summary, extra] of [
   ["post", "/api/live-design/{sessionId}/helper", "One call from Impeccable's page scripts to their helper, answered by GSAM", { 400: r.badRequest }],
   ["get", "/api/live-design/{sessionId}/stream", "Long-poll the helper events for the live page", {}],
   ["post", "/api/live-design/{sessionId}/steer", "A note from the board to the live design agent", { 400: r.badRequest, 409: r.conflict }],
+  ["post", "/api/live-design/{sessionId}/undo", "Take back the newest edit not saved yet", { 409: r.conflict }],
+  ["post", "/api/live-design/{sessionId}/redo", "Put back the edit Undo took", { 409: r.conflict }],
   ["post", "/api/live-design/{sessionId}/end", "End live design, which lets the agent's run finish", {}],
   ["post", "/api/live-design/{sessionId}/restore", "Bring back an earlier version of the page as its newest version", { 400: r.badRequest, 409: r.conflict, 422: r.unprocessable }],
   ["get", "/api/live-design/{sessionId}/poll", "The session's agent: long-poll the next live design event", { 403: r.forbidden }],

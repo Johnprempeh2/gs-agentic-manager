@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 import { issuesApi } from "../api/issues";
-import { AgentWork, DeployCard, StagedEdits, useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, DeployCard, historyKey, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -115,4 +115,46 @@ describe("StagedEdits", () => {
     await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Save to draft")!.click(); });
     expect(helper).toHaveBeenCalledWith("s1", expect.objectContaining({ path: "/manual-edit-commit" }));
   });
+  it("steps through edits with Undo and Redo, and reloads the page after each", async () => {
+    const undo = vi.spyOn(liveDesignApi, "undo").mockResolvedValue({ id: "s1" } as never);
+    const redo = vi.spyOn(liveDesignApi, "redo").mockResolvedValue({ id: "s1" } as never);
+    const run = vi.fn(async (fn: (id: string) => Promise<unknown>) => { await fn("s1"); return true; });
+    const changed = vi.fn();
+    const el = document.createElement("div");
+    const root = createRoot(el);
+    const render = (view: Record<string, unknown>) => act(() => root.render(<StagedEdits live={{ view, run } as never} onChanged={changed} />));
+    const button = (label: string) => el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    render({ status: "idle", stagedCount: 2, redoCount: 0 });
+    expect(button("Redo").disabled).toBe(true);
+    await act(async () => button("Undo the last edit").click());
+    expect(undo).toHaveBeenCalledWith("s1");
+    expect(changed).toHaveBeenCalledTimes(1);
+    // Everything undone: the bar stays, so Redo can bring the edits back.
+    render({ status: "idle", stagedCount: 0, redoCount: 2 });
+    expect(el.textContent).toContain("Nothing waiting to save");
+    expect(button("Undo the last edit").disabled).toBe(true);
+    await act(async () => button("Redo").click());
+    expect(redo).toHaveBeenCalledWith("s1");
+    expect(changed).toHaveBeenCalledTimes(2);
+    // While a save runs, neither works.
+    render({ status: "applying", stagedCount: 2, redoCount: 1 });
+    expect(button("Undo the last edit").disabled).toBe(true);
+    expect(button("Redo").disabled).toBe(true);
+  });
 });
+
+describe("historyKey", () => {
+  const key = (k: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "shiftKey" | "altKey", boolean>>) =>
+    historyKey({ key: k, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods });
+  it("reads Cmd or Ctrl Z as undo, with Shift (or Ctrl Y) as redo, and nothing else", () => {
+    expect(key("z", { metaKey: true })).toBe("undo");
+    expect(key("z", { ctrlKey: true })).toBe("undo");
+    expect(key("Z", { metaKey: true, shiftKey: true })).toBe("redo");
+    expect(key("y", { ctrlKey: true })).toBe("redo");
+    expect(key("y", { metaKey: true })).toBeNull();
+    expect(key("z", {})).toBeNull();
+    expect(key("z", { metaKey: true, altKey: true })).toBeNull();
+  });
+});
+
+
