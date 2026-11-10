@@ -317,7 +317,7 @@ export function WebsiteSitemapTab({
   onEditPage?: (siteId: string, pageId: string) => void;
 }) {
   const { site, isLoading: siteLoading } = useWebsiteSite(companyId, property.id);
-  const { options, pages } = useSitemapData(companyId, site?.id ?? null);
+  const { options, pages, framing } = useSitemapData(companyId, site?.id ?? null);
   const { canManage } = useCanManageWebsite(companyId);
   const optionList = options.data ?? [];
   const pageList = pages.data ?? [];
@@ -329,13 +329,13 @@ export function WebsiteSitemapTab({
   }
   if (site && optionList.length > 0) {
     // Board users who are not viewers can edit; the server checks website:edit on every save.
-    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />;
+    return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} framing={framing} canApprove={canManage} canEdit onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />;
   }
   // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
   if (site && pageList.length > 0) {
     return (
       <div className="space-y-6">
-        <SitemapNow site={site} pages={pageList} approvedTree={null} onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />
+        <SitemapNow site={site} pages={pageList} approvedTree={null} framing={framing} onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />
         <StartSitemap companyId={companyId} site={site} pages={pageList} />
       </div>
     );

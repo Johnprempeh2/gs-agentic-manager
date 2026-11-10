@@ -80,6 +80,16 @@ export const SiteNow: Story = {
   render: () => <Frame><SitemapNow site={site} pages={pages} approvedTree={treeOf(pages)} onEditPage={() => {}} /></Frame>,
 };
 
+/** Small previews: they draw inside GSAM only, because the preview site lets only GSAM frame it. */
+export const WithPreviews: Story = {
+  render: () => <Frame><SitemapNow site={site} pages={pages} approvedTree={treeOf(pages)} framing={{ devFraming: "allowed", liveFraming: "unknown" }} onEditPage={() => {}} /></Frame>,
+};
+
+/** The preview address refuses frames: text rows, and one sentence saying why. */
+export const PreviewsRefused: Story = {
+  render: () => <Frame><SitemapNow site={site} pages={pages} approvedTree={treeOf(pages)} framing={{ devFraming: "refused", liveFraming: "unknown" }} onEditPage={() => {}} /></Frame>,
+};
+
 /** The approved sitemap leaves Proof out and lists a Pricing page that has no page row. */
 export const SitemapAndPagesDisagree: Story = {
   render: () => {

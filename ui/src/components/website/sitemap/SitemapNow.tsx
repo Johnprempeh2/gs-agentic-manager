@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ExternalLink, PenLine } from "lucide-react";
-import type { WebsitePage, WebsiteSite, WebsiteSitemapTree } from "@greatstone/shared";
+import { websitePreviewAddresses, type WebsiteHomeSummary, type WebsitePage, type WebsiteSite, type WebsiteSitemapTree } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { cn, formatDateTime } from "@/lib/utils";
 import {
@@ -42,25 +42,50 @@ function mismatchText(entry: SitemapMismatch): string {
   return `is set to the ${MENU_LABELS[entry.menu ?? "header"].toLowerCase()} menu but is not built, so the menu leaves it out.`;
 }
 
-/** The address a person opens to see a page: the development preview, else the frameable live copy. */
-export function pageViewUrl(site: Pick<WebsiteSite, "devPreviewUrl" | "livePreviewUrl">, slug: string): string | null {
-  const base = site.devPreviewUrl ?? site.livePreviewUrl;
-  if (!base) return null;
+type PreviewSite = Pick<WebsiteSite, "domain" | "livePreviewUrl" | "devPreviewUrl" | "editorFrameOrigin">;
+
+/** The address a person opens to see a page: the development preview, else the live address. */
+export function pageViewUrl(site: PreviewSite, slug: string): string | null {
+  const addresses = websitePreviewAddresses(site);
   try {
-    return new URL(slug.replace(/^\//, ""), base.endsWith("/") ? base : `${base}/`).toString();
+    return new URL(slug.replace(/^\//, ""), addresses.dev ?? addresses.live).toString();
   } catch {
     return null;
   }
 }
 
-export function SitemapNow({ site, pages, approvedTree, onEditPage }: {
+/** What the server found when it checked whether GSAM may show the site's addresses in a frame. */
+export type SitemapFraming = Pick<WebsiteHomeSummary, "liveFraming" | "devFraming">;
+
+/** The frame check of the address `pageViewUrl` uses. Undefined: not checked yet, or the check failed. */
+export function pageFraming(site: PreviewSite, framing: SitemapFraming | null | undefined) {
+  return websitePreviewAddresses(site).dev ? framing?.devFraming : framing?.liveFraming;
+}
+
+// A small, still picture of the page: the real page in a frame nobody can
+// click, tab into or hear, drawn at laptop width and scaled down. Scripts stay
+// on because some pages show nothing until theirs run.
+// ponytail: one live frame per built page, loaded as it nears the screen. Fine
+// for tens of pages; a site with hundreds wants stored screenshots instead.
+function PageThumb({ src }: { src: string }) {
+  return (
+    <div aria-hidden="true" data-testid="sitemap-now-thumb" className="relative hidden h-[100px] w-[160px] shrink-0 overflow-hidden rounded-md border border-border bg-muted sm:block">
+      <iframe src={src} title="" tabIndex={-1} loading="lazy" sandbox="allow-scripts allow-same-origin" className="pointer-events-none absolute left-0 top-0 h-[800px] w-[1280px] origin-top-left scale-[0.125] border-0" />
+    </div>
+  );
+}
+
+export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
   site: WebsiteSite;
   pages: WebsitePage[];
   /** The approved sitemap, to check the real pages against. Null: none approved yet. */
   approvedTree: WebsiteSitemapTree | null;
+  /** The frame check from the site's Home summary. Small previews show only when it says "allowed". */
+  framing?: SitemapFraming | null;
   onEditPage?: (pageId: string) => void;
 }) {
   const rows = useMemo(() => builtPageRows(pages), [pages]);
+  const frameCheck = pageFraming(site, framing);
   const mismatches = useMemo(() => sitemapMismatches(pages, approvedTree), [pages, approvedTree]);
   const suggested = useMemo(
     () => pages.filter((page) => !page.archivedAt && !isBuiltPage(page)).sort((a, b) => a.slug.localeCompare(b.slug)),
@@ -100,6 +125,7 @@ export function SitemapNow({ site, pages, approvedTree, onEditPage }: {
               </>
             )}
             {rows.length > 0 && !site.liveReleaseId ? " No release has gone live from GSAM for this site yet, so no page reads as live here." : ""}
+            {rows.length > 0 && frameCheck === "refused" ? " Small previews are off: the site's preview address does not let GSAM show it in a frame. View opens each page in a new tab." : ""}
           </p>
         </div>
         {rows.length > 0 ? (
@@ -109,6 +135,7 @@ export function SitemapNow({ site, pages, approvedTree, onEditPage }: {
               const viewUrl = pageViewUrl(site, page.slug);
               return (
                 <li key={page.id} data-testid="sitemap-now-page" className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2", INDENT[Math.min(depth, INDENT.length - 1)])}>
+                  {viewUrl && frameCheck === "allowed" ? <PageThumb src={viewUrl} /> : null}
                   <div className="min-w-40 flex-1">
                     <p className={cn("break-words text-sm leading-6", depth === 0 ? "font-semibold" : "font-medium")}>{page.title}</p>
                     <p className="break-all font-mono text-xs text-muted-foreground">{page.slug}</p>
