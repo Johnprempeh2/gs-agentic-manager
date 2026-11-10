@@ -171,7 +171,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
       if (entryKey.trim() !== detail.data?.entryKey) await websiteModuleApi.updateEntry(companyId, siteId, entryId, { entryKey: entryKey.trim() });
       return result;
     },
-    onSuccess: () => { setMessage("Draft saved. It goes live after approval, when you Deploy."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+    onSuccess: () => { setMessage("Draft saved. Once it is approved, Publish puts it on staging and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
   });
   const changeStatus = useMutation({
     mutationFn: async (action: "review" | "approve" | "archive") => {
@@ -180,7 +180,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
       if (action === "archive") return websiteModuleApi.archiveEntry(companyId, siteId, entryId);
       return websiteModuleApi.submitEntry(companyId, siteId, entryId);
     },
-    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. This change goes live when you Deploy." : "Archived. This change goes live when you Deploy."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
+    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. Publish puts this change on staging, and Deploy puts it live." : "Archived. It leaves the live site after the next Publish and Deploy."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
   });
   if (detail.error) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
   if (entryId && !detail.data) return <p className="text-sm text-muted-foreground">Loading entry</p>;
@@ -195,7 +195,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
     } catch (error) { setMessage(errorStateMessage(error)); }
   };
   return <section className="space-y-5" data-testid="website-entry-editor">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? websiteEntrySummary(entry.content)?.name ?? entry.entryKey : `New ${singular}`}</h3><p className="text-sm text-muted-foreground">{ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? websiteEntrySummary(entry.content)?.name ?? entry.entryKey : `New ${singular}`}</h3><p className="text-sm text-muted-foreground">{ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Approved changes go to staging when you Publish, and live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
     <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <label className="block space-y-1 text-sm"><span className="font-medium">Entry key</span><Input value={entryKey} onChange={(event) => setEntryKey(event.target.value)} required maxLength={200} /></label>
       <SchemaField schema={definition.definition as FieldSchema} value={fields} label="Fields" path="website-entry-fields" onChange={setFields} />
@@ -204,7 +204,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
     {entry ? <div className="flex flex-wrap gap-2">
       {entry.status === "draft" ? <Button variant="outline" onClick={() => changeStatus.mutate("review")} disabled={changeStatus.isPending || save.isPending || dirty}>Send for review</Button> : null}
       {entry.status === "review" && canManage ? <Button variant="outline" onClick={() => changeStatus.mutate("approve")} disabled={changeStatus.isPending || dirty}>Approve</Button> : null}
-      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${singular}? It leaves the live site when you Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
+      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${singular}? It leaves the live site after the next Publish and Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
     </div> : null}
     {message ? <p role="status" className="text-sm text-status-success">{message}</p> : null}
     {save.error || changeStatus.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(save.error ?? changeStatus.error)}</p> : null}
@@ -230,7 +230,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
   const shown = (entries.data ?? []).filter((entry) => entryMatches(entry, search));
   return <div className="space-y-5" data-testid="website-collections">
-    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go live when you Deploy.</p></div>
+    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go to staging when you Publish, and live when you Deploy.</p></div>
     {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Brings in the vendors, categories, products, public team cards and forms last captured from the website. Entries a person has edited are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
     <label className="block max-w-sm space-y-1 text-sm" data-tour="website-collection-picker"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); setSearch(""); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
     {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} singular={selected.singular} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
@@ -256,7 +256,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
               </li>;
             })}</ul> : <p className="text-sm text-muted-foreground">Nothing matches "{search.trim()}". Try part of the name, the category or the code.</p>}
           </> :
-          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, it goes live when you Deploy.`}</p></div>}
+          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, Publish puts it on staging and Deploy puts it live.`}</p></div>}
       </section>}
   </div>;
 }

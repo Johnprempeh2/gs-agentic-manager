@@ -141,7 +141,7 @@ export function StatusCards() {
               Today: {formatTokens(todayTotals.tokens)} · ~{formatCents(todayTotals.cents)}
             </span>
           ) : null}
-          <Button onClick={() => setCreateOpen(true)} disabled={!selectedCompanyId}>
+          <Button onClick={() => setCreateOpen(true)} disabled={!selectedCompanyId} data-tour="status-new">
             <Plus className="h-4 w-4" />
             New card
           </Button>
@@ -190,6 +190,7 @@ export function StatusCards() {
         <div className="space-y-3 pt-2">
           <button
             type="button"
+            data-tour="status-archived"
             onClick={() => setShowArchived((prev) => !prev)}
             className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >

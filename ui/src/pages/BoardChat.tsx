@@ -724,7 +724,7 @@ export function BoardChat() {
           )}
           style={innerWidth > 0 && containerWidth >= 2 * SPLIT_MIN_PANE_PX + SPLIT_DIVIDER_PX ? { width: leftPaneWidth } : undefined}
         >
-          <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 py-3">
+          <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 py-3" data-tour="conference-room-header">
             <div
               className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-border"
               aria-hidden
@@ -757,6 +757,7 @@ export function BoardChat() {
           <div
             ref={scrollContainerRef}
             className="scrollbar-auto-hide absolute inset-0 overflow-y-auto overflow-x-hidden"
+            data-tour="conference-room-messages"
           >
             {/* pb clears the floating glass dock (PAP-131) so the last bubble can
                  scroll fully above the composer. */}
@@ -998,7 +999,7 @@ export function BoardChat() {
                mask is gone — the dock carries the task-style soft top fade instead
                (mirrors IssueChatThread's composer dock). pointer-events pass through
                the fade so the scrollbar stays usable; the composer re-enables them. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5" data-tour="conference-room-composer">
             <ChatComposer
               ref={composerRef}
               value={input}
@@ -1047,7 +1048,7 @@ export function BoardChat() {
         </div>
 
         {/* Right: Agent Feed — hidden on mobile */}
-        <div className="hidden md:flex md:min-h-0 md:min-w-0 md:flex-1">
+        <div className="hidden md:flex md:min-h-0 md:min-w-0 md:flex-1" data-tour="conference-room-feed">
           <ActivityFeed />
         </div>
       </div>

@@ -89,7 +89,7 @@ function TemplateCard({
   });
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4 space-y-4">
+    <section className="rounded-lg border border-border bg-card p-4 space-y-4" data-tour="workflows-template">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-base font-semibold">{template.name}</h2>
@@ -100,7 +100,7 @@ function TemplateCard({
           <Button size="sm" variant="outline" onClick={() => setJsonText(jsonText === null ? JSON.stringify(draft, null, 2) : null)}>
             {jsonText === null ? "Advanced: edit the full template" : "Close advanced editor"}
           </Button>
-          <Button size="sm" onClick={onStart} disabled={dirty} title={dirty ? "Save or discard your changes first" : undefined}>
+          <Button size="sm" onClick={onStart} disabled={dirty} title={dirty ? "Save or discard your changes first" : undefined} data-tour="workflows-start">
             <Play className="size-3.5" />
             Start
           </Button>
@@ -135,7 +135,7 @@ function TemplateCard({
               onChange={(agentId) => setDraft(withAssignee(draft, null, agentId))}
             />
           </div>
-          <ol className="divide-y divide-border rounded-md border border-border">
+          <ol className="divide-y divide-border rounded-md border border-border" data-tour="workflows-steps">
             {draft.steps.map((step, index) => (
               <li key={step.key} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 space-y-1">

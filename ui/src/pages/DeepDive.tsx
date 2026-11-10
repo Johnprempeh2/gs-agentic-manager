@@ -164,7 +164,7 @@ function NorthStar({
   }
 
   return (
-    <Card className="gap-2 px-4 py-3">
+    <Card className="gap-2 px-4 py-3" data-tour="deep-dive-north-star">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="deep-dive-north-star" className="text-sm font-semibold">
           North Star
@@ -535,7 +535,7 @@ export function DeepDive() {
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Deep Dive</h1>
-          <div className="flex flex-wrap items-baseline gap-x-3">
+          <div className="flex flex-wrap items-baseline gap-x-3" data-tour="deep-dive-sections">
             <Link to="/deep-dive/overview" className="text-xs font-medium underline-offset-4 hover:underline">
               Overview
             </Link>
@@ -593,7 +593,7 @@ export function DeepDive() {
         onAdd={(document) => addDocumentMutation.mutate(document)}
       />
 
-      <div className="space-y-2">
+      <div className="space-y-2" data-tour="deep-dive-streams">
         <div aria-hidden="true" className="hidden grid-cols-5 px-px lg:grid">
           {DEEP_DIVE_GIF.map((gif) => (
             <div key={gif.key} className="px-3" title={gif.question}>

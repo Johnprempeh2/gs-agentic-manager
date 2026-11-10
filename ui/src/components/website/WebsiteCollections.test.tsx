@@ -111,7 +111,7 @@ describe("WebsiteCollectionsTab", () => {
     await flush();
     const editor = container.querySelector('[data-testid="website-entry-editor"]')!;
     expect(editor.querySelector("h3")?.textContent).toBe("Aspose.Words for .NET");
-    expect(editor.textContent).toContain("Draft. Changes go live when you Deploy.");
+    expect(editor.textContent).toContain("Draft. Approved changes go to staging when you Publish, and live when you Deploy.");
     expect(editor.textContent).not.toContain("Fields version");
   });
 });

@@ -390,7 +390,7 @@ export function WebsiteStyleView({
 
   return (
     <div className="space-y-8" data-testid="website-style">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3" data-tour="website-style-source">
         <div className="min-w-0 space-y-1">
           <p className="text-sm text-muted-foreground">
             Read from{" "}
@@ -425,7 +425,7 @@ export function WebsiteStyleView({
           <Palette className="size-6 text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium">No colours, fonts or building blocks found yet</p>
           <p className="max-w-md text-sm text-muted-foreground">
-            The site's stylesheet sets no CSS variables on :root and the release theme has no tokens. Publish once, or read again when the site is live.
+            The site's stylesheet sets no CSS variables on :root and the release theme has no tokens. Publish and Deploy once, or read again when the site is live.
           </p>
         </div>
       ) : null}

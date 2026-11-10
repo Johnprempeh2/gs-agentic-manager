@@ -566,7 +566,7 @@ export function WebsitePortalDocuments({ companyId, siteId }: { companyId: strin
           )}
         </div>
         {canEdit && editing === null ? (
-          <Button type="button" onClick={() => setEditing("new")} disabled={!customers.data || clients.length === 0}>
+          <Button type="button" onClick={() => setEditing("new")} disabled={!customers.data || clients.length === 0} data-tour="website-documents-new">
             <Plus className="size-4" aria-hidden="true" />
             New draft
           </Button>
@@ -586,7 +586,7 @@ export function WebsitePortalDocuments({ companyId, siteId }: { companyId: strin
       ) : null}
 
       {clients.length ? (
-        <label className="flex max-w-sm flex-col gap-1 text-sm">
+        <label className="flex max-w-sm flex-col gap-1 text-sm" data-tour="website-documents-client">
           <span className="font-medium">Client company</span>
           <NativeSelect value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
             <option value="">All clients</option>

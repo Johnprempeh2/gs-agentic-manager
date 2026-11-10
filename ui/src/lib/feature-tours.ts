@@ -2,16 +2,23 @@ import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
 import { IMAGES_TOUR } from "./images-tour";
 import { WELCOME_TOUR } from "./welcome-tour";
+import { AREA_TOURS } from "./area-tours";
 import {
+  COMMERCE_CATALOGUE_SETUP_TOUR,
   COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_CLIENTS_TOUR,
   COMMERCE_SALES_TOUR,
   WEBSITE_COLLECTIONS_TOUR,
+  WEBSITE_DOCUMENTS_TOUR,
   WEBSITE_EDITOR_TOUR,
   WEBSITE_HOME_TOUR,
   WEBSITE_PAGES_TOUR,
+  WEBSITE_PEOPLE_TOUR,
+  WEBSITE_PREVIEW_TOUR,
   WEBSITE_PROGRESS_TOUR,
   WEBSITE_RELEASES_TOUR,
   WEBSITE_SITEMAP_TOUR,
+  WEBSITE_STYLE_TOUR,
 } from "./website-tours";
 
 /**
@@ -999,7 +1006,10 @@ export const CORE_TOURS: TourDefinition[] = [
   AGENT_DETAIL_TOUR,
   INTEGRATIONS_TOUR,
   COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_CATALOGUE_SETUP_TOUR,
   COMMERCE_SALES_TOUR,
+  COMMERCE_CLIENTS_TOUR,
+  ...AREA_TOURS,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */
@@ -1023,6 +1033,10 @@ export const ALL_TOURS: TourDefinition[] = [
   WEBSITE_PROGRESS_TOUR,
   WEBSITE_COLLECTIONS_TOUR,
   WEBSITE_RELEASES_TOUR,
+  WEBSITE_PREVIEW_TOUR,
+  WEBSITE_STYLE_TOUR,
+  WEBSITE_DOCUMENTS_TOUR,
+  WEBSITE_PEOPLE_TOUR,
   WEBSITE_TOUR,
   GITHUB_SHARE_TOUR,
   TEAM_CHAT_TOUR,

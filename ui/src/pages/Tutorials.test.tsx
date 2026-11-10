@@ -15,6 +15,9 @@ const flags = vi.hoisted(() => ({
   enableStrategyBoard: false,
   enableWebsiteView: true,
   enableApps: false,
+  enableStatusCards: false,
+  enableCases: false,
+  enableDeepDive: false,
 }));
 const server = vi.hoisted(() => ({
   rows: [] as Array<{ tourKey: string; tourVersion: number; seenAt: string }>,
@@ -25,6 +28,7 @@ const data = vi.hoisted(() => ({
   pages: [] as Array<{ id: string; slug: string; status: string; archivedAt: string | null }>,
   shop: false,
 }));
+const access = vi.hoisted(() => ({ canRelease: false }));
 
 vi.mock("@/api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: async () => ({ ...flags }) } }));
 vi.mock("@/api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: "ama" } }) } }));
@@ -44,6 +48,7 @@ vi.mock("@/api/pipelines", () => ({
 vi.mock("@/api/website", () => ({
   websiteModuleApi: { sites: async () => [{ id: "site-1" }], pages: async () => data.pages },
 }));
+vi.mock("@/hooks/useReleases", () => ({ useCanRelease: () => ({ canRelease: access.canRelease, isLoading: false }) }));
 vi.mock("@/hooks/useCommerceSite", () => ({ useCommerceSite: () => ({ commerce: data.shop ? {} : null, isLoading: false }) }));
 vi.mock("@/api/issues", () => ({ issuesApi: { list: async () => [{ id: "i1", identifier: "GRE-7" }] } }));
 vi.mock("@/api/agents", () => ({ agentsApi: { list: async () => [] } }));
@@ -73,6 +78,8 @@ beforeEach(() => {
     { id: "p-about", slug: "/about", status: "built", archivedAt: null },
   ];
   data.shop = false;
+  access.canRelease = false;
+  Object.assign(flags, { enableStatusCards: false, enableCases: false, enableDeepDive: false });
 });
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
@@ -128,11 +135,11 @@ describe("Tutorials", () => {
     expect(byArea).toEqual([
       ["Getting started", ["welcome", "search-ask", "search", "since-last-visit"]],
       ["Today", ["decisions", "my-tasks", "inbox", "calendar", "blocked", "approvals", "morning"]],
-      ["Work", ["dashboard", "tasks", "task-detail", "projects", "goals", "memory"]],
-      ["Team", ["agents", "agent-detail", "scorecard", "weekly-report"]],
+      ["Work", ["dashboard", "tasks", "task-detail", "projects", "goals", "memory", "workflows", "artifacts", "links"]],
+      ["Team", ["agents", "agent-detail", "scorecard", "weekly-report", "conference-room"]],
       ["Clients", ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images"]],
-      ["Website and Commerce", ["website-home", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-releases", "website"]],
-      ["Set-up", ["routines", "integrations"]],
+      ["Website and Commerce", ["website-home", "website-preview", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-style", "website-documents", "website-people", "website-releases", "website"]],
+      ["Set-up", ["routines", "integrations", "connectors", "skills", "settings"]],
     ]);
     expect(row("pipelines-list")!.textContent).toContain("Seen");
     expect(row("pipeline-board")!.textContent).toContain("Not seen yet");
@@ -171,7 +178,10 @@ describe("Tutorials", () => {
   });
 
   it("opens each Website tab tour on its own tab", async () => {
-    for (const [id, tab] of [["website-pages", "editor"], ["website-progress", "progress"], ["website-collections", "collections"], ["website-releases", "releases"]]) {
+    for (const [id, tab] of [
+      ["website-pages", "editor"], ["website-progress", "progress"], ["website-collections", "collections"], ["website-releases", "releases"],
+      ["website-preview", "preview"], ["website-style", "style"], ["website-documents", "documents"], ["website-people", "people"],
+    ]) {
       await render();
       await act(async () => startButton(id).click());
       await flush();
@@ -207,6 +217,12 @@ describe("Tutorials", () => {
     await act(async () => startButton("commerce-sales").click());
     await flush();
     expect(pathname).toBe("/commerce/quotes");
+    for (const [id, path] of [["commerce-catalogue-setup", "/commerce/vendors"], ["commerce-clients", "/commerce/customers"]]) {
+      await render();
+      await act(async () => startButton(id).click());
+      await flush();
+      expect(pathname).toBe(path);
+    }
   });
 
   it("Start on the task tour opens the newest task, and says so when there are no agents", async () => {
@@ -285,5 +301,23 @@ describe("Tutorials", () => {
     await act(async () => next.click());
     await flush();
     expect(pathname).toBe("/issues");
+  });
+
+  it("lists GSAM releases only for owners and admins, and the Deep Dive only with Cases on", async () => {
+    Object.assign(flags, { enableStatusCards: true, enableDeepDive: true });
+    await render();
+    expect(row("status")).not.toBeNull();
+    expect(row("gsam-releases")).toBeNull();
+    expect(row("deep-dive")).toBeNull();
+    expect(row("cases")).toBeNull();
+    access.canRelease = true;
+    flags.enableCases = true;
+    await render();
+    expect(row("gsam-releases")).not.toBeNull();
+    expect(row("deep-dive")).not.toBeNull();
+    expect(row("cases")).not.toBeNull();
+    await act(async () => startButton("gsam-releases").click());
+    await flush();
+    expect(pathname + search).toBe("/releases?tour=gsam-releases");
   });
 });

@@ -377,7 +377,7 @@ export function Artifacts() {
         <EmptyState icon={showGroupCards ? Layers : Package} message={emptyMessage} />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3" data-tour="artifacts-grid">
             {showGroupCards
               ? groups.map((group) => (
                   <ArtifactGroupCard key={group.id} group={group} to={stackTo(group.issue.id)} />
