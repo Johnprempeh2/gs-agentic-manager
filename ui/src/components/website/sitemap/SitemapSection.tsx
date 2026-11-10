@@ -26,7 +26,7 @@ import { ErrorState, errorStateMessage } from "../../ErrorState";
 import { SitemapBoardView } from "./SitemapBoard";
 import { countOf, nodeStatus, pagesLookup } from "./model";
 import { SitemapCompareView } from "./SitemapCompare";
-import { SitemapNow } from "./SitemapNow";
+import { SitemapNow, type SitemapFraming } from "./SitemapNow";
 import { SitemapTreeView } from "./SitemapTree";
 import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./SitemapViews";
 
@@ -195,7 +195,13 @@ export function useSitemapData(companyId: string, siteId: string | null) {
     queryFn: () => websiteModuleApi.pages(companyId, siteId!),
     enabled: !!siteId,
   });
-  return { options, pages };
+  // The Home tab's read, shared from its cache: only its frame check is used here.
+  const home = useQuery({
+    queryKey: queryKeys.website.home(companyId, siteId ?? ""),
+    queryFn: () => websiteModuleApi.home(companyId, siteId!),
+    enabled: !!siteId,
+  });
+  return { options, pages, framing: home.data ?? null };
 }
 
 /** Starts the first option: from the site's pages when it has some, else a Home page. */
@@ -225,8 +231,10 @@ export function StartSitemap({ companyId, site, pages }: { companyId: string; si
   );
 }
 
-export function SitemapSection({ companyId, site, options, pages, canApprove, canEdit, onEditPage }: {
+export function SitemapSection({ companyId, site, options, pages, framing, canApprove, canEdit, onEditPage }: {
   companyId: string;
+  /** The site's frame check, for the small page previews on "Site now". */
+  framing?: SitemapFraming | null;
   /** Edit page on a row with a page: the full-screen editor (GRE-2296). */
   onEditPage?: (pageId: string) => void;
   site: WebsiteSite;
@@ -335,7 +343,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
       {view === "now" ? (
         <>
           {draft ? <p role="status" className="text-sm text-status-warning-foreground">You have unsaved changes to {option.name}. Open Tree to save or discard them.</p> : null}
-          <SitemapNow site={site} pages={pages} approvedTree={approved?.tree ?? null} onEditPage={onEditPage} />
+          <SitemapNow site={site} pages={pages} approvedTree={approved?.tree ?? null} framing={framing} onEditPage={onEditPage} />
         </>
       ) : null}
       {view === "now" ? null : (
