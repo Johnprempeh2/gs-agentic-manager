@@ -480,7 +480,7 @@ export function CommercePage() {
       : <CommerceList key={resource} companyId={companyId} siteId={siteId} resource={resource} />;
   } else if (isCatalogueResource(section)) {
     body = recordId
-      ? <CatalogueRecord key={`${section}:${recordId}`} companyId={companyId} siteId={siteId} resource={section} recordId={recordId} />
+      ? <CatalogueRecord key={`${section}:${recordId}`} companyId={companyId} siteId={siteId} resource={section} recordId={recordId} domain={commerce.site?.domain} />
       : <CatalogueList key={section} companyId={companyId} siteId={siteId} resource={section} />;
   } else if (section === "customer-tiers") {
     body = <CustomerTierList companyId={companyId} siteId={siteId} />;

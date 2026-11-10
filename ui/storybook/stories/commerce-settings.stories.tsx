@@ -7,9 +7,12 @@ import { GREATSTONE_COMPANY_ID } from "@/lib/commerce";
 import { queryKeys } from "@/lib/queryKeys";
 import { Route, Routes, useNavigate } from "@/lib/router";
 import { storybookCompanies } from "../fixtures/paperclipData";
+import publicCatalogue from "../../../server/src/services/website/public-import-v1.json?raw";
 
 // The commerce settings screens (GRE-4784) on the real Commerce page, with the website bridge answered from synthetic
-// rows. Layout review only: no client names, keys or claims.
+// rows. Layout review only: no client names, keys or claims. The catalogue stories use the public website's own
+// catalogue as it was captured (names, descriptions and prices are the site's, gaps included), shaped as the bridge
+// sends it.
 
 const G = GREATSTONE_COMPANY_ID;
 const SITE = "site-commerce";
@@ -57,9 +60,18 @@ const receipts = [
   { id: "a2", customer_id: "0c0c0c0c-0000-4000-8000-000000000002", signer_name: "Sam Example", signer_email: "sam@sample-analytics.test", action: "sign", document_version: 1, accepted_at: "2026-10-21T16:40:00Z" },
 ];
 
+type PublicRow = Record<string, unknown> & { id: string; vendor?: { id: string } | null; category?: { id: string } | null };
+const catalogue = JSON.parse(publicCatalogue) as { vendors: PublicRow[]; categories: PublicRow[]; products: PublicRow[] };
+const published = (row: PublicRow) => ({ ...row, status: "published", row_version: 1 });
+const offerings = catalogue.products.map((product) => ({
+  ...published(product), vendor_id: product.vendor?.id ?? null, category_id: product.category?.id ?? null, media: [],
+}));
+const OFFERING = offerings.find((offering) => (offering as PublicRow).slug === "aspose-words-for-java")?.id ?? offerings[0]!.id;
+
 const DATA: Record<string, Record<string, unknown>[]> = {
   customers: clients, engagements, licences, orders, enquiries, "portal-acceptances": receipts,
-  quotes: [], invoices: [], "customer-tiers": tiers, vendors: [],
+  quotes: [], invoices: [], "customer-tiers": tiers,
+  vendors: catalogue.vendors.map(published), categories: catalogue.categories.map(published), offerings,
 };
 
 function installCommerceFixtures() {
@@ -130,4 +142,9 @@ export const PortalReceipts: Story = { render: () => <CommerceAt path="/commerce
 export const CustomerTiers: Story = { render: () => <CommerceAt path="/commerce/customer-tiers" /> };
 export const OrderStatus: Story = { render: () => <CommerceAt path={`/commerce/orders/${ORDER}`} /> };
 export const LicenceKey: Story = { render: () => <CommerceAt path={`/commerce/licences/${LICENCE}`} /> };
+export const CatalogueOfferings: Story = { render: () => <CommerceAt path="/commerce/offerings" /> };
+export const CatalogueNeedsAttention: Story = { render: () => <CommerceAt path="/commerce/offerings?attention=1" /> };
+export const CatalogueSearch: Story = { render: () => <CommerceAt path="/commerce/offerings?q=pdf+java" /> };
+export const CatalogueOffering: Story = { render: () => <CommerceAt path={`/commerce/offerings/${OFFERING}`} /> };
+export const CatalogueVendors: Story = { render: () => <CommerceAt path="/commerce/vendors" /> };
 export const ClientPageAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };
