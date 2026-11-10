@@ -212,3 +212,43 @@ export function previewEdits(html: string, ops: Op[]) {
   return "failed" in result ? html : result.html;
 }
 
+// A quoted phrase: "…", “…”, ‘…’ or '…'.
+const QUOTED = `(?:"([^"]+)"|“([^”]+)”|‘([^’]+)’|'([^']+)')`;
+const QUICK_CHANGE = new RegExp(
+  `^(?:please\\s+)?(?:(?:change|replace|rename|update|swap|make)\\s+)?(?:the\\s+)?(?:(?:words?|text|heading|title|button|link|label)\\s+)?${QUOTED}\\s+(?:to|with|into|for|->|→)\\s+${QUOTED}\\s*[.!]?$`,
+  "i",
+);
+
+/** A request that is only a change of words ("change “Book a call” to “Talk to us”"): the old and new words, or null. */
+export function parseQuickChange(message: string) {
+  const m = message.trim().match(QUICK_CHANGE);
+  if (!m) return null;
+  const from = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim();
+  const to = (m[5] ?? m[6] ?? m[7] ?? m[8] ?? "").trim();
+  return from && to && from !== to && to.length <= MAX_TEXT ? { from, to } : null;
+}
+
+/**
+ * The edit for a quick change of words, found in the page as the editor shows it: the one text leaf
+ * whose words are exactly the old ones (ignoring spacing and case). Anything less certain fails, so
+ * the request goes to the agent instead.
+ */
+export function quickTextOp(html: string, change: { from: string; to: string }): Op | { failed: string } {
+  const doc = new JSDOM(html).window.document;
+  const page = doc.querySelector("#gs-page");
+  const root: Element = page ?? doc.body;
+  const want = norm(change.from).toLowerCase();
+  const found = [...root.querySelectorAll("*")].filter(
+    (el) => isLeaf(el) && !RAW_TEXT.has(el.localName) && !touchesIsland(el) && !el.closest("[data-gs-staged-removed]") && norm(el.textContent).toLowerCase() === want,
+  );
+  if (found.length !== 1) return { failed: found.length ? "those words are on the page more than once" : "those words are not on the page" };
+  const el = found[0]!;
+  return {
+    // The page itself: the saved page finds the words by their text, as it does for a twin-free pencil edit.
+    ref: page ? `${page.localName}#gs-page:nth-of-type(1)` : "body",
+    originalText: norm(el.textContent),
+    newText: change.to,
+    leaf: { tagName: el.localName },
+    quick: true,
+  };
+}
