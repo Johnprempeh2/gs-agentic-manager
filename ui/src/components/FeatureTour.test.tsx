@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TourDefinition } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
-import { FeatureTour, findTourTarget } from "./FeatureTour";
+import { FeatureTour, findTourTarget, tourCardAnchor } from "./FeatureTour";
 
 const flags = vi.hoisted(() => ({ enablePipelines: true }));
 // The server's copy of "seen", shared by every "device" (fresh storage + query cache) in a test.
@@ -209,6 +209,26 @@ describe("FeatureTour", () => {
     expect(document.querySelector("[data-tour-active]")).toBeNull();
   });
 
+  it("opens nothing by itself when none of a tour's elements is on the page", async () => {
+    const elsewhere: TourDefinition = { ...tour, steps: [{ target: "missing", title: "Missing", body: "Not here." }, { target: "also-missing", title: "Gone", body: "Not here." }] };
+    await render("/page", undefined, elsewhere);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(card()).toBeNull();
+    expect(server.rows).toEqual([]);
+  });
+
+  it("waits for a page that loads late before its first-visit tour opens", async () => {
+    const late: TourDefinition = { ...tour, steps: [{ target: "late", title: "Late", body: "Arrives after the page." }] };
+    await render("/page", undefined, late);
+    expect(card()).toBeNull();
+    const el = document.createElement("div");
+    el.setAttribute("aria-label", "late");
+    el.textContent = "late";
+    container.append(el);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(card()?.textContent).toContain("Step 1 of 1");
+  });
+
   it("takes the first target on screen when a step lists several, and skips the step when none is", async () => {
     await render("/page", undefined, {
       ...tour,
@@ -291,6 +311,24 @@ describe("FeatureTour", () => {
       await act(async () => button("Show me around")!.click());
       expect(card()?.textContent).toContain("Step 1 of 1");
     });
+  });
+});
+
+describe("tourCardAnchor", () => {
+  it("hangs the card from a part that has room above or below it", () => {
+    const part = new DOMRect(40, 100, 600, 80);
+    expect(tourCardAnchor(part, 900)).toBe(part);
+    // room above only: the card can sit over it
+    const low = new DOMRect(40, 500, 600, 900);
+    expect(tourCardAnchor(low, 900)).toBe(low);
+  });
+
+  it("keeps the card on the page for a part taller than the window", () => {
+    // a long list, centred: its top and bottom edges are both off the page
+    const anchor = tourCardAnchor(new DOMRect(40, -300, 600, 1500), 900);
+    expect([anchor.top, anchor.height, anchor.left]).toEqual([72, 0, 40]);
+    // a list that nearly fills the window: no room for the card above or below
+    expect(tourCardAnchor(new DOMRect(40, 100, 600, 700), 900).bottom).toBe(100);
   });
 });
 

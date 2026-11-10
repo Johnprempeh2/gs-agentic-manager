@@ -34,6 +34,7 @@ import { MetricCard } from "../components/MetricCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { FeatureTour } from "../components/FeatureTour";
 import { WEBSITE_TOUR } from "../lib/feature-tours";
+import { WEBSITE_HOME_TOUR, WEBSITE_SITEMAP_TOUR } from "../lib/website-tours";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
@@ -623,6 +624,8 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = notice ? "traffic" : websiteTabFrom(searchParams.get("tab"));
+  // Home and Sitemap have a tour each; Traffic keeps its own beside the report.
+  const hubTour = tab === "home" ? WEBSITE_HOME_TOUR : tab === "sitemap" ? WEBSITE_SITEMAP_TOUR : null;
   const [editingProject, setEditingProject] = useState(false);
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects.list(companyId),
@@ -642,7 +645,10 @@ function PropertyHub({ companyId, property, signInAvailable, notice, canManage }
   return (
     <div className="w-full max-w-7xl space-y-6">
       <header className="space-y-2">
-        <h1 className="text-xl font-bold">Website</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold">Website</h1>
+          {hubTour ? <FeatureTour key={hubTour.id} tour={hubTour} /> : null}
+        </div>
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{property.name}</span>{" "}
           {siteUrl ? (

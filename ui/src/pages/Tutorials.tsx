@@ -7,10 +7,12 @@ import { issuesApi } from "@/api/issues";
 import { pipelinesApi } from "@/api/pipelines";
 import { teamChatsApi } from "@/api/teamChats";
 import { toolsApi } from "@/api/tools";
+import { websiteModuleApi } from "@/api/website";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { useCommerceSite } from "@/hooks/useCommerceSite";
 import { useTourSeen } from "@/hooks/useTourSeen";
 import { CLIENT_CASE_TYPE } from "@/lib/client-case";
 import { ALL_TOURS, type TourDefinition } from "@/lib/feature-tours";
@@ -21,6 +23,17 @@ import { agentUrl } from "@/lib/utils";
 
 /** The tours a new person should take first, in order. */
 export const START_HERE_TOUR_IDS = ["welcome", "decisions", "tasks", "agents"] as const;
+
+/** Tours by area, in the order a person meets them. A tour no area names lands in More. */
+export const AREAS: Array<{ label: string; note: string; ids: string[] }> = [
+  { label: "Getting started", note: "The welcome tour, and how to find things and catch up.", ids: ["welcome", "search-ask", "search", "since-last-visit"] },
+  { label: "Today", note: "What is waiting on you, and your day.", ids: ["decisions", "my-tasks", "calendar", "blocked", "approvals", "morning"] },
+  { label: "Work", note: "Tasks, projects and goals.", ids: ["dashboard", "tasks", "task-detail", "projects", "goals", "memory", "strategy-board"] },
+  { label: "Team", note: "The agents, what they finished, and chats.", ids: ["agents", "agent-detail", "scorecard", "weekly-report", "team-chat"] },
+  { label: "Clients", note: "The organisations we work with and what was made for them.", ids: ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images"] },
+  { label: "Website and Commerce", note: "The website's pages and what it sells.", ids: ["website-home", "website-sitemap", "website-editor", "commerce-catalogue", "website"] },
+  { label: "Set-up", note: "Work that repeats, and the tools GSAM is connected to.", ids: ["routines", "integrations", "github-share-with-agents"] },
+];
 
 type StartTarget = { path: string } | { nothing: string };
 
@@ -34,6 +47,15 @@ async function resolveStart(tour: TourDefinition, companyId: string): Promise<St
     const [first] = await agentsApi.list(companyId);
     return first ? { path: agentUrl(first) } : { nothing: "There are no agents yet. Hire one first." };
   }
+  if (tour.id === "website-editor") {
+    // The editor needs a page: the first built one, and not the home page when there is another.
+    const [site] = await websiteModuleApi.sites(companyId);
+    const built = site ? (await websiteModuleApi.pages(companyId, site.id)).filter((page) => !page.archivedAt && page.status !== "planned") : [];
+    const page = built.find((candidate) => candidate.slug !== "/") ?? built[0];
+    return page
+      ? { path: `/website/sites/${site!.id}/pages/${page.id}/design` }
+      : { nothing: "There are no built pages yet. Build one from the sitemap first." };
+  }
   if (tour.route) return { path: tour.route.path };
   const tourId = tour.id;
   switch (tourId) {
@@ -41,6 +63,10 @@ async function resolveStart(tour: TourDefinition, companyId: string): Promise<St
       return { path: "/pipelines" };
     case "strategy-board":
       return { path: "/strategy-board" };
+    case "website-home":
+      return { path: "/website?tab=home" };
+    case "website-sitemap":
+      return { path: "/website?tab=sitemap" };
     case "website":
       // The tour points at the traffic report, which no longer opens first.
       return { path: "/website?tab=traffic" };
@@ -94,7 +120,13 @@ export function Tutorials() {
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const tours = ALL_TOURS.filter((tour) => !tour.flag || settings?.[tour.flag] === true);
+  const { commerce } = useCommerceSite(selectedCompanyId);
+  // The catalogue only exists where the organisation has a shop.
+  const tours = ALL_TOURS.filter((tour) => (!tour.flag || settings?.[tour.flag] === true) && (tour.id !== "commerce-catalogue" || commerce !== null));
+  const groups = [
+    ...AREAS.map((area) => ({ ...area, list: area.ids.flatMap((id) => tours.filter((tour) => tour.id === id)) })),
+    { label: "More", note: "Other tours.", list: tours.filter((tour) => !AREAS.some((area) => area.ids.includes(tour.id))) },
+  ].filter((group) => group.list.length > 0);
 
   async function start(tour: TourDefinition) {
     if (!selectedCompanyId) return;
@@ -102,7 +134,7 @@ export function Tutorials() {
     setNotes((current) => ({ ...current, [tour.id]: "" }));
     try {
       const target = await resolveStart(tour, selectedCompanyId);
-      if ("path" in target) navigate(`${target.path}?tour=${tour.id}`);
+      if ("path" in target) navigate(`${target.path}${target.path.includes("?") ? "&" : "?"}tour=${tour.id}`);
       else setNotes((current) => ({ ...current, [tour.id]: target.nothing }));
     } catch {
       setNotes((current) => ({ ...current, [tour.id]: "Could not open this tour. Try again in a moment." }));
@@ -126,7 +158,7 @@ export function Tutorials() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           {/* The page bar already says Tutorials; the line says what it is for. */}
-          <p className="text-sm text-muted-foreground">Short guided tours of each page. Start one at any time, or select Show me around at the top of a page.</p>
+          <p className="text-sm text-muted-foreground">Short guided tours, grouped by area. Start or replay one at any time, or select Show me around at the top of a page.</p>
         </div>
         {tours.length > 0 ? (
           <Button type="button" variant="outline" size="sm" onClick={reset} disabled={resetState === "pending"}>
@@ -183,10 +215,7 @@ export function Tutorials() {
       {isFetched && tours.length === 0 ? (
         <p className="text-sm text-muted-foreground">No tutorials yet. They appear here when their features are switched on.</p>
       ) : (
-        [
-          { label: "Everyday pages", note: "Short tours of the pages you will use most. Each one takes under a minute.", list: tours.filter((tour) => tour.route) },
-          { label: "Features", note: "Tours of the features your organisation has switched on.", list: tours.filter((tour) => !tour.route) },
-        ].filter((group) => group.list.length > 0).map((group) => (
+        groups.map((group) => (
           <section key={group.label} className="space-y-2" aria-label={group.label}>
             <div className="space-y-0.5">
               <h2 className="text-sm font-semibold text-foreground">{group.label}</h2>
@@ -210,9 +239,9 @@ export function Tutorials() {
                       size="sm"
                       onClick={() => start(tour)}
                       disabled={busy !== null || !selectedCompanyId}
-                      aria-label={`Start the ${tour.title} tutorial`}
+                      aria-label={`${seen ? "Replay" : "Start"} the ${tour.title} tutorial`}
                     >
-                      Start
+                      {seen ? "Replay" : "Start"}
                     </Button>
                   </li>
                 );

@@ -6,7 +6,8 @@ import { Tabs } from "@/components/ui/tabs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: true }) }));
+const screen = vi.hoisted(() => ({ isMobile: true }));
+vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ ...screen }) }));
 
 const { PageTabBar } = await import("./PageTabBar");
 
@@ -19,6 +20,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  screen.isMobile = true;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -43,4 +45,10 @@ it("keeps the phone picker unlabelled by default", () => {
   render(<PageTabBar items={items} value="general" onValueChange={() => {}} />);
   expect(container.querySelector("label")).toBeNull();
   expect(container.querySelector("select")?.getAttribute("aria-label")).toBe("Page section");
+});
+
+it("names the tab list on a computer, so a tour can point at it", () => {
+  screen.isMobile = false;
+  render(<PageTabBar items={items} value="general" onValueChange={() => {}} ariaLabel="Website section" />);
+  expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe("Website section");
 });

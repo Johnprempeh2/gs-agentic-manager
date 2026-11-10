@@ -26,6 +26,19 @@ export function findTourTarget(target: string): HTMLElement | null {
   return null;
 }
 
+/** The height a card needs beside the part it points at, with its gap. */
+const CARD_ROOM = 220;
+
+/**
+ * Where the card hangs for a part of the page. A part with no room left above or
+ * below it on screen (a long list) gets the card just inside its top edge, so the
+ * card is never off the page.
+ */
+export function tourCardAnchor(rect: DOMRect, windowHeight: number): DOMRect {
+  if (Math.max(rect.top, windowHeight - rect.bottom) >= CARD_ROOM) return rect;
+  return new DOMRect(rect.left, Math.max(rect.top, 72), rect.width, 0);
+}
+
 /** `el` is null for a step about the page as a whole. */
 type ShownStep = TourStep & { el: HTMLElement | null };
 
@@ -105,13 +118,21 @@ export function FeatureTour({
   }, [ready, enabled, requested, start, setSearchParams]);
 
   // First visit: once the seen state is known (never while loading, so no flash),
-  // wait a tick so the page's own content has rendered.
+  // wait a tick so the page's own content has rendered, and keep looking for about
+  // three seconds on a page that loads late (the page editor).
   useEffect(() => {
     if (!ready || !enabled || !autoStart || requested || seen !== false || autoStarted.current) return;
-    const timer = window.setTimeout(() => {
-      autoStarted.current = true;
-      start();
-    }, 0);
+    let tries = 0;
+    let timer = 0;
+    const attempt = () => {
+      tries += 1;
+      if (start() || tries >= 20) {
+        autoStarted.current = true;
+        return;
+      }
+      timer = window.setTimeout(attempt, 150);
+    };
+    timer = window.setTimeout(attempt, 0);
     return () => window.clearTimeout(timer);
   }, [ready, enabled, autoStart, requested, seen, start]);
 
@@ -137,7 +158,7 @@ export function FeatureTour({
         isPhone || !step
           ? new DOMRect(16, window.innerHeight - 16, window.innerWidth - 32, 0)
           : step.el
-            ? step.el.getBoundingClientRect()
+            ? tourCardAnchor(step.el.getBoundingClientRect(), window.innerHeight)
             : new DOMRect(window.innerWidth / 2, 72, 0, 0),
     },
   }), [isPhone, step]);
@@ -197,6 +218,8 @@ export function FeatureTour({
             side={isPhone ? "top" : "bottom"}
             align={isPhone || general ? "center" : "start"}
             sideOffset={isPhone ? 0 : 12}
+            // Follow the part while the page scrolls it into place, whichever box does the scrolling.
+            updatePositionStrategy="always"
             aria-labelledby={titleId}
             aria-describedby={bodyId}
             onOpenAutoFocus={(event) => { event.preventDefault(); nextRef.current?.focus(); }}
