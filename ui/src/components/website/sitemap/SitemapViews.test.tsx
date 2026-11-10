@@ -63,8 +63,9 @@ describe("Sitemap Menus and Journeys status", () => {
     const onEditPage = vi.fn();
     const extra: Tree = { ...tree, nodes: [...tree.nodes, { id: "n3", title: "New", path: "/new", parentId: null, order: 1, menu: "none", menuOrder: null, pageId: null }] };
     render(<SitemapTreeView tree={extra} onChange={() => {}} pagesById={pagesById} readOnly onEditPage={onEditPage} />);
-    const edits = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent === "Edit page");
-    expect(edits.map((button) => button.getAttribute("aria-label"))).toEqual(["Edit page Home", "Edit page Tools"]);
+    // Tools is planned: there is nothing to edit yet, so its button says what it does.
+    const edits = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => ["Edit page", "Build page"].includes(button.textContent ?? ""));
+    expect(edits.map((button) => button.getAttribute("aria-label"))).toEqual(["Edit page Home", "Build page Tools"]);
     act(() => edits[1]!.click());
     expect(onEditPage).toHaveBeenCalledWith("page-2");
   });
