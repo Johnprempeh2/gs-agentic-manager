@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
-import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, RotateCcw, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { deliverablesApi } from "../api/deliverables";
 import { websiteModuleApi } from "../api/website";
 import { useCompany } from "../context/CompanyContext";
@@ -23,6 +16,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { LiveDesignChat, useLiveDesign } from "../components/LiveDesignChat";
+import { useDecisionCardContext } from "../components/website/WebsiteHub";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
 
 // Impeccable asks "Apply 2 edits?" with confirm(), so the live page may open modals.
@@ -128,6 +122,7 @@ export function WebsitePageLiveEditor() {
   });
   // The current page stays listed even when it is still a planned sitemap page (opened from the Sitemap tab).
   const builtPages = (pages ?? []).filter((p) => !p.archivedAt && (p.status !== "planned" || p.id === pageId));
+  const { agentMap, currentUserId } = useDecisionCardContext(companyId);
   const { data: revisions } = useQuery({
     queryKey: ["website-live-revisions", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.revisions(companyId, siteId, pageId),
@@ -145,7 +140,11 @@ export function WebsitePageLiveEditor() {
           <NativeSelect
             aria-label="Page"
             value={pageId}
-            onChange={(e) => navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`)}
+            onChange={(e) => {
+              // Leaving ends this page's session, and edits not saved yet go with it.
+              if ((live.view?.stagedCount ?? 0) > 0 && !window.confirm(LEAVE_WARNING)) return;
+              navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`);
+            }}
             className="h-8 max-w-48"
           >
             {/* Only pages that exist on the site; planned sitemap pages are built from the Sitemap tab. */}
@@ -161,6 +160,10 @@ export function WebsitePageLiveEditor() {
         createdAt: r.createdAt,
         restoreId: r.id,
         current: r.id === current,
+        what: r.changeSummary,
+        by: r.createdByUserId
+          ? r.createdByUserId === currentUserId ? "you" : "a person"
+          : r.createdByAgentId ? agentMap.get(r.createdByAgentId)?.name ?? "an agent" : null,
       }))}
       onRestore={(revisionId) => void live.run(() => websiteModuleApi.liveRestore(companyId, siteId, pageId, revisionId))}
       engine={engine}
@@ -169,14 +172,20 @@ export function WebsitePageLiveEditor() {
   );
 }
 
-interface VersionItem {
+export interface VersionItem {
   id: string;
   version: number;
   createdAt: string;
   /** What Restore brings back; null when it cannot be restored. */
   restoreId: string | null;
   current: boolean;
+  /** Who saved it, in plain words ("you", an agent's name), when known. */
+  by?: string | null;
+  /** What the save was ("Edited by hand", "Live design"), when known. */
+  what?: string | null;
 }
+
+const LEAVE_WARNING = "Some edits on this page are not saved yet. Leave and lose them?";
 
 /**
  * The full-screen live editor: the chat with the agent on the left, the page on
@@ -229,6 +238,25 @@ function LiveEditorShell({
   useEffect(() => setEditing(true), [pageId]);
   // An agent's code change shown in place of the page, to compare before it goes anywhere.
   const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
+  // An earlier version on show, to look at before deciding to restore it. Nothing in it can be changed.
+  const [viewing, setViewing] = useState<VersionItem | null>(null);
+  useEffect(() => setViewing(null), [pageId]);
+  const viewId = viewing?.restoreId ?? null;
+  const viewIdRef = useRef(viewId);
+  viewIdRef.current = viewId;
+  const busy = live.view?.status !== "idle" && live.view?.status !== "waiting_agent";
+  const unsaved = (live.view?.stagedCount ?? 0) > 0;
+  // Closing or reloading the tab ends the session, and edits not saved yet go with it: ask first.
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
+  const refresh = live.run;
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, engineOrigin ?? "*");
@@ -239,10 +267,12 @@ function LiveEditorShell({
   const sendDraft = useCallback(async () => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win || !engineNonce.current || !pageId) return;
-    const payload = await engine.draft(pageId).catch(() => null);
+    const payload = await engine.draft(viewId ?? pageId).catch(() => null);
     if (!payload || engineNonce.current === null) return;
     win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "live-draft", payload, protocol: 1, session: engineNonce.current }, engineOrigin);
-  }, [engine, engineOrigin, pageId]);
+    // An earlier version is for looking at: its editing tools stay hidden.
+    if (viewId) toFrame({ kind: "editing", on: false });
+  }, [engine, engineOrigin, pageId, viewId, toFrame]);
   const sayHello = useCallback(() => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win) return;
@@ -257,7 +287,7 @@ function LiveEditorShell({
   // A new page or version is a new frame load, so it gets a fresh nonce.
   useEffect(() => {
     engineNonce.current = null;
-  }, [frameSrc, pageId]);
+  }, [frameSrc, pageId, viewId]);
   useEffect(() => {
     if (!engineOrigin) return;
     const onEngine = (e: MessageEvent) => {
@@ -302,6 +332,11 @@ function LiveEditorShell({
       if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
       const m = e.data as Record<string, unknown> | null;
       if (!m || m.source !== "gs-impeccable") return;
+      // An earlier version on show is read-only: nothing its frame asks for reaches the page's session.
+      if (viewIdRef.current) {
+        if (m.kind === "request") toFrame({ kind: "response", rid: m.rid, status: 409, body: JSON.stringify({ error: "This is an earlier version, shown to look at only." }) });
+        return;
+      }
       if (m.kind === "locked-pick") {
         setLocked(typeof m.label === "string" && m.label ? m.label.slice(0, 80) : null);
       } else if (m.kind === "page-health") {
@@ -368,7 +403,11 @@ function LiveEditorShell({
               ...(extra.position === "before" || extra.position === "after" ? { position: extra.position } : {}),
             },
           })
-          .then((r) => toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType }))
+          .then((r) => {
+            toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType });
+            // A direct edit was staged, saved or dropped: show it here at once instead of at the next poll.
+            if (m.method === "POST" && String(m.path).startsWith("/manual-edit")) void refresh((id) => liveDesignApi.get(id));
+          })
           .catch((err: unknown) =>
             toFrame({ kind: "response", rid, status: 502, body: JSON.stringify({ error: err instanceof Error ? err.message : "relay failed" }) }),
           );
@@ -380,7 +419,13 @@ function LiveEditorShell({
       streamRef.current?.abort();
       voiceRef.current?.rec.abort();
     };
-  }, [sessionId, toFrame]);
+  }, [sessionId, toFrame, refresh]);
+
+  // The event stream belongs to the page being edited: it stops while an earlier version is on show,
+  // and the page's own frame opens it again when it comes back.
+  useEffect(() => {
+    if (viewId) streamRef.current?.abort();
+  }, [viewId]);
 
   return (
     <div className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground">
@@ -391,6 +436,9 @@ function LiveEditorShell({
           className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           aria-label={backLabel}
           title={backLabel}
+          onClick={(e) => {
+            if (unsaved && !window.confirm(LEAVE_WARNING)) e.preventDefault();
+          }}
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
@@ -405,7 +453,7 @@ function LiveEditorShell({
           size="sm"
           variant={editing ? "secondary" : "outline"}
           aria-pressed={editing}
-          disabled={!sessionId}
+          disabled={!sessionId || !!viewing}
           title={editing ? "Turn editing off to click through the page (slides, menus)" : "Turn editing back on"}
           onClick={() => {
             const next = !editing;
@@ -419,8 +467,13 @@ function LiveEditorShell({
         {versions?.length ? (
           <VersionMenu
             versions={versions}
-            busy={live.view?.status !== "idle" && live.view?.status !== "waiting_agent"}
+            busy={busy}
+            unsaved={unsaved}
             onRestore={onRestore}
+            onView={(v) => {
+              setPreview(null);
+              setViewing(v);
+            }}
           />
         ) : null}
         <div role="group" aria-label="Page width" className="hidden items-center rounded-md border border-border p-0.5 md:inline-flex">
@@ -467,7 +520,7 @@ function LiveEditorShell({
           ) : (
             <>
             {/* The health notice sits over the top of the frame, so on a read-only page it would hide the banner. */}
-            {!readOnly && health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
+            {!readOnly && !viewing && health && (health.blank || health.scripts.length > 0 || health.styles.length > 0) ? (
               <PageHealthNotice
                 health={health}
                 onFix={() =>
@@ -480,7 +533,7 @@ function LiveEditorShell({
                 }
               />
             ) : null}
-            {locked && !preview && !readOnly ? (
+            {locked && !preview && !viewing && !readOnly ? (
               <div className="absolute inset-x-3 top-3 z-raised flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-sm" role="alert">
                 <Lock aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                 <p className="min-w-0 flex-1">This part is locked (the {locked}). Ask in the chat, or add sections below. Its words can still be changed: pick the text itself.</p>
@@ -496,6 +549,41 @@ function LiveEditorShell({
                 </div>
                 <div className="min-h-0 flex-1">
                   <ScaledFrame key={preview.url} src={preview.url} title={`Preview of ${preview.label}`} width={WIDTHS[viewport]} sandbox={ENGINE_SANDBOX} frameRef={frameRef} viewport={viewport} />
+                </div>
+              </div>
+            ) : viewing && viewId && frameSrc ? (
+              <div className="flex h-full flex-col">
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs" role="status">
+                  <span className="min-w-0 flex-1">
+                    Looking at version {viewing.version}, saved {formatDateTime(viewing.createdAt)}{viewing.by ? ` by ${viewing.by}` : ""}. Nothing changes until you restore it.
+                  </span>
+                  <Button type="button" size="sm" variant="ghost" className="h-7" onClick={() => setViewing(null)}>Back to the current page</Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7"
+                    disabled={busy || unsaved}
+                    title={busy ? "The agent is working on the page. Restore when it has finished." : unsaved ? "Save or undo your edits first" : undefined}
+                    onClick={() => {
+                      setViewing(null);
+                      onRestore(viewId);
+                    }}
+                  >
+                    Restore this version
+                  </Button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <ScaledFrame
+                    key={`view:${viewId}`}
+                    // The same frame the page uses, pointed at the earlier version.
+                    src={frameSrc.split(encodeURIComponent(pageId)).join(encodeURIComponent(viewId))}
+                    title={`Version ${viewing.version} of ${title}`}
+                    width={WIDTHS[viewport]}
+                    sandbox={engineOrigin ? ENGINE_SANDBOX : SANDBOX}
+                    frameRef={frameRef}
+                    viewport={viewport}
+                    onLoad={engineOrigin ? sayHello : () => toFrame({ kind: "editing", on: false })}
+                  />
                 </div>
               </div>
             ) : readOnly ? (
@@ -529,7 +617,10 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => setPreview({ url, label })} onEditsDiscarded={() => setFrameReload((n) => n + 1)} />
+          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => {
+            setViewing(null);
+            setPreview({ url, label });
+          }} onEditsDiscarded={() => setFrameReload((n) => n + 1)} />
         </aside>
       </div>
     </div>
@@ -537,58 +628,89 @@ function LiveEditorShell({
 }
 
 /**
- * The page's versions. Restoring one makes it the newest version, so nothing is
- * ever lost and every restore can itself be undone.
+ * The page's versions: who saved each one, when and how. Restoring one makes it the
+ * newest version, so nothing is ever lost and every restore can itself be undone.
  */
-function VersionMenu({
-  versions,
-  busy,
-  onRestore,
-}: {
-  versions: VersionItem[];
-  busy: boolean;
-  onRestore: (restoreId: string) => void;
-}) {
-  const newest = versions[0];
-  const previous = versions.find((v, i) => i > 0 && v.restoreId);
+function VersionMenu(props: Parameters<typeof VersionList>[0]) {
+  const [open, setOpen] = useState(false);
+  const close = <T,>(fn: (value: T) => void) => (value: T) => {
+    setOpen(false);
+    fn(value);
+  };
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <Button type="button" variant="outline" size="sm" aria-label="Versions">
           <History aria-hidden="true" className="size-4" />
-          <span className="hidden sm:inline">Version {newest?.version ?? 1}</span>
+          <span className="hidden sm:inline">Version {props.versions[0]?.version ?? 1}</span>
           <ChevronDown aria-hidden="true" className="size-3.5" />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem disabled={busy || !previous} onSelect={() => previous?.restoreId && onRestore(previous.restoreId)}>
-          <Undo2 aria-hidden="true" className="size-4" />
-          Undo last change
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Versions</DropdownMenuLabel>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-2">
+        <VersionList {...props} onRestore={close(props.onRestore)} onView={close(props.onView)} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function VersionList({
+  versions,
+  busy,
+  unsaved,
+  onRestore,
+  onView,
+}: {
+  versions: VersionItem[];
+  /** The agent is working on the page: nothing can be restored until it has finished. */
+  busy: boolean;
+  /** Edits wait to be saved: looking at or restoring another version would drop them from view. */
+  unsaved: boolean;
+  onRestore: (restoreId: string) => void;
+  onView: (version: VersionItem) => void;
+}) {
+  const previous = versions.find((v, i) => i > 0 && v.restoreId);
+  const held = busy ? "The agent is working on the page. Try again when it has finished." : unsaved ? "Save or undo your edits first." : null;
+  return (
+    <div className="space-y-2">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start"
+        disabled={!!held || !previous}
+        onClick={() => previous?.restoreId && onRestore(previous.restoreId)}
+      >
+        <Undo2 aria-hidden="true" className="size-4" />
+        Undo last change
+      </Button>
+      {held ? <p className="px-2 text-xs text-muted-foreground" role="status">{held}</p> : null}
+      <ol className="max-h-80 space-y-1 overflow-y-auto border-t border-border pt-2" aria-label="Versions">
         {versions.map((v) => (
-          <DropdownMenuItem
-            key={v.id}
-            disabled={busy || v.current || !v.restoreId}
-            onSelect={() => v.restoreId && onRestore(v.restoreId)}
-            className="justify-between"
-          >
-            <span className="min-w-0">
-              <span className="font-medium">Version {v.version}</span>
-              <span className="block text-xs text-muted-foreground">{formatDateTime(v.createdAt)}</span>
-            </span>
+          <li key={v.id} className="flex items-center gap-2 rounded-md px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">
+                Version {v.version}{v.what ? <span className="font-normal text-muted-foreground"> · {v.what}</span> : null}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {formatDateTime(v.createdAt)}{v.by ? ` · by ${v.by}` : ""}
+              </p>
+            </div>
             {v.current ? (
               <span className="text-xs text-muted-foreground">Showing</span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <RotateCcw aria-hidden="true" className="size-3.5" /> Restore
-              </span>
-            )}
-          </DropdownMenuItem>
+            ) : v.restoreId ? (
+              <>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" disabled={unsaved} aria-label={`Look at version ${v.version}`} onClick={() => onView(v)}>
+                  Look
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2" disabled={!!held} aria-label={`Restore version ${v.version}`} onClick={() => v.restoreId && onRestore(v.restoreId)}>
+                  Restore
+                </Button>
+              </>
+            ) : null}
+          </li>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </ol>
+    </div>
   );
 }
 

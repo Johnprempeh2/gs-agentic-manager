@@ -238,6 +238,9 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
   return { view, error, retry, run, sessionId: view?.id ?? null };
 }
 
+/** After this long a save is slow enough to explain (a save GSAM does itself takes well under a second). */
+const SLOW_SAVE_SECONDS = 20;
+
 function useElapsed(since: string | undefined, running: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -273,6 +276,10 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
   const [about, setAbout] = useState<number | null>(null);
   useEffect(() => setAbout(null), [view?.request?.id]);
   const elapsed = useElapsed(view?.request?.startedAt, status === "generating");
+  // A save by the agent has no start time in the view, so count from when this page saw it begin.
+  const [savingSince, setSavingSince] = useState<string>();
+  useEffect(() => setSavingSince(status === "applying" ? new Date().toISOString() : undefined), [status]);
+  const saving = useElapsed(savingSince, status === "applying");
   const listRef = useRef<HTMLOListElement>(null);
   const messageCount = view?.messages.length ?? 0;
 
@@ -322,8 +329,11 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
           </li>
         ) : null}
         {status === "applying" ? (
-          <li className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" /> Saving it into the page…
+          <li className="flex items-start gap-2 text-sm text-muted-foreground" role="status">
+            <Loader2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 animate-spin" />
+            {saving < SLOW_SAVE_SECONDS
+              ? `Saving it into the page… ${saving}s`
+              : `Still saving… ${saving}s. The agent is writing this change into the page. Nothing is lost: if the agent stops answering, GSAM frees the page and says so here.`}
           </li>
         ) : null}
         {error ? <li className="text-sm text-destructive" role="alert">{error}</li> : null}
