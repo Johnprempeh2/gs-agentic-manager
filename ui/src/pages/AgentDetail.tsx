@@ -38,6 +38,7 @@ import { getAdapterDisplay, getAdapterLabel } from "../adapters/adapter-display-
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { AgentWebsiteAccessSelect } from "@/components/AgentWebsiteAccessSelect";
+import { AgentCommerceToggle } from "@/components/AgentCommerceToggle";
 import { websiteModuleApi } from "../api/website";
 import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
@@ -2328,6 +2329,18 @@ export function ConfigurationTab({
                 canAssignTasks,
                 websiteAccess,
                 websiteSiteId,
+              })
+            }
+          />
+          <AgentCommerceToggle
+            grants={agent.access?.grants ?? []}
+            disabled={updatePermissions.isPending}
+            onChange={(canUseCommerce) =>
+              updatePermissions.mutate({
+                canCreateAgents,
+                canCreateSkills,
+                canAssignTasks,
+                canUseCommerce,
               })
             }
           />

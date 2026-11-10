@@ -12,7 +12,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { accessService } from "../services/access.js";
-import { setAgentWebsiteAccess } from "../services/agent-website-access.js";
+import { setAgentWebsiteAccess, syncAgentCommerceAccess } from "../services/agent-website-access.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -125,5 +125,44 @@ describeEmbeddedPostgres("agent website access (GRE-2239)", () => {
     expect(await setAgentWebsiteAccess(access, { companyId, agentId, level: "none", grantedByUserId: "board-user" }))
       .toEqual({ before: { level: "view", siteIds: [siteId] }, after: { level: "none", siteIds: null } });
     expect((await decide(siteId)).allowed).toBe(false);
+  });
+
+  it("grants Commerce with the website site scope, follows it, and clears it with website access (GRE-4814)", async () => {
+    const { access, companyId, agentId } = await seedAgentWithOtherGrants();
+    const siteId = "33333333-3333-4333-8333-333333333333";
+    const otherSiteId = "44444444-4444-4444-8444-444444444444";
+    const decide = (site: string) =>
+      access.decide({
+        actor: { type: "agent", agentId, companyId, source: "agent_key" },
+        action: "website:commerce",
+        resource: { type: "company", companyId },
+        scope: { siteId: site },
+      });
+    const commerceScope = async () =>
+      (await access.listPrincipalGrants(companyId, "agent", agentId))
+        .find((grant) => grant.permissionKey === "website:commerce")?.scope;
+
+    await setAgentWebsiteAccess(access, { companyId, agentId, level: "edit", siteId, grantedByUserId: "board-user" });
+    expect((await decide(siteId)).allowed).toBe(false);
+    expect(await syncAgentCommerceAccess(access, { companyId, agentId, enabled: true, grantedByUserId: "board-user" }))
+      .toEqual({ before: false, after: true });
+    expect(await commerceScope()).toEqual({ siteIds: [siteId] });
+    expect((await decide(siteId)).allowed).toBe(true);
+    expect((await decide(otherSiteId)).allowed).toBe(false);
+
+    await setAgentWebsiteAccess(access, { companyId, agentId, level: "edit", grantedByUserId: "board-user" });
+    expect(await syncAgentCommerceAccess(access, { companyId, agentId, grantedByUserId: "board-user" })).toBeNull();
+    expect(await commerceScope()).toBeNull();
+    expect((await decide(otherSiteId)).allowed).toBe(true);
+
+    await setAgentWebsiteAccess(access, { companyId, agentId, level: "none", grantedByUserId: "board-user" });
+    expect(await syncAgentCommerceAccess(access, { companyId, agentId, grantedByUserId: "board-user" }))
+      .toEqual({ before: true, after: false });
+    expect((await decide(siteId)).allowed).toBe(false);
+    expect((await access.decide({
+      actor: { type: "agent", agentId, companyId, source: "agent_key" },
+      action: "website:publish",
+      resource: { type: "company", companyId },
+    })).allowed).toBe(false);
   });
 });
