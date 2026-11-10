@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
 
 /**
  * The first visible element for a step, or null when the page does not show it.
- * A step names a `data-tour` anchor, or the `data-testid` a page already has, so
- * tours can point at stable ids without touching pages other people are changing.
+ * A step names a `data-tour` anchor, or the `data-testid` or exact `aria-label` a page
+ * already has, so tours can point at stable ids without touching pages other people are changing.
  */
 export function findTourTarget(target: string): HTMLElement | null {
-  for (const el of document.querySelectorAll<HTMLElement>(`[data-tour="${target}"], [data-testid="${target}"]`)) {
+  const selector = `[data-tour="${target}"], [data-testid="${target}"], [aria-label="${target}"]`;
+  for (const el of document.querySelectorAll<HTMLElement>(selector)) {
     if (typeof el.checkVisibility !== "function" || el.checkVisibility()) return el;
   }
   return null;
@@ -74,7 +75,7 @@ export function FeatureTour({
   const start = useCallback((asked = false) => {
     const shown = tour.steps.flatMap((step): ShownStep[] => {
       if (!step.target) return [{ ...step, el: null }];
-      const el = findTourTarget(step.target);
+      const el = [step.target].flat().map(findTourTarget).find(Boolean);
       return el ? [{ ...step, el }] : [];
     });
     const targeted = tour.steps.some((step) => step.target);

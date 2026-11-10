@@ -19,8 +19,8 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useLocation, useNavigate } from "@/lib/router";
 import { agentUrl } from "@/lib/utils";
 
-/** The three tours a new person should take first, in order. */
-export const START_HERE_TOUR_IDS = ["decisions", "tasks", "agents"] as const;
+/** The tours a new person should take first, in order. */
+export const START_HERE_TOUR_IDS = ["welcome", "decisions", "tasks", "agents"] as const;
 
 type StartTarget = { path: string } | { nothing: string };
 
@@ -152,8 +152,8 @@ export function Tutorials() {
                 <h2 id="start-here-title" className="text-sm font-semibold text-foreground">Start here</h2>
                 <p className="text-sm text-muted-foreground">
                   {next
-                    ? `Four short tours cover the everyday pages. ${done} of ${firstSteps.length} done.`
-                    : "You have taken the first three tours. The rest are below whenever you need them."}
+                    ? `A few short tours cover the basics. ${done} of ${firstSteps.length} done.`
+                    : "You have taken the first tours. The rest are below whenever you need them."}
                 </p>
               </div>
               {next ? (

@@ -209,6 +209,20 @@ describe("FeatureTour", () => {
     expect(document.querySelector("[data-tour-active]")).toBeNull();
   });
 
+  it("takes the first target on screen when a step lists several, and skips the step when none is", async () => {
+    await render("/page", undefined, {
+      ...tour,
+      steps: [
+        { target: ["missing", "two"], title: "Fallback", body: "The row is folded away, so this points at its section." },
+        { target: ["missing", "also-missing"], title: "Gone", body: "Not on the page." },
+        { target: "one", title: "First", body: "One." },
+      ],
+    });
+    expect(card()?.textContent).toContain("Step 1 of 2");
+    expect(card()?.textContent).toContain("Fallback");
+    expect(document.querySelector('[data-tour="two"]')?.hasAttribute("data-tour-active")).toBe(true);
+  });
+
   it("shows no tour and no button while the feature is switched off", async () => {
     flags.enablePipelines = false;
     await render("/page?tour=pipelines-list");
@@ -283,6 +297,12 @@ describe("FeatureTour", () => {
 describe("findTourTarget", () => {
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("finds a control by its exact aria-label, for pages that carry no anchor", () => {
+    document.body.innerHTML = '<button aria-label="Versions">v</button>';
+    expect(findTourTarget("Versions")?.textContent).toBe("v");
+    expect(findTourTarget("Version")).toBeNull();
   });
 
   it("finds a data-tour anchor, or a page's own data-testid when there is none", () => {

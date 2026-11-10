@@ -72,6 +72,8 @@ interface SidebarNavItemProps {
   trailingLabel?: string;
   /** Rendered inside the right-aligned status cluster, before the live dot. */
   liveAccessory?: ReactNode;
+  /** A `data-tour` anchor, so a guided tour can point at this row. */
+  tourId?: string;
 }
 
 export function SidebarNavItem({
@@ -94,6 +96,7 @@ export function SidebarNavItem({
   trailing,
   trailingLabel,
   liveAccessory,
+  tourId,
 }: SidebarNavItemProps) {
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
   // A contextual takeover forces full labels even when the saved global app
@@ -223,6 +226,7 @@ export function SidebarNavItem({
     to,
     state: SIDEBAR_SCROLL_RESET_STATE,
     "aria-label": railAriaLabel,
+    "data-tour": tourId,
     onClick: () => { if (isMobile) setSidebarOpen(false); },
   };
   // A row lit (or not) from outside is a plain link, so the route match cannot
