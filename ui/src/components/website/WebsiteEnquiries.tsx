@@ -46,18 +46,18 @@ export function WebsiteEnquiriesView({ leads, loading = false, loadError, onRetr
     <section className="space-y-4" aria-labelledby="website-enquiries-heading">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="website-enquiries-heading" className="text-lg font-semibold">Front door and enquiries</h2>
-          <p className="text-sm text-muted-foreground">Website submissions filed as leads in GSAM.</p>
+          <h2 id="website-enquiries-heading" className="text-lg font-semibold">Enquiries</h2>
+          <p className="text-sm text-muted-foreground">Messages people send from the website. Each one is filed as a lead.</p>
         </div>
         <Button type="button" onClick={onCheck} disabled={checking}>
-          {checking ? "Checking…" : "Check now"}
+          {checking ? "Checking…" : "Check for new enquiries"}
         </Button>
       </div>
       {checkError ? <p role="alert" className="text-sm text-destructive">{errorStateMessage(checkError)}</p> : null}
       {checkResult ? <p role="status" className="text-sm text-muted-foreground">{checkResult.created} new, {checkResult.skipped} already filed.</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading enquiries…</p> : null}
       {loadError ? <ErrorState error={loadError} onRetry={onRetry} /> : null}
-      {leads?.length === 0 ? <p className="text-sm text-muted-foreground">No enquiries have been imported yet.</p> : null}
+      {leads?.length === 0 ? <p className="text-sm text-muted-foreground">No enquiries yet. Press Check for new enquiries to look for messages sent from the website.</p> : null}
       {leads?.length ? (
         <ul className="divide-y rounded-lg border" aria-label="Website enquiries">
           {leads.map((lead) => (

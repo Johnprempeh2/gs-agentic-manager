@@ -313,7 +313,7 @@ describe("Website page", () => {
     await render();
     await waitForText("Google Analytics is not linked to this website yet");
     expect(text()).not.toContain("No Google Analytics data yet");
-    expect(text()).toContain("GSAM then pulls Search Console every day");
+    expect(text()).toContain("GSAM then reads Search Console every day");
     const input = container.querySelector('[data-testid="website-ga4-link"] input') as HTMLInputElement;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "987");
@@ -344,7 +344,7 @@ describe("Website page", () => {
     expect(page).toContain("greatstone consulting");
     expect(page).toContain("1 of 10 checked pages");
     expect(page).toContain("Crawled - currently not indexed");
-    expect(container.querySelector('[data-testid="website-pull-status"]')?.textContent).toContain("Last pull:");
+    expect(container.querySelector('[data-testid="website-pull-status"]')?.textContent).toContain("Last update:");
     // Read-only: a connected property offers no Connect button.
     expect(page).not.toContain("Connect Google");
   });
@@ -360,9 +360,9 @@ describe("Website page", () => {
       }),
     );
     await render();
-    await waitForText("The last pull had a problem");
+    await waitForText("The last update had a problem");
     expect(text()).toContain("Search Console: User does not have sufficient permission");
-    expect(text()).toContain("Partly pulled");
+    expect(text()).toContain("Partly updated");
   });
 
   it("offers Connect Google before the first pull and opens the authorization URL", async () => {
