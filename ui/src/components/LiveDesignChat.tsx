@@ -481,7 +481,13 @@ export function StagedEdits({ live, onChanged }: { live: ReturnType<typeof useLi
   return (
     <section className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-xs" aria-label="Unsaved edits" role="status">
       <span className="w-full font-medium text-foreground">
-        {saving ? "Saving to the draft…" : count ? `${count} edit${count === 1 ? "" : "s"} not saved yet` : "Nothing waiting to save"}
+        {saving
+          ? "Saving to the draft…"
+          : count && view.restoredCount
+            ? `Restored ${view.restoredCount} unsaved edit${view.restoredCount === 1 ? "" : "s"} from last time`
+            : count
+              ? `${count} edit${count === 1 ? "" : "s"} not saved yet`
+              : "Nothing waiting to save"}
       </span>
       <div className="flex items-center" role="group" aria-label="Edit history">
         <Button type="button" size="icon" variant="ghost" className="size-7" disabled={!history.canUndo}

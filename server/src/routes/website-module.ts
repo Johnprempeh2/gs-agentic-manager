@@ -761,6 +761,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       source: websitePageSource(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), siteAssetOrigin(site.editorFrameOrigin)),
       // Website pages may place the site's islands (GRE-3786), so the agent always gets the list.
       islands: islandsForAgents(await loadCompanyIslandManifest(db, page.companyId)),
+      userId: getActorInfo(req).actorType === "user" ? getActorInfo(req).actorId : null,
     });
     if (needsWake && options.heartbeat) {
       await wakeLiveDesignAgent(options.heartbeat, { session, onTaskIssueId: null, fileName: `${page.title} (${page.slug})`, actorId: getActorInfo(req).actorId });

@@ -408,6 +408,8 @@ export interface HelperRequest {
   extra?: { selector?: string; position?: "before" | "after" };
   /** For /annotation: the saved screenshot's attachment id, set by the route. */
   screenshotAttachmentId?: string;
+  /** The person making the request, set by the route: their edits not saved yet are kept under their name. */
+  userId?: string | null;
 }
 
 export interface HelperResponse {
@@ -471,7 +473,7 @@ export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest
       const ops = Array.isArray(body?.ops) ? (body.ops as Array<Record<string, unknown>>) : [];
       if (!ops.length) return json(400, { error: "no edits" });
       const element = body?.element && typeof body.element === "object" ? (body.element as Record<string, unknown>) : null;
-      return json(200, stageLiveDesignEdit(s, { id: str(body?.id, 64) || "edit", element, ops }));
+      return json(200, stageLiveDesignEdit(s, { id: str(body?.id, 64) || "edit", element, ops, userId: req.userId ?? null }));
     }
     if (route === "/manual-edit-discard") {
       const ref = new URLSearchParams(req.path.split("?")[1] ?? "").get("ref");

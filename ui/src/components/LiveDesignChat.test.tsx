@@ -143,6 +143,16 @@ describe("StagedEdits", () => {
     expect(button("Undo the last edit").disabled).toBe(true);
     expect(button("Redo").disabled).toBe(true);
   });
+  it("says when edits came back from last time, with Discard all beside them", async () => {
+    const helper = vi.spyOn(liveDesignApi, "helper").mockResolvedValue({ status: 200, body: "{}" });
+    vi.spyOn(liveDesignApi, "get").mockResolvedValue({ id: "s1" } as never);
+    const run = vi.fn(async (fn: (id: string) => Promise<unknown>) => { await fn("s1"); return true; });
+    const el = document.createElement("div");
+    act(() => createRoot(el).render(<StagedEdits live={{ view: { status: "idle", stagedCount: 3, restoredCount: 3 }, run } as never} />));
+    expect(el.textContent).toContain("Restored 3 unsaved edits from last time");
+    await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Discard all")!.click(); });
+    expect(helper).toHaveBeenCalledWith("s1", expect.objectContaining({ path: "/manual-edit-discard" }));
+  });
 });
 
 describe("historyKey", () => {

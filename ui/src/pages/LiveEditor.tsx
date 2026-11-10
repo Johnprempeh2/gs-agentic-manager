@@ -141,8 +141,7 @@ export function WebsitePageLiveEditor() {
             aria-label="Page"
             value={pageId}
             onChange={(e) => {
-              // Leaving ends this page's session, and edits not saved yet go with it.
-              if ((live.view?.stagedCount ?? 0) > 0 && !window.confirm(LEAVE_WARNING)) return;
+              // Edits not saved yet are kept on the server and come back when the page is opened again.
               navigate(`/website/sites/${siteId}/pages/${e.currentTarget.value}/design`);
             }}
             className="h-8 max-w-48"
@@ -184,8 +183,6 @@ export interface VersionItem {
   /** What the save was ("Edited by hand", "Live design"), when known. */
   what?: string | null;
 }
-
-const LEAVE_WARNING = "Some edits on this page are not saved yet. Leave and lose them?";
 
 /**
  * The full-screen live editor: the chat with the agent on the left, the page on
@@ -246,16 +243,7 @@ function LiveEditorShell({
   viewIdRef.current = viewId;
   const busy = live.view?.status !== "idle" && live.view?.status !== "waiting_agent";
   const unsaved = (live.view?.stagedCount ?? 0) > 0;
-  // Closing or reloading the tab ends the session, and edits not saved yet go with it: ask first.
-  useEffect(() => {
-    if (!unsaved) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [unsaved]);
+  // No warning on leaving: edits not saved yet are kept on the server and come back on the next open.
   const refresh = live.run;
   // The frame reloads after Undo, Redo, Discard or a quick change, and draws the page with the edits not saved yet.
   const reloadFrame = useCallback(() => setFrameReload((n) => n + 1), []);
@@ -468,9 +456,6 @@ function LiveEditorShell({
           className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           aria-label={backLabel}
           title={backLabel}
-          onClick={(e) => {
-            if (unsaved && !window.confirm(LEAVE_WARNING)) e.preventDefault();
-          }}
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
