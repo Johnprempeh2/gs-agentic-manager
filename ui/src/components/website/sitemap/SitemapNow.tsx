@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ExternalLink, PenLine } from "lucide-react";
 import { websitePreviewAddresses, type WebsiteHomeSummary, type WebsitePage, type WebsiteSite, type WebsiteSitemapTree } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
@@ -96,8 +96,17 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
   );
   const [dismissed, setDismissed] = useState(() => readDismissed(site.id));
   const [showDismissed, setShowDismissed] = useState(false);
-  const setDismissedFor = (pageId: string, hide: boolean) => {
-    const next = hide ? [...dismissed, pageId] : dismissed.filter((entry) => entry !== pageId);
+  const [notice, setNotice] = useState("");
+  const suggestedRef = useRef<HTMLElement>(null);
+  const setDismissedFor = (page: WebsitePage, hide: boolean, pressed: HTMLElement) => {
+    // A dismissed row leaves the list and takes the pressed button with it:
+    // hand the keyboard to the next suggestion's Dismiss (else the one before, else the group).
+    if (hide && !showDismissed) {
+      const row = pressed.closest("li");
+      ((row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLElement>("button:last-of-type") ?? suggestedRef.current)?.focus();
+    }
+    setNotice(hide ? `${page.title} dismissed.` : `${page.title} is back in the suggestions.`);
+    const next = hide ? [...dismissed, page.id] : dismissed.filter((entry) => entry !== page.id);
     setDismissed(next);
     try {
       window.localStorage.setItem(dismissedKey(site.id), JSON.stringify(next));
@@ -190,7 +199,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
       ) : null}
 
       {suggested.length > 0 ? (
-        <section aria-labelledby="sitemap-now-suggested" className="space-y-3 rounded-xl border border-dashed border-border p-3" data-testid="sitemap-now-suggested">
+        <section ref={suggestedRef} tabIndex={-1} aria-labelledby="sitemap-now-suggested" className="space-y-3 rounded-xl border border-dashed border-border p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="sitemap-now-suggested">
           <div className="space-y-1">
             <h2 id="sitemap-now-suggested" className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground">
               Suggested pages
@@ -213,22 +222,26 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
                       <p className="break-all font-mono text-xs text-muted-foreground">{page.slug}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {dismissed.includes(page.id) ? (
-                        <Button type="button" variant="ghost" size="xs" onClick={() => setDismissedFor(page.id, false)} aria-label={`Bring back the suggestion ${page.title}`}>Bring back</Button>
-                      ) : (
-                        <>
-                          {onEditPage ? (
-                            <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Build the page ${page.title}`}>Build this page</Button>
-                          ) : null}
-                          <Button type="button" variant="ghost" size="xs" onClick={() => setDismissedFor(page.id, true)} aria-label={`Dismiss the suggestion ${page.title}`}>Dismiss</Button>
-                        </>
-                      )}
+                      {onEditPage && !dismissed.includes(page.id) ? (
+                        <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Build the page ${page.title}`}>Build this page</Button>
+                      ) : null}
+                      {/* One button for both, so it keeps the keyboard focus when its row stays on screen. */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        onClick={(event) => setDismissedFor(page, !dismissed.includes(page.id), event.currentTarget)}
+                        aria-label={`${dismissed.includes(page.id) ? "Bring back" : "Dismiss"} the suggestion ${page.title}`}
+                      >
+                        {dismissed.includes(page.id) ? "Bring back" : "Dismiss"}
+                      </Button>
                     </div>
                   </li>
                 ))}
               </ul>
             </details>
           ))}
+          <p role="status" className="sr-only">{notice}</p>
           <p className="text-xs text-muted-foreground">
             Dismiss hides a suggestion for you, in this browser. It stays in the sitemap plan until someone takes it out there and that change is approved.
             {hidden.length > 0 ? (

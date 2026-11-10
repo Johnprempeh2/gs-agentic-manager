@@ -1409,6 +1409,7 @@ describe("WebsitePagesTab (GRE-2296)", () => {
     const location = useLocation();
     return <p data-testid="where">{`${location.pathname}${location.search}`}</p>;
   }
+  const openTab = vi.fn();
   async function renderTab(entry = "/website?tab=editor") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
@@ -1416,7 +1417,7 @@ describe("WebsitePagesTab (GRE-2296)", () => {
         <QueryClientProvider client={client}>
           <MemoryRouter initialEntries={[entry]}>
             <Routes>
-              <Route path="/website" element={<WebsitePagesTab companyId="co-1" property={property} onOpenTab={vi.fn()} />} />
+              <Route path="/website" element={<WebsitePagesTab companyId="co-1" property={property} onOpenTab={openTab} />} />
               <Route path="/website/edit" element={<Where />} />
               <Route path="/website/sites/:siteId/pages/:pageId/design" element={<Where />} />
             </Routes>
@@ -1454,6 +1455,32 @@ describe("WebsitePagesTab (GRE-2296)", () => {
     await act(async () => button("Edit pages").click());
     await flush();
     expect(where()).toBe("/website/sites/site-1/pages/page-1/design");
+  });
+
+  it("lists built pages only: sitemap entries nobody has built are counted apart and point to the Sitemap tab", async () => {
+    const idea = { ...page, id: "page-3", title: "Pricing", slug: "/pricing", status: "planned" } as WebsitePage;
+    api.pages.mockResolvedValue([idea, page, about, { ...idea, id: "page-4", title: "Old", slug: "/old", archivedAt: "2026-11-01T00:00:00.000Z" } as unknown as WebsitePage]);
+    await renderTab();
+    const list = container.querySelector('[data-testid="website-pages"] ul')!;
+    expect([...list.querySelectorAll("li")].map((row) => row.querySelector("span")!.textContent)).toEqual(["Home", "About"]);
+    expect(container.querySelector('button[aria-label="Edit Pricing"]')).toBeNull();
+    expect(container.textContent).toContain("1 suggested page from the sitemap is not built");
+    await act(async () => button("see it on the Sitemap tab").click());
+    expect(openTab).toHaveBeenLastCalledWith("sitemap");
+    // Edit pages opens a real page, not the unbuilt entry that comes first in the list.
+    await act(async () => button("Edit pages").click());
+    await flush();
+    expect(where()).toBe("/website/sites/site-1/pages/page-1/design");
+  });
+
+  it("nothing built: says so, counts the ideas and offers the Sitemap tab", async () => {
+    api.pages.mockResolvedValue([{ ...page, status: "planned" }, { ...about, status: "planned" }]);
+    await renderTab();
+    expect(container.querySelector('[data-testid="website-pages"]')).toBeNull();
+    expect(container.textContent).toContain("No pages built yet");
+    expect(container.textContent).toContain("The sitemap has 2 suggested pages, and none is built.");
+    await act(async () => button("Open Sitemap").click());
+    expect(openTab).toHaveBeenLastCalledWith("sitemap");
   });
 
   it("the old in-page editor links open the full-screen editor", async () => {
