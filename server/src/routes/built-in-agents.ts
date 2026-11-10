@@ -7,7 +7,7 @@ import { forbidden } from "../errors.js";
 import { accessService, instanceSettingsService, logActivity } from "../services/index.js";
 import { builtInAgentService } from "../services/built-in-agents.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import type { BuiltInAgentState } from "../services/built-in-agents.js";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -180,6 +180,8 @@ export function builtInAgentRoutes(db: Db) {
       const key = req.params.key as string;
       await assertCanProvisionBuiltInAgents(req, companyId);
       const actor = getActorInfo(req);
+      // A budget override is board-only (upstream paperclipai/paperclip#20213).
+      if (req.body.budgetMonthlyCents !== undefined) assertBoard(req);
       const result = await svc.provision(companyId, key, req.body, {
         requestedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
         requestedByUserId: actor.actorType === "user" ? actor.actorId : null,

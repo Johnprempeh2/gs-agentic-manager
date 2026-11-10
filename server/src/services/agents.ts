@@ -33,7 +33,7 @@ import {
 import {
   normalizePaperclipRunnerAdapterConfig,
 } from "@greatstone/adapter-utils/server-utils";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import {
   collectSecretRefs,
   collectUserSecretRefs,
@@ -713,6 +713,16 @@ export function agentService(db: Db) {
   ) {
     const existing = await getById(id);
     if (!existing) return null;
+
+    // Defense in depth for the route checks: an agent never changes a budget
+    // (upstream paperclipai/paperclip#20213).
+    if (
+      options?.recordRevision?.createdByAgentId &&
+      data.budgetMonthlyCents !== undefined &&
+      data.budgetMonthlyCents !== existing.budgetMonthlyCents
+    ) {
+      throw forbidden("Only board operators can change agent budgets");
+    }
 
     if (existing.status === "terminated" && data.status && data.status !== "terminated") {
       throw conflict("Terminated agents cannot be resumed");
