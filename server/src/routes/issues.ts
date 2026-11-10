@@ -21477,15 +21477,15 @@ export function issueRoutes(
   });
 
   // Undo and Redo of the person's own edits not saved yet, one edit at a time (Cmd or Ctrl Z in the editor).
-  for (const [step, fn] of [["undo", undoLiveDesignEdit], ["redo", redoLiveDesignEdit]] as const) {
-    router.post(`/live-design/:sessionId/${step}`, (req, res) => {
-      try {
-        res.json(viewLiveDesign(fn(liveSessionForBoard(req))));
-      } catch (err) {
-        if (!sendLiveConflict(res, err)) throw err;
-      }
-    });
-  }
+  const editStep = (fn: typeof undoLiveDesignEdit) => (req: Request, res: Response) => {
+    try {
+      res.json(viewLiveDesign(fn(liveSessionForBoard(req))));
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+    }
+  };
+  router.post("/live-design/:sessionId/undo", editStep(undoLiveDesignEdit));
+  router.post("/live-design/:sessionId/redo", editStep(redoLiveDesignEdit));
 
   router.post("/live-design/:sessionId/end", (req, res) => {
     res.json(viewLiveDesign(endLiveDesign(liveSessionForBoard(req))));
