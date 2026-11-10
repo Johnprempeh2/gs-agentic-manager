@@ -80,3 +80,29 @@ describe("compactRunLogChunk with long base64 commands", () => {
     expect(compacted).toContain("***REDACTED***");
   });
 });
+
+describe("run-log invitation token privacy", () => {
+  // Run logs are a plain-file diagnostic copy that every local agent (same OS
+  // user) can read, so a live join link must not sit there. The chat reply the
+  // person reads is built from database run events, not from this file.
+  const token = "pcp_invite_FixtureInviteToken-0123456789_abcdefghijklmnopqrstu";
+  const reply = `Created the invite.\n\n**Invite link:** [Join Company](http://127.0.0.1:3100/invite/${token})`;
+  const toolResult = JSON.stringify({ id: "invite-1", token, inviteUrl: `/invite/${token}`,
+    acceptPath: `/api/invites/${token}/accept` });
+
+  it("redacts join-link tokens and raw invite tokens from run-log chunks", () => {
+    for (const chunk of [reply, toolResult]) {
+      const compacted = compactRunLogChunk(chunk);
+      expect(compacted).not.toContain(token);
+      expect(compacted).not.toContain("FixtureInviteToken");
+    }
+    expect(compactRunLogChunk(reply)).toBe(reply.replace(token, "***REDACTED***"));
+    expect(JSON.parse(compactRunLogChunk(toolResult))).toEqual({ id: "invite-1", token: "***REDACTED***",
+      inviteUrl: "/invite/***REDACTED***", acceptPath: "/api/invites/***REDACTED***/accept" });
+  });
+
+  it("leaves chunks without invitation tokens unchanged", () => {
+    const chunk = "GET /api/companies/c1/invites returned 2 invites; see /invite for help";
+    expect(compactRunLogChunk(chunk)).toBe(chunk);
+  });
+});

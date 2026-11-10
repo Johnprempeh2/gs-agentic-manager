@@ -635,7 +635,8 @@ import {
   redactCurrentUserValue,
   type CurrentUserRedactionOptions,
 } from "../log-redaction.js";
-import { redactEventPayload, redactSensitiveText } from "../redaction.js";
+import { REDACTED_EVENT_VALUE, redactEventPayload, redactSensitiveText } from "../redaction.js";
+import { redactInvitationTokens } from "../middleware/invitation-token-redaction.js";
 import { createRunSecretRedactionRegistry } from "./run-secret-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -3789,11 +3790,16 @@ function redactInlineBase64ImageData(chunk: string) {
   );
 }
 
+// The run log is a plain-file diagnostic copy that local agents running as the
+// same OS user can read. Invitation join links are bearer credentials, so the
+// log keeps the route and drops the token, as HTTP logs do. The reply the
+// person reads is built from database run events, not from this file.
 export function compactRunLogChunk(
   chunk: string,
   maxChars = MAX_PERSISTED_LOG_CHUNK_CHARS,
 ) {
-  const normalized = rebrandRunLogText(redactSensitiveText(redactInlineBase64ImageData(chunk)));
+  const normalized = rebrandRunLogText(redactInvitationTokens(
+    redactSensitiveText(redactInlineBase64ImageData(chunk)), REDACTED_EVENT_VALUE));
   if (normalized.length <= maxChars) return normalized;
 
   const headChars = Math.max(0, Math.floor(maxChars * 0.6));
