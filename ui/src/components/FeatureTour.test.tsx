@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TourDefinition } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
-import { FeatureTour, findTourTarget } from "./FeatureTour";
+import { FeatureTour, findTourTarget, tourCardAnchor } from "./FeatureTour";
 
 const flags = vi.hoisted(() => ({ enablePipelines: true }));
 // The server's copy of "seen", shared by every "device" (fresh storage + query cache) in a test.
@@ -311,6 +311,24 @@ describe("FeatureTour", () => {
       await act(async () => button("Show me around")!.click());
       expect(card()?.textContent).toContain("Step 1 of 1");
     });
+  });
+});
+
+describe("tourCardAnchor", () => {
+  it("hangs the card from a part that has room above or below it", () => {
+    const part = new DOMRect(40, 100, 600, 80);
+    expect(tourCardAnchor(part, 900)).toBe(part);
+    // room above only: the card can sit over it
+    const low = new DOMRect(40, 500, 600, 900);
+    expect(tourCardAnchor(low, 900)).toBe(low);
+  });
+
+  it("keeps the card on the page for a part taller than the window", () => {
+    // a long list, centred: its top and bottom edges are both off the page
+    const anchor = tourCardAnchor(new DOMRect(40, -300, 600, 1500), 900);
+    expect([anchor.top, anchor.height, anchor.left]).toEqual([72, 0, 40]);
+    // a list that nearly fills the window: no room for the card above or below
+    expect(tourCardAnchor(new DOMRect(40, 100, 600, 700), 900).bottom).toBe(100);
   });
 });
 
