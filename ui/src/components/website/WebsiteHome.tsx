@@ -635,8 +635,8 @@ function Tiles({
           </>
         ) : reportQuery.isLoading ? loading : !ga4 ? (
           <>
-            <span className="block text-sm font-semibold">Waiting for the first pull</span>
-            <Small>Visitors show after the next daily pull.</Small>
+            <span className="block text-sm font-semibold">Waiting for the first update</span>
+            <Small>Visitors show after the next daily update.</Small>
           </>
         ) : (
           <>

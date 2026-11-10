@@ -9,7 +9,6 @@ import {
   MousePointerClick,
   Plus,
   Settings2,
-  Search,
   Target,
   TrendingUp,
   Users,
@@ -87,10 +86,10 @@ const ERROR_SOURCE_LABELS: Record<WebsitePullError["source"], string> = {
 };
 
 const PULL_STATUS: Record<WebsitePullStatus, { label: string; className: string }> = {
-  running: { label: "Pulling now", className: "bg-status-running-soft text-status-running-foreground" },
-  succeeded: { label: "Pulled", className: "bg-status-success-soft text-status-success-foreground" },
-  partial: { label: "Partly pulled", className: "bg-status-warning/15 text-status-warning-foreground" },
-  failed: { label: "Pull failed", className: "bg-status-danger-soft text-status-danger-foreground" },
+  running: { label: "Updating now", className: "bg-status-running-soft text-status-running-foreground" },
+  succeeded: { label: "Updated", className: "bg-status-success-soft text-status-success-foreground" },
+  partial: { label: "Partly updated", className: "bg-status-warning/15 text-status-warning-foreground" },
+  failed: { label: "Update failed", className: "bg-status-danger-soft text-status-danger-foreground" },
 };
 
 /* ---- Building blocks ---- */
@@ -179,7 +178,7 @@ function DataTable<T>({ rows, columns, rowKey, empty, label }: {
 }
 
 function TrendBars({ points, label }: { points: { date: string; value: number }[]; label: string }) {
-  if (points.length === 0) return <p className="text-xs text-muted-foreground">No daily data in this pull.</p>;
+  if (points.length === 0) return <p className="text-xs text-muted-foreground">No daily data in the last update.</p>;
   const max = Math.max(...points.map((point) => point.value), 1);
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -210,7 +209,7 @@ function TrendBars({ points, label }: { points: { date: string; value: number }[
 
 function PulledAt({ at }: { at: string | null }) {
   if (!at) return null;
-  return <span title={formatDateTime(at)}>Pulled {relativeTime(at)}</span>;
+  return <span title={formatDateTime(at)}>Updated {relativeTime(at)}</span>;
 }
 
 /* ---- Sections ---- */
@@ -223,7 +222,7 @@ function Ga4Section({ report }: { report: WebsiteGa4Report | null }) {
       subtitle={report ? `Google Analytics 4 · ${formatRange(report.range)}` : "Google Analytics 4"}
     >
       {!report ? (
-        <p className="text-sm text-muted-foreground">No Google Analytics data yet. It shows after the next pull that reaches Google Analytics.</p>
+        <p className="text-sm text-muted-foreground">No Google Analytics data yet. It shows after the next daily update that reaches Google Analytics.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -244,7 +243,7 @@ function Ga4Section({ report }: { report: WebsiteGa4Report | null }) {
                 label="Traffic sources"
                 rows={report.sources}
                 rowKey={(row) => `${row.source}/${row.medium}`}
-                empty="No traffic sources in this pull."
+                empty="No traffic sources in the last update."
                 columns={[
                   {
                     label: "Source / medium",
@@ -264,7 +263,7 @@ function Ga4Section({ report }: { report: WebsiteGa4Report | null }) {
                 label="Top pages"
                 rows={report.topPages}
                 rowKey={(row) => row.path}
-                empty="No page views in this pull."
+                empty="No page views in the last update."
                 columns={[
                   {
                     label: "Page",
@@ -307,7 +306,7 @@ function Ga4NotLinked({ companyId, property, canManage }: { companyId: string; p
         <p className="text-sm">
           Google Analytics is not linked to this website yet, so there are no visitor numbers.
           {canManage
-            ? " Add the GA4 property id below; the next daily pull then includes visitors, sources, top pages and conversions."
+            ? " Add the GA4 property id below; the next daily update then includes visitors, sources, top pages and conversions."
             : " A company owner or admin can add the GA4 property id here."}
         </p>
         {canManage ? <WebsiteGa4Link companyId={companyId} property={property} /> : null}
@@ -324,7 +323,7 @@ function SearchConsoleSection({ report }: { report: WebsiteSearchConsoleReport |
       subtitle={report ? `Google Search Console · ${formatRange(report.range)}` : "Google Search Console"}
     >
       {!report ? (
-        <p className="text-sm text-muted-foreground">No Search Console data yet. It shows after the next pull that reaches Search Console.</p>
+        <p className="text-sm text-muted-foreground">No Search Console data yet. It shows after the next daily update that reaches Search Console.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -339,7 +338,7 @@ function SearchConsoleSection({ report }: { report: WebsiteSearchConsoleReport |
                 label="Search queries"
                 rows={report.queries}
                 rowKey={(row) => row.query}
-                empty="No search queries in this pull."
+                empty="No search queries in the last update."
                 columns={[
                   { label: "Query", render: (row) => <span className="block truncate" title={row.query}>{row.query}</span> },
                   { label: "Clicks", numeric: true, render: (row) => formatCount(row.clicks) },
@@ -392,7 +391,7 @@ function PullStatusBar({ report }: { report: WebsiteReport }) {
         </span>
       ) : null}
       <span>
-        Last pull:{" "}
+        Last update:{" "}
         {pulledAt ? (
           <time dateTime={pulledAt} title={formatDateTime(pulledAt)} className="text-foreground">
             {relativeTime(pulledAt)}
@@ -401,7 +400,7 @@ function PullStatusBar({ report }: { report: WebsiteReport }) {
           <span className="text-foreground">never</span>
         )}
       </span>
-      {property.nextPullDueAt ? <span>Next pull: {formatDateTime(property.nextPullDueAt)}</span> : null}
+      {property.nextPullDueAt ? <span>Next update: {formatDateTime(property.nextPullDueAt)}</span> : null}
     </div>
   );
 }
@@ -413,7 +412,7 @@ function PullErrors({ errors }: { errors: WebsitePullError[] }) {
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-danger" aria-hidden="true" />
         <div className="min-w-0 space-y-1 text-sm">
-          <p className="font-medium text-status-danger-foreground">The last pull had a problem</p>
+          <p className="font-medium text-status-danger-foreground">The last update had a problem</p>
           <ul className="space-y-0.5 text-status-danger-foreground">
             {errors.map((error, index) => (
               <li key={`${error.source}-${index}`} className="break-words">
@@ -421,7 +420,7 @@ function PullErrors({ errors }: { errors: WebsitePullError[] }) {
               </li>
             ))}
           </ul>
-          <p className="text-xs text-status-danger-foreground/80">Data below is from the last pull that worked.</p>
+          <p className="text-xs text-status-danger-foreground/80">Data below is from the last update that worked.</p>
         </div>
       </div>
     </div>
@@ -449,7 +448,7 @@ function GoogleReturnNotice({ notice }: { notice: { result: string; reason: stri
   if (notice.result === "connected") {
     return (
       <div role="status" className="rounded-lg border border-status-success/30 bg-status-success-soft px-4 py-3 text-sm text-status-success-foreground">
-        Google is connected. The first pull starts shortly.
+        Google is connected. The first update starts shortly.
       </div>
     );
   }
@@ -572,7 +571,7 @@ function PropertyReport({ companyId, property, signInAvailable, notice, canManag
       <GoogleReturnNotice notice={notice} />
       {property.connectionStatus === "needs_reconnect" ? (
         <div role="alert" className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-sm">
-          Google access has expired. Reconnect Google so the daily pull can run again.
+          Google access has expired. Reconnect Google so the daily update can run again.
         </div>
       ) : null}
       <PullErrors errors={errors} />
@@ -581,7 +580,7 @@ function PropertyReport({ companyId, property, signInAvailable, notice, canManag
           {visitors}
           <SearchConsoleSection report={report.searchConsole} />
           <p className="text-xs text-subtle-foreground">
-            Read-only. <PulledAt at={report.ga4PulledAt ?? report.searchConsolePulledAt} />. The page shows the stored daily pull, not live Google data.
+            Read-only. <PulledAt at={report.ga4PulledAt ?? report.searchConsolePulledAt} />. The figures come from the daily update, not live from Google.
           </p>
         </div>
       ) : (
@@ -589,11 +588,11 @@ function PropertyReport({ companyId, property, signInAvailable, notice, canManag
           {property.connectionStatus === "connected" ? (
             <EmptyState
               icon={Globe}
-              title="Waiting for the first pull"
+              title="Waiting for the first update"
               message={
                 property.nextPullDueAt
-                  ? `Google is connected. The first pull is due ${formatDateTime(property.nextPullDueAt)}; visitor and search data show here after it.`
-                  : "Google is connected. Visitor and search data show here after the first daily pull."
+                  ? `Google is connected. The first update is due ${formatDateTime(property.nextPullDueAt)}; visitor and search data show here after it.`
+                  : "Google is connected. Visitor and search data show here after the first daily update."
               }
             />
           ) : (
@@ -602,8 +601,8 @@ function PropertyReport({ companyId, property, signInAvailable, notice, canManag
               title="Connect Google to see your website data"
               message={
                 property.ga4PropertyId
-                  ? "Sign in with Google once. GSAM then pulls Google Analytics and Search Console every day, with read-only access."
-                  : "Sign in with Google once. GSAM then pulls Search Console every day, with read-only access."
+                  ? "Sign in with Google once. GSAM then reads Google Analytics and Search Console every day, with read-only access."
+                  : "Sign in with Google once. GSAM then reads Search Console every day, with read-only access."
               }
             />
           )}
@@ -755,7 +754,7 @@ export function Website() {
           />
         ) : accessLoading ? null : (
           <EmptyState
-            icon={Search}
+            icon={Globe}
             title="Connect your website"
             message="Connect a site to edit its pages here and Publish them. A company owner or admin can connect it."
           />
