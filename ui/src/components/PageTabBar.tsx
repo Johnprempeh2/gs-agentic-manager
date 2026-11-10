@@ -13,7 +13,7 @@ interface PageTabBarProps {
   value?: string;
   onValueChange?: (value: string) => void;
   align?: "center" | "start";
-  /** Names the phone select; give nested tab bars their own name. */
+  /** Names the tab list, and the phone select; give nested tab bars their own name. */
   ariaLabel?: string;
   /** Shown above the phone select, for pages that stack two of them. */
   mobileLabel?: string;
@@ -50,7 +50,7 @@ export function PageTabBar({ items, value, onValueChange, align = "center", aria
   }
 
   return (
-    <TabsList variant="line" className={align === "start" ? "justify-start" : undefined}>
+    <TabsList variant="line" aria-label={ariaLabel} className={align === "start" ? "justify-start" : undefined}>
       {items.map((item) => (
         <TabsTrigger key={item.value} value={item.value}>
           {item.label}

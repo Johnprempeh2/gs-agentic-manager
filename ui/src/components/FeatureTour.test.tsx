@@ -209,6 +209,26 @@ describe("FeatureTour", () => {
     expect(document.querySelector("[data-tour-active]")).toBeNull();
   });
 
+  it("opens nothing by itself when none of a tour's elements is on the page", async () => {
+    const elsewhere: TourDefinition = { ...tour, steps: [{ target: "missing", title: "Missing", body: "Not here." }, { target: "also-missing", title: "Gone", body: "Not here." }] };
+    await render("/page", undefined, elsewhere);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(card()).toBeNull();
+    expect(server.rows).toEqual([]);
+  });
+
+  it("waits for a page that loads late before its first-visit tour opens", async () => {
+    const late: TourDefinition = { ...tour, steps: [{ target: "late", title: "Late", body: "Arrives after the page." }] };
+    await render("/page", undefined, late);
+    expect(card()).toBeNull();
+    const el = document.createElement("div");
+    el.setAttribute("aria-label", "late");
+    el.textContent = "late";
+    container.append(el);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(card()?.textContent).toContain("Step 1 of 1");
+  });
+
   it("takes the first target on screen when a step lists several, and skips the step when none is", async () => {
     await render("/page", undefined, {
       ...tour,

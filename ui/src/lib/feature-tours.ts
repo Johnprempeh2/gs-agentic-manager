@@ -2,6 +2,7 @@ import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
 import { IMAGES_TOUR } from "./images-tour";
 import { WELCOME_TOUR } from "./welcome-tour";
+import { COMMERCE_CATALOGUE_TOUR, WEBSITE_EDITOR_TOUR, WEBSITE_HOME_TOUR, WEBSITE_SITEMAP_TOUR } from "./website-tours";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
@@ -221,7 +222,7 @@ export const STRATEGY_BOARD_TOUR: TourDefinition = {
 
 export const WEBSITE_TOUR: TourDefinition = {
   id: "website",
-  title: "Website",
+  title: "Website traffic",
   description: "Visitors and Google Search in one place, and connecting Google.",
   version: 1,
   flag: "enableWebsiteView",
@@ -954,6 +955,7 @@ export const CORE_TOURS: TourDefinition[] = [
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,
   INTEGRATIONS_TOUR,
+  COMMERCE_CATALOGUE_TOUR,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */
@@ -970,6 +972,9 @@ export const ALL_TOURS: TourDefinition[] = [
   PIPELINE_BOARD_TOUR,
   CLIENT_CASE_TOUR,
   STRATEGY_BOARD_TOUR,
+  WEBSITE_HOME_TOUR,
+  WEBSITE_SITEMAP_TOUR,
+  WEBSITE_EDITOR_TOUR,
   WEBSITE_TOUR,
   GITHUB_SHARE_TOUR,
   TEAM_CHAT_TOUR,

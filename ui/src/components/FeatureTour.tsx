@@ -105,13 +105,21 @@ export function FeatureTour({
   }, [ready, enabled, requested, start, setSearchParams]);
 
   // First visit: once the seen state is known (never while loading, so no flash),
-  // wait a tick so the page's own content has rendered.
+  // wait a tick so the page's own content has rendered, and keep looking for about
+  // three seconds on a page that loads late (the page editor).
   useEffect(() => {
     if (!ready || !enabled || !autoStart || requested || seen !== false || autoStarted.current) return;
-    const timer = window.setTimeout(() => {
-      autoStarted.current = true;
-      start();
-    }, 0);
+    let tries = 0;
+    let timer = 0;
+    const attempt = () => {
+      tries += 1;
+      if (start() || tries >= 20) {
+        autoStarted.current = true;
+        return;
+      }
+      timer = window.setTimeout(attempt, 150);
+    };
+    timer = window.setTimeout(attempt, 0);
     return () => window.clearTimeout(timer);
   }, [ready, enabled, autoStart, requested, seen, start]);
 
