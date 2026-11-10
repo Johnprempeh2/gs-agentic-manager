@@ -1385,6 +1385,16 @@ describe("an HTML page in the block editor (GRE-4822)", () => {
     expect(document.body.querySelector('[data-testid="website-not-built"]')).toBeNull();
   });
 
+  it("on a site that builds HTML pages, a page the sitemap planned (an empty block document) opens in live design, never with Add block", async () => {
+    api.sites.mockResolvedValue([{ ...site, releaseSchemaVersion: 2 }]);
+    api.pages.mockResolvedValue([page, { ...about, status: "planned" }]);
+    api.page.mockResolvedValue({ ...about, status: "planned", content: { root: { props: {} }, content: [], zones: {} } });
+    await renderAt("/website/edit?property=prop-1&page=page-2");
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe("/website/sites/site-1/pages/page-2/design");
+    expect(document.body.textContent).not.toContain("Add block");
+    expect(document.body.querySelector('[data-testid="website-not-built"]')).toBeNull();
+  });
+
   it("an empty draft shows no empty state until GSAM knows the page is in blocks", async () => {
     api.pageEditor.mockResolvedValue({ ...load, data: { root: { props: {} }, content: [] } });
     api.page.mockReturnValue(new Promise(() => {}));
