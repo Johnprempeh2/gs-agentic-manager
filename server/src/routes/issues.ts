@@ -15,6 +15,7 @@ import {
   touchLiveDesign,
   isLiveDesignAgentConnected,
   LiveDesignConflict,
+  saveLiveDesignEditsDirect,
   liveDesignWakeMessage,
   pollLiveDesign,
   pollLiveDesignFrames,
@@ -21194,7 +21195,7 @@ export function issueRoutes(
         const object = await storage.getObject(file.companyId, file.objectKey);
         return (await readStream(object.stream)).toString("utf8");
       },
-      save: async (html, agentId) => {
+      save: async (html, agentId, userId = null) => {
         const stored = await storage.putFile({
           companyId: issue.companyId,
           namespace: `issues/${issue.id}`,
@@ -21211,8 +21212,8 @@ export function issueRoutes(
           byteSize: stored.byteSize,
           sha256: stored.sha256,
           originalFilename: stored.originalFilename,
-          createdByAgentId: agentId,
-          createdByUserId: null,
+          createdByAgentId: userId ? null : agentId,
+          createdByUserId: userId,
           createdByRunId: null,
         });
         return saved.id;
@@ -21388,6 +21389,31 @@ export function issueRoutes(
       });
       screenshotAttachmentId = attachment.id;
       recordLiveDesignMarkup(session, eventId, attachment.id);
+    }
+    // Save to draft: GSAM writes John's own edits into the page itself when it can place every one,
+    // so the save does not wait for an agent. Anything it cannot place goes to the agent, as before.
+    if (body.path.startsWith("/manual-edit-commit")) {
+      const actor = getActorInfo(req);
+      const direct = await saveLiveDesignEditsDirect(session, actor.actorType === "user" ? actor.actorId : null);
+      if (direct?.saved) {
+        if (session.deliverableId) await fileLiveDeliverableVersion(req, session, direct.attachmentId, null);
+        await logActivity(db, {
+          companyId: session.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "issue.live_design_edits_saved",
+          entityType: "issue",
+          entityId: session.issueId,
+          issueId: session.issueId,
+          details: { sessionId: session.id, attachmentId: direct.attachmentId, version: direct.version, edits: direct.applied, ms: direct.ms },
+        });
+        res.json({ status: 200, body: JSON.stringify({ cleared: direct.applied, remainingCount: 0 }) });
+        return;
+      }
+      if (direct) {
+        res.json({ status: 409, body: JSON.stringify({ error: direct.reason }) });
+        return;
+      }
     }
     const answer = handleImpeccableRequest(session, { ...body, screenshotAttachmentId });
     // A request with no agent listening (it stopped, or never joined): wake one again.
