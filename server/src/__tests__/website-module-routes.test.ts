@@ -446,6 +446,12 @@ describeEmbeddedPostgres("website module routes", () => {
       const queue = (await http.get(`${world.base}/review`).expect(200)).body;
       expect(queue.pages.map((page: { slug: string }) => page.slug)).toEqual(["/", "/about"]);
       expect(queue.entries.map((entry: { id: string }) => entry.id)).toEqual([world.entry.id]);
+      // The list says what the entry is, so no screen has to show its key. The content itself stays out.
+      expect(queue.entries[0].summary).toEqual({
+        name: "Bulk product", slug: "aspose-pdf-net", short_description: "Test product", description: null,
+        from_price_minor: null, from_price_currency: null, vendor: "Aspose", category: "PDF", variants: [],
+      });
+      expect(queue.entries[0].content).toBeUndefined();
 
       const res = await http.post(`${world.base}/review/approve`).send({}).expect(200);
       expect(new Set(res.body.approvedPageIds)).toEqual(new Set([world.page.id, world.about.id]));
@@ -564,6 +570,15 @@ describeEmbeddedPostgres("website module routes", () => {
     expect(second.body).toMatchObject({ imported: 0, updated: 0, skipped: 210 });
     const team = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=public-person`).expect(200);
     expect(team.body).toHaveLength(6);
+    expect(team.body[0].summary).toMatchObject({ name: publicImport.people[0].name, short_description: publicImport.people[0].role });
+    // A product is keyed by its id: the list carries its name, price and edition SKUs, not its whole content.
+    const source = publicImport.products.find((product) => product.variants.some((variant) => variant.sku))!;
+    const products = await http.get(`/api/companies/${company.id}/website/sites/${site.id}/entries?collection=product`).expect(200);
+    const listed = products.body.find((entry: { entryKey: string }) => entry.entryKey === source.id);
+    expect(listed.summary).toMatchObject({ name: source.name, slug: source.slug, from_price_minor: source.from_price_minor, vendor: source.vendor.name, category: source.category.name });
+    expect(listed.summary.variants).toHaveLength(source.variants.length);
+    expect(listed.content).toBeUndefined();
+    expect(JSON.stringify(products.body).length).toBeLessThan(400_000);
     expect(JSON.stringify(team.body)).not.toContain("inviteToken");
   });
 

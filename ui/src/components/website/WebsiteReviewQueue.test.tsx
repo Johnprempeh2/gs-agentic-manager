@@ -118,7 +118,29 @@ describe("WebsiteReviewQueue", () => {
     await click(button());
     const status = container.querySelector('[role="status"]')?.textContent ?? "";
     expect(status).toContain("Approved 2 pages. They go live when you Deploy. 1 item was not approved.");
-    expect(status).toContain("product/aspose-pdf-net: The entry fields are incomplete");
+    // The item reads as it does in the list above, not as collection/key.
+    expect(status).toContain("not approved.aspose-pdf-net: The entry fields are incomplete");
+  });
+
+  it("reads an entry by its name, kind and price, with the code small: never the id it is keyed by", async () => {
+    const id = "0221935f-296a-499f-bad7-a9f155452ed0";
+    const summary = { name: "Aspose.PDF for .NET", slug: "aspose-pdf-for-net", short_description: null, description: null, from_price_minor: 119900, from_price_currency: "USD", vendor: "Aspose", category: "PDF", variants: [] };
+    moduleApiMock.review.mockResolvedValue({ pages: [page("p1", "Home", "/")], entries: [{ ...entry("e1", id), summary }, { ...entry("e2", "public-person-1"), collection: "public-person" }] });
+    moduleApiMock.approveReview.mockResolvedValue({ approvedPageIds: ["p1"], approvedEntryIds: [], skipped: [{ kind: "entry", id: "e1", title: `product/${id}`, reason: "The entry fields are incomplete" }] });
+    await render();
+    const rows = [...container.querySelectorAll("li")].map((row) => row.textContent ?? "");
+    const product = rows.find((row) => row.includes("Aspose.PDF for .NET"))!;
+    expect(product).toContain("Aspose · PDF · From US$1,199.00 · aspose-pdf-for-net");
+    expect(product).toContain("Product");
+    expect(container.textContent).not.toContain(id);
+    expect(container.querySelector('[aria-label="Select Aspose.PDF for .NET"]')).not.toBeNull();
+    // An entry whose content names nothing still reads by its key.
+    expect(rows.some((row) => row.includes("public-person-1") && row.includes("Team member"))).toBe(true);
+
+    await click(button());
+    const status = container.querySelector('[role="status"]')?.textContent ?? "";
+    expect(status).toContain("Aspose.PDF for .NET: The entry fields are incomplete");
+    expect(status).not.toContain(id);
   });
 
   it("without Publish rights: the list shows, with no button and no checkboxes", async () => {

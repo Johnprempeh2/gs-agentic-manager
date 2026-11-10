@@ -115,7 +115,28 @@ export interface WebsitePage extends WebsiteContentRow {
   seo: WebsitePageSeo;
 }
 
+/**
+ * The few fields a list needs to say what an entry is, read from its content. Never the whole content.
+ * The names match the site's catalogue rows, so one set of screen helpers reads both.
+ */
+export interface WebsiteEntrySummary {
+  name: string | null;
+  slug: string | null;
+  /** The entry's own one-line text: a product's short description, a person's role, a form's intro. */
+  short_description: string | null;
+  /** The start of the long description, cut short. */
+  description: string | null;
+  from_price_minor: number | null;
+  from_price_currency: string | null;
+  vendor: string | null;
+  category: string | null;
+  /** A product's editions, for search by SKU. */
+  variants: { sku: string | null; name: string | null }[];
+}
+
 export interface WebsiteEntry extends WebsiteContentRow {
+  /** Set on the entry list and the review list. Null when the content names nothing. */
+  summary?: WebsiteEntrySummary | null;
   collection: string;
   entryKey: string;
   orgId: string | null;

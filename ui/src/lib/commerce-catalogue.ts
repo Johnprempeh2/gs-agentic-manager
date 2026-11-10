@@ -1,4 +1,4 @@
-import type { WebsiteCommerceCatalogueResource } from "@greatstone/shared";
+import type { WebsiteCommerceCatalogueResource, WebsiteEntry } from "@greatstone/shared";
 import type { CommerceRow } from "@/api/website-commerce";
 import { formatMinor, text } from "@/lib/commerce";
 import type { CommerceFieldDef } from "@/lib/commerce-write";
@@ -180,6 +180,32 @@ export function catalogueMatches(row: CommerceRow, search: string, names: (strin
     ...list(row.variants).flatMap((variant: CommerceRow) => [variant.sku, variant.name])]
     .map(text).filter(Boolean).join("\n").toLowerCase();
   return words.every((word) => haystack.includes(word));
+}
+
+const ENTRY_KINDS: Record<string, string> = {
+  product: "Product", category: "Category", vendor: "Vendor", "public-person": "Team member", form: "Form", redirect: "Redirect",
+};
+
+/**
+ * How a Website entry reads in a list: what it is first, its code last. An entry whose content names nothing
+ * reads by its key, as before. A product always says its price, or that none is set.
+ */
+export function entryReading(entry: Pick<WebsiteEntry, "entryKey" | "collection" | "summary">) {
+  const row: CommerceRow = { ...entry.summary };
+  const named = Boolean(text(row.name));
+  const price = entry.collection === "product" && named ? offeringPrice(row) ?? "No price set" : null;
+  return {
+    title: text(row.name) ?? entry.entryKey,
+    line: catalogueOneLine(row),
+    meta: [text(row.vendor), text(row.category), price].filter(Boolean).join(" · "),
+    code: named ? text(row.slug) ?? entry.entryKey : null,
+    kind: ENTRY_KINDS[entry.collection] ?? "Entry",
+  };
+}
+
+/** Search a Website entry by name, vendor, category, code, key or edition SKU. */
+export function entryMatches(entry: Pick<WebsiteEntry, "entryKey" | "summary">, search: string): boolean {
+  return catalogueMatches({ ...entry.summary }, search, [entry.entryKey, entry.summary?.vendor, entry.summary?.category]);
 }
 
 /** The product's public page. Only a published product has one. */
