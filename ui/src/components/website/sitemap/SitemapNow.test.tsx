@@ -69,3 +69,38 @@ describe("pageViewUrl", () => {
     expect(pageViewUrl({ ...site, devPreviewUrl: null }, "/")).toBe("https://www.example.test/");
   });
 });
+
+describe("dismissing a suggestion from the keyboard", () => {
+  const ideas = [...pages, page("p4", "/pricing/teams", "Teams", "planned"), page("p5", "/pricing/schools", "Schools", "planned")];
+  const press = (label: string) => {
+    const target = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    target.focus();
+    act(() => target.click());
+  };
+  const focused = () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.getAttribute("data-testid");
+  beforeEach(() => {
+    window.localStorage.clear();
+    act(() => root.render(<SitemapNow site={site} pages={ideas} approvedTree={null} />));
+  });
+
+  it("hands the keyboard to the next suggestion, then the one before, then the group, and says what happened", () => {
+    // Rows sort by address: Pricing, Schools, Teams.
+    press("Dismiss the suggestion Schools");
+    expect(focused()).toBe("Dismiss the suggestion Teams");
+    expect(container.querySelector("[role='status']")?.textContent).toBe("Schools dismissed.");
+    press("Dismiss the suggestion Teams");
+    expect(focused()).toBe("Dismiss the suggestion Pricing");
+    press("Dismiss the suggestion Pricing");
+    expect(focused()).toBe("sitemap-now-suggested");
+  });
+
+  it("keeps the keyboard on the same button when the row stays: Bring back, then Dismiss again", () => {
+    press("Dismiss the suggestion Schools");
+    act(() => [...container.querySelectorAll("button")].find((entry) => entry.textContent === "Show 1 dismissed suggestion")!.click());
+    press("Bring back the suggestion Schools");
+    expect(focused()).toBe("Dismiss the suggestion Schools");
+    expect(container.querySelector("[role='status']")?.textContent).toBe("Schools is back in the suggestions.");
+    press("Dismiss the suggestion Schools");
+    expect(focused()).toBe("Bring back the suggestion Schools");
+  });
+});

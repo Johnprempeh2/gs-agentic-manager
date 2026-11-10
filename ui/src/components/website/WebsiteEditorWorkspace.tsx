@@ -113,6 +113,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { WebsiteChangeRequestPanel, websiteScreenshotFile, type WebsiteChangeTarget } from "./WebsiteChangeRequest";
 import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComments";
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
+import { countOf, isBuiltPage } from "./sitemap/model";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteStyleForSite } from "./WebsiteStyle";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
@@ -164,7 +165,7 @@ function SiteNotReady({ site, onOpenTab }: { site: WebsiteSite | null; onOpenTab
   );
 }
 
-/** The Pages tab: every page of the site, each with Edit into the full-screen editor. */
+/** The Pages tab: every page of the site that exists, each with Edit into live design. Sitemap entries nobody has built are ideas, and stay on the Sitemap tab. */
 export function WebsitePagesTab({
   companyId,
   property,
@@ -198,9 +199,21 @@ export function WebsitePagesTab({
   if (!site) return <SiteNotReady site={site} onOpenTab={onOpenTab} />;
   if (pagesQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading pages</p>;
   if (pagesQuery.error) return <ErrorState error={pagesQuery.error} onRetry={() => void pagesQuery.refetch()} />;
-  const pages = pagesQuery.data ?? [];
+  const pages = (pagesQuery.data ?? []).filter(isBuiltPage);
+  const ideas = (pagesQuery.data ?? []).filter((entry) => !entry.archivedAt && !isBuiltPage(entry)).length;
   if (pages.length === 0) {
-    return <EmptyState icon={FileText} title="No pages yet" message="Pages appear here once the sitemap is approved and its pages are created." />;
+    return ideas > 0 ? (
+      <EmptyState
+        icon={FileText}
+        title="No pages built yet"
+        message={`The sitemap has ${countOf(ideas, "suggested page")}, and none is built. On the Sitemap tab, choose Build this page on the one to start with.`}
+        action="Open Sitemap"
+        onAction={() => onOpenTab("sitemap")}
+        hideActionIcon
+      />
+    ) : (
+      <EmptyState icon={FileText} title="No pages yet" message="Pages appear here once the sitemap is approved and its pages are created." />
+    );
   }
 
   return (
@@ -208,7 +221,19 @@ export function WebsitePagesTab({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 id="website-pages-title" className="text-sm font-semibold">Pages</h2>
-          <p className="text-xs text-muted-foreground">Edit opens the page full screen. Click any words or image on the page to change them.</p>
+          <p className="text-xs text-muted-foreground">
+            Edit opens the page full screen. Click any words or image on the page to change them.
+            {ideas > 0 ? (
+              <>
+                {" "}
+                {countOf(ideas, "suggested page")} from the sitemap {ideas === 1 ? "is" : "are"} not built, so {ideas === 1 ? "it is" : "they are"} not listed here:{" "}
+                <button type="button" className="rounded-sm underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpenTab("sitemap")}>
+                  see {ideas === 1 ? "it" : "them"} on the Sitemap tab
+                </button>
+                .
+              </>
+            ) : null}
+          </p>
         </div>
         <Button type="button" size="sm" onClick={() => openPage(pages[0]!.id)}>
           <PenLine />
