@@ -76,6 +76,17 @@ const ADAPTER = String.raw`(function () {
   var pending = {}, rid = 0, streams = [], lastClicks = [], picked = {};
   function post(msg) { msg.source = "gs-impeccable"; window.parent.postMessage(msg, "*"); }
 
+  // Cmd or Ctrl Z with the page focused: the editor undoes the last edit not saved yet (Shift, or Ctrl Y, redoes).
+  // Never while typing in the page, where the browser's own undo belongs.
+  document.addEventListener("keydown", function (e) {
+    var key = String(e.key || "").toLowerCase();
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || (key !== "z" && !(key === "y" && e.ctrlKey && !e.metaKey))) return;
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName || ""))) return;
+    e.preventDefault();
+    post({ kind: "history", redo: key === "y" || e.shiftKey });
+  }, true);
+
   // Remember what John clicked, to find the element Impeccable picked when it asks for versions.
   document.addEventListener("click", function (e) {
     var el = e.target;

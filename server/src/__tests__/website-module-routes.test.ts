@@ -31,6 +31,7 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/error-handler.js";
 import { gsamServedOrigins, websiteModuleRoutes } from "../routes/website-module.js";
 import { websiteModuleService } from "../services/website/module.js";
+import { resetLiveDesignSessions, startLiveDesign } from "../services/live-design.js";
 import { checkWebsiteConnection, type WebsiteConnectInput, type WebsiteConnectionChecker } from "../services/website/connect-check.js";
 import { fakeNetlifyConnect, type FakeNetlifyConnect } from "./helpers/fake-netlify-connect.js";
 import { accessService, instanceSettingsService } from "../services/index.js";
@@ -1335,6 +1336,28 @@ describeEmbeddedPostgres("website module routes", () => {
     const sig = link.exec(frame.text)?.[1];
     expect(sig).toBe(signWebsiteMediaLink(MEDIA_SECRET, { companyId: a.company.id, siteId: a.site.id, file: `${hash}.png` }, Number(sig!.split(".")[0]) * 1000 - WEBSITE_MEDIA_LINK_TTL_SECONDS * 1000));
     expect(frame.headers["content-security-policy"]).toMatch(/img-src data: blob:[^;]*'self'/);
+  });
+
+  it("live frame and draft: with the editor's session they show its edits not saved yet, and only for its version", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableWebsiteView: true });
+    const a = await seedWorld("Alpha", "alpha.test");
+    const http = request(app());
+    const pageUrl = `/api/companies/${a.company.id}/website/sites/${a.site.id}/pages/${a.page.id}`;
+    const detail = (await http.get(pageUrl).expect(200)).body;
+    const saved = (await http.put(`${pageUrl}/content`).send({ content: { format: "gs-html", html: `<h1>Old words</h1><p>Keep</p>`, css: "" }, baseRevisionId: detail.latestRevisionId }).expect(200)).body;
+    const { session } = startLiveDesign({ companyId: a.company.id, issueId: `website-page:${a.page.id}`, attachmentId: saved.revisionId, agentId: "agent-1" });
+    try {
+      session.staged.push({ id: "e1", element: null, ops: [{ ref: "body>main#gs-page:nth-of-type(1)>h1:nth-of-type(1)", originalText: "Old words", newText: "New words", leaf: { tagName: "h1" } }] });
+      const frame = await http.get(`${pageUrl}/live-frame?revision=${saved.revisionId}&session=${session.id}`).expect(200);
+      expect(frame.text).toContain("<h1>New words</h1>");
+      const draft = (await http.get(`${pageUrl}/live-draft?revision=${saved.revisionId}&session=${session.id}`).expect(200)).body;
+      expect(draft.page.html).toContain("<h1>New words</h1>");
+      // Without the session, or for another version, the page is as saved.
+      expect((await http.get(`${pageUrl}/live-frame?revision=${saved.revisionId}`).expect(200)).text).toContain("<h1>Old words</h1>");
+      expect((await http.get(`${pageUrl}/live-draft?revision=${detail.latestRevisionId}&session=${session.id}`).expect(200)).body.page.html).not.toContain("New words");
+    } finally {
+      resetLiveDesignSessions();
+    }
   });
 
   it("collection entries (GRE-2138): a wrong-shaped entry or an unknown collection answers 422", async () => {

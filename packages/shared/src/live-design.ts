@@ -129,6 +129,8 @@ export interface LiveDesignView {
   queued: string[];
   /** Direct edits (removals, text) made on the page and not saved to the draft yet. */
   stagedCount: number;
+  /** Edits Undo took back that Redo can put back (none after a new edit, a save or a restore). */
+  redoCount?: number;
 }
 
 /**

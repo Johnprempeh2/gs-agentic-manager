@@ -15,7 +15,7 @@ import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
-import { LiveDesignChat, useLiveDesign } from "../components/LiveDesignChat";
+import { historyKey, LiveDesignChat, useEditHistory, useLiveDesign } from "../components/LiveDesignChat";
 import { useDecisionCardContext } from "../components/website/WebsiteHub";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
 
@@ -112,7 +112,7 @@ export function WebsitePageLiveEditor() {
     : undefined;
   const navigate = useNavigate();
   const engine = useMemo(
-    () => ({ siteId, draft: (revisionId: string) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId), deployChanges: () => websiteModuleApi.deployChanges(companyId, siteId) }),
+    () => ({ siteId, draft: (revisionId: string, sessionId: string | null) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId, sessionId), deployChanges: () => websiteModuleApi.deployChanges(companyId, siteId) }),
     [companyId, siteId, pageId],
   );
   const { data: pages } = useQuery({
@@ -219,7 +219,7 @@ function LiveEditorShell({
   /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
   /** An old block format page: the real page from the site, read-only, with an optional rebuild. */
   readOnly?: { url: string; onRebuild?: () => void };
-  engine?: { siteId: string; draft: (revisionId: string) => Promise<Record<string, unknown>>; deployChanges?: () => Promise<WebsiteDeployChanges> };
+  engine?: { siteId: string; draft: (revisionId: string, sessionId: string | null) => Promise<Record<string, unknown>>; deployChanges?: () => Promise<WebsiteDeployChanges> };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
@@ -257,6 +257,34 @@ function LiveEditorShell({
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
   const refresh = live.run;
+  // The frame reloads after Undo, Redo, Discard or a quick change, and draws the page with the edits not saved yet.
+  const reloadFrame = useCallback(() => setFrameReload((n) => n + 1), []);
+  const editHistory = useEditHistory(live, reloadFrame);
+  const historyRef = useRef(editHistory);
+  historyRef.current = editHistory;
+  const looking = !!viewing || !!preview;
+  const lookingRef = useRef(looking);
+  lookingRef.current = looking;
+  const stepHistory = useCallback((step: "undo" | "redo") => {
+    const h = historyRef.current;
+    if (lookingRef.current || !(step === "undo" ? h.canUndo : h.canRedo)) return false;
+    if (step === "undo") h.undo();
+    else h.redo();
+    return true;
+  }, []);
+  // Cmd or Ctrl Z and Shift Cmd or Ctrl Z, except while typing (the box keeps its own undo).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const step = historyKey(e);
+      const t = e.target as HTMLElement | null;
+      if (!step || (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName)))) return;
+      if (stepHistory(step)) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stepHistory]);
+  // GSAM's own frame adds the session, so the page shows the edits not saved yet; the site's engine gets them with the draft.
+  const editSrc = !engineOrigin && sessionId && frameSrc ? `${frameSrc}${frameSrc.includes("?") ? "&" : "?"}session=${encodeURIComponent(sessionId)}` : frameSrc;
 
   const toFrame = useCallback((message: Record<string, unknown>) => {
     frameRef.current?.contentWindow?.postMessage({ ...message, source: "gs-impeccable-host" }, engineOrigin ?? "*");
@@ -267,12 +295,13 @@ function LiveEditorShell({
   const sendDraft = useCallback(async () => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win || !engineNonce.current || !pageId) return;
-    const payload = await engine.draft(viewId ?? pageId).catch(() => null);
+    // The page being edited comes with its edits not saved yet; an earlier version comes as it was saved.
+    const payload = await engine.draft(viewId ?? pageId, viewId ? null : sessionId).catch(() => null);
     if (!payload || engineNonce.current === null) return;
     win.postMessage({ gs: "website-frame", id: crypto.randomUUID(), type: "live-draft", payload, protocol: 1, session: engineNonce.current }, engineOrigin);
     // An earlier version is for looking at: its editing tools stay hidden.
     if (viewId) toFrame({ kind: "editing", on: false });
-  }, [engine, engineOrigin, pageId, viewId, toFrame]);
+  }, [engine, engineOrigin, pageId, viewId, toFrame, sessionId]);
   const sayHello = useCallback(() => {
     const win = frameRef.current?.contentWindow;
     if (!engine || !engineOrigin || !win) return;
@@ -342,6 +371,9 @@ function LiveEditorShell({
       } else if (m.kind === "page-health") {
         const hosts = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5) : []);
         setHealth({ blank: m.blank === true, scripts: hosts(m.scripts), styles: hosts(m.styles) });
+      } else if (m.kind === "history") {
+        // Cmd or Ctrl Z pressed while the page had the keyboard (and not while typing in it).
+        stepHistory(m.redo === true ? "redo" : "undo");
       } else if (m.kind === "stream-open") {
         void openStream();
       } else if (m.kind === "voice-start") {
@@ -419,7 +451,7 @@ function LiveEditorShell({
       streamRef.current?.abort();
       voiceRef.current?.rec.abort();
     };
-  }, [sessionId, toFrame, refresh]);
+  }, [sessionId, toFrame, refresh, stepHistory]);
 
   // The event stream belongs to the page being edited: it stops while an earlier version is on show,
   // and the page's own frame opens it again when it comes back.
@@ -599,7 +631,7 @@ function LiveEditorShell({
             ) : frameSrc ? (
               <ScaledFrame
                 key={`${pageId}:${frameReload}`}
-                src={frameSrc}
+                src={editSrc}
                 title={`Live design of ${title}`}
                 width={WIDTHS[viewport]}
                 // The engine runs on the site's own origin (never GSAM's), so it keeps its origin to run.
@@ -620,7 +652,7 @@ function LiveEditorShell({
           <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => {
             setViewing(null);
             setPreview({ url, label });
-          }} onEditsDiscarded={() => setFrameReload((n) => n + 1)} />
+          }} onEditsChanged={reloadFrame} />
         </aside>
       </div>
     </div>

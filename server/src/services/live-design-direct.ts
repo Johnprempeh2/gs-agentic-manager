@@ -36,7 +36,16 @@ const hasWords = (node: Node) => isText(node) && /\S/.test(node.nodeValue ?? "")
 const isLeaf = (el: Element) => el.childNodes.length > 0 && [...el.childNodes].every(isText) && [...el.childNodes].some(hasWords);
 const touchesIsland = (el: Element) => el.localName === "gs-island" || !!el.querySelector("gs-island") || !!el.closest("gs-island");
 
-export function applyEditsToPage(html: string, ops: Op[]): DirectEditResult {
+/** Marks an element a staged edit removed, in a preview: hidden, but still in place so later edits find their way. */
+export const STAGED_REMOVED_ATTRS = ["hidden", "data-gs-staged-removed"] as const;
+/** Page CSS for a preview, so a removed element stays hidden whatever the page's own CSS says. */
+export const STAGED_REMOVED_CSS = "[data-gs-staged-removed]{display:none!important}";
+
+/**
+ * `preview`: the page as the editor shows it before a save. Removed elements stay in the page,
+ * hidden (STAGED_REMOVED_ATTRS), so the frame's element paths match the saved page's.
+ */
+export function applyEditsToPage(html: string, ops: Op[], { preview = false }: { preview?: boolean } = {}): DirectEditResult {
   if (!ops.length) return { failed: "no edits" };
   const dom = new JSDOM(html, { includeNodeLocations: true });
   const doc = dom.window.document;
@@ -163,15 +172,27 @@ export function applyEditsToPage(html: string, ops: Op[]): DirectEditResult {
   }
 
   // Removals first take their text edits with them, then everything is cut from the end backwards.
-  const gone = [...removed].filter((el) => ![...removed].some((other) => other !== el && other.contains(el)));
-  const cuts = gone.map((el) => ({ start: at(el)!.startOffset, end: at(el)!.endOffset, text: "" }));
+  // A preview keeps every removed element and its words, and only marks it hidden.
+  const gone = preview ? [] : [...removed].filter((el) => ![...removed].some((other) => other !== el && other.contains(el)));
+  const cuts: Array<{ start: number; end: number; text: string; raw?: true }> = gone.map((el) => ({ start: at(el)!.startOffset, end: at(el)!.endOffset, text: "" }));
   for (const [node, cut] of textCuts) if (!gone.some((el) => el.contains(node))) cuts.push(cut);
+  if (preview) {
+    for (const el of removed) {
+      const tag = (dom.nodeLocation(el) as { startTag?: { endOffset: number } } | null)?.startTag;
+      const names = STAGED_REMOVED_ATTRS.filter((name) => !el.hasAttribute(name));
+      if (!tag) return { failed: "the element has no place in the saved page" };
+      // Before the start tag's closing ">" (or "/>"), so the new attributes come last, as setAttribute puts them.
+      const end = html.slice(tag.endOffset - 2, tag.endOffset) === "/>" ? tag.endOffset - 2 : tag.endOffset - 1;
+      if (names.length) cuts.push({ start: end, end, text: ` ${names.join(" ")}`, raw: true });
+      for (const name of names) el.setAttribute(name, "");
+    }
+  }
   cuts.sort((a, b) => b.start - a.start);
   let out = html;
   let before = html.length;
   for (const cut of cuts) {
     if (cut.end > before || cut.start > cut.end) return { failed: "two edits overlap" };
-    out = out.slice(0, cut.start) + (cut.text ? escapeText(cut.text) : "") + out.slice(cut.end);
+    out = out.slice(0, cut.start) + (cut.raw ? cut.text : escapeText(cut.text)) + out.slice(cut.end);
     before = cut.start;
   }
 
@@ -183,3 +204,11 @@ export function applyEditsToPage(html: string, ops: Op[]): DirectEditResult {
   if (expected !== got) return { failed: "the saved page would not match the edits" };
   return { html: out, applied: ops.length };
 }
+
+/** The page with the edits not saved yet, for the editor's frame; the page as saved when there are none or one does not place. */
+export function previewEdits(html: string, ops: Op[]) {
+  if (!ops.length) return html;
+  const result = applyEditsToPage(html, ops, { preview: true });
+  return "failed" in result ? html : result.html;
+}
+

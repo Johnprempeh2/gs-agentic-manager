@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LIVE_DEPLOY_REQUEST, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
-import { ArrowUp, Library, Loader2 } from "lucide-react";
+import { ArrowUp, Library, Loader2, Redo2, Undo2 } from "lucide-react";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 import { issuesApi } from "../api/issues";
@@ -257,10 +257,10 @@ function useElapsed(since: string | undefined, running: boolean) {
  * Impeccable's own bar on the page.
  */
 /** `deployable`: a website page, so the chat offers the deploy button. */
-export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onEditsDiscarded }: {
+export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onEditsChanged }: {
   live: ReturnType<typeof useLiveDesign>;
-  /** The page dropped its unsaved edits: reload the frame so removed parts show again. */
-  onEditsDiscarded?: () => void;
+  /** The edits not saved yet changed outside the page (Undo, Redo, Discard, a quick change): reload the frame to show them. */
+  onEditsChanged?: () => void;
   onPreview?: (url: string, label: string) => void;
   deployable?: boolean;
   deployChanges?: () => Promise<WebsiteDeployChanges>;
@@ -346,7 +346,7 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
         onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.deploy(id)) : undefined}
       />
 
-      <StagedEdits live={live} onDiscarded={onEditsDiscarded} />
+      <StagedEdits live={live} onChanged={onEditsChanged} />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
@@ -418,29 +418,69 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
   );
 }
 
-/**
- * Direct edits made on the page wait here until saved, so a removal is never a silent no-op:
- * Save to draft has the agent write them into the page as the next version; Undo drops them.
- */
-export function StagedEdits({ live, onDiscarded }: { live: ReturnType<typeof useLiveDesign>; onDiscarded?: () => void }) {
+/** Cmd or Ctrl Z undoes, Shift with it (or Ctrl Y) redoes; null for any other key. */
+export function historyKey(e: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null;
+  const key = e.key.toLowerCase();
+  if (key === "z") return e.shiftKey ? "redo" : "undo";
+  if (key === "y" && e.ctrlKey && !e.metaKey) return "redo";
+  return null;
+}
+
+/** Undo and Redo of the person's own edits not saved yet, one edit at a time. `onChanged` reloads the page frame. */
+export function useEditHistory(live: ReturnType<typeof useLiveDesign>, onChanged?: () => void) {
   const { view, run } = live;
+  const ready = !!view && view.status !== "ended" && view.status !== "applying";
+  const canUndo = ready && (view?.stagedCount ?? 0) > 0;
+  const canRedo = ready && (view?.redoCount ?? 0) > 0;
+  const step = useCallback(
+    (redo: boolean) => void run((id) => (redo ? liveDesignApi.redo(id) : liveDesignApi.undo(id))).then((ok) => ok && onChanged?.()),
+    [run, onChanged],
+  );
+  return { canUndo, canRedo, undo: () => step(false), redo: () => step(true) };
+}
+
+const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+
+/**
+ * Direct edits made on the page wait here until saved, so a removal is never a silent no-op.
+ * Undo and Redo step through them one at a time; Discard drops them all; Save to draft saves them as the next version.
+ */
+export function StagedEdits({ live, onChanged }: { live: ReturnType<typeof useLiveDesign>; onChanged?: () => void }) {
+  const { view, run } = live;
+  const history = useEditHistory(live, onChanged);
   const count = view?.stagedCount ?? 0;
-  if (!view || !count || view.status === "ended") return null;
+  const redo = view?.redoCount ?? 0;
+  if (!view || (!count && !redo) || view.status === "ended") return null;
   const saving = view.status === "applying";
   const helper = (path: string) => (id: string) =>
     liveDesignApi.helper(id, { method: "POST", path, body: null, extra: {} }).then(() => liveDesignApi.get(id));
   return (
     <section className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-xs" aria-label="Unsaved edits" role="status">
-      <span className="min-w-0 flex-1 font-medium text-foreground">
-        {saving ? "Saving to the draft…" : `${count} edit${count === 1 ? "" : "s"} not saved yet`}
+      <span className="w-full font-medium text-foreground">
+        {saving ? "Saving to the draft…" : count ? `${count} edit${count === 1 ? "" : "s"} not saved yet` : "Nothing waiting to save"}
       </span>
-      <Button type="button" size="sm" variant="ghost" className="h-7" disabled={saving}
-        onClick={() => void run(helper("/manual-edit-discard")).then((ok) => ok && onDiscarded?.())}>
-        Undo
-      </Button>
-      <Button type="button" size="sm" className="h-7" disabled={saving} onClick={() => void run(helper("/manual-edit-commit"))}>
-        Save to draft
-      </Button>
+      <div className="flex items-center" role="group" aria-label="Edit history">
+        <Button type="button" size="icon" variant="ghost" className="size-7" disabled={!history.canUndo}
+          aria-label="Undo the last edit" title={`Undo the last edit (${MOD_KEY} Z)`} onClick={history.undo}>
+          <Undo2 aria-hidden="true" className="size-4" />
+        </Button>
+        <Button type="button" size="icon" variant="ghost" className="size-7" disabled={!history.canRedo}
+          aria-label="Redo" title={`Redo (Shift ${MOD_KEY} Z)`} onClick={history.redo}>
+          <Redo2 aria-hidden="true" className="size-4" />
+        </Button>
+      </div>
+      {count ? (
+        <>
+          <Button type="button" size="sm" variant="ghost" className="ml-auto h-7" disabled={saving}
+            onClick={() => void run(helper("/manual-edit-discard")).then((ok) => ok && onChanged?.())}>
+            Discard all
+          </Button>
+          <Button type="button" size="sm" className="h-7" disabled={saving} onClick={() => void run(helper("/manual-edit-commit"))}>
+            Save to draft
+          </Button>
+        </>
+      ) : null}
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import { injectReviewBridge, renderReviewImage } from "../services/prototype-review.js";
+import { previewEdits } from "../services/live-design-direct.js";
 import {
   canStoreLiveDesignMarkup,
   endLiveDesign,
@@ -22,6 +23,9 @@ import {
   replyLiveDesign,
   startLiveDesign,
   steerLiveDesign,
+  undoLiveDesignEdit,
+  redoLiveDesignEdit,
+  liveDesignPreviewOps,
   refuseLiveDesignSave,
   viewLiveDesign,
 } from "../services/live-design.js";
@@ -21125,7 +21129,9 @@ export function issueRoutes(
     // "Apply 2 edits?" with confirm(), so the live page may open modals; nothing else changes.
     const live = req.query.live === "1";
     res.setHeader("Content-Security-Policy", live ? HTML_ATTACHMENT_CSP.replace(/^sandbox /, "sandbox allow-modals ") : HTML_ATTACHMENT_CSP);
-    res.status(200).send(live ? injectImpeccableLive(html) : injectReviewBridge(html));
+    // ?session=: the live editor's edits not saved yet show too, so the frame can reload after an Undo or Redo.
+    const shown = live ? previewEdits(html, liveDesignPreviewOps(req.query.session, req.params.attachmentId as string)) : html;
+    res.status(200).send(live ? injectImpeccableLive(shown) : injectReviewBridge(html));
   });
 
   router.post("/attachments/:attachmentId/annotate/render", validate(prototypeReviewMarkupSchema), async (req, res) => {
@@ -21469,6 +21475,17 @@ export function issueRoutes(
     }
     res.json(viewLiveDesign(session));
   });
+
+  // Undo and Redo of the person's own edits not saved yet, one edit at a time (Cmd or Ctrl Z in the editor).
+  for (const [step, fn] of [["undo", undoLiveDesignEdit], ["redo", redoLiveDesignEdit]] as const) {
+    router.post(`/live-design/:sessionId/${step}`, (req, res) => {
+      try {
+        res.json(viewLiveDesign(fn(liveSessionForBoard(req))));
+      } catch (err) {
+        if (!sendLiveConflict(res, err)) throw err;
+      }
+    });
+  }
 
   router.post("/live-design/:sessionId/end", (req, res) => {
     res.json(viewLiveDesign(endLiveDesign(liveSessionForBoard(req))));

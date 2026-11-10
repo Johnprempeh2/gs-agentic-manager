@@ -97,6 +97,8 @@ interface Session {
   frames: Frame[];
   frameWaiters: Array<() => void>;
   staged: StagedEdit[];
+  /** Edits taken back with Undo, newest last, for Redo. Cleared by any new edit, save or restore. */
+  redo: StagedEdit[];
   /** The project's DESIGN.md as the agent last sent it, for Impeccable's design panel. */
   designMd: string | null;
   /** Set while the agent writes John's applied edits into the page. */
@@ -211,6 +213,7 @@ export function viewLiveDesign(s: Session): LiveDesignView {
     sourceKind: s.source?.kind ?? "attachment",
     codeTasks: s.codeTasks,
     stagedCount: opCount(s),
+    redoCount: s.redo.length,
     queued: s.queue.flatMap((e) =>
       e.type === "generate" ? [`${e.request.label || e.request.tag}: ${e.request.prompt}`] : e.type === "steer" && !e.requestId ? [e.about ? `${e.about.label}: ${e.message}` : e.message] : [],
     ),
@@ -336,6 +339,7 @@ export function startLiveDesign(input: {
       frames: [],
       frameWaiters: [],
       staged: [],
+      redo: [],
       designMd: null,
       editsRequestId: null,
       viewers: 0,
@@ -459,6 +463,7 @@ export function restoreLiveDesign(s: Session, attachmentId: string, version: num
     throw new LiveDesignConflict("Keep or discard the open versions first, then restore.");
   }
   if (s.staged.length) throw new LiveDesignConflict("Apply or discard your text edits first, then restore.");
+  s.redo = [];
   s.attachmentId = attachmentId;
   s.appliedAttachmentId = attachmentId;
   s.touchedAt = Date.now();
@@ -680,6 +685,8 @@ export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
   }
   const before = opCount(s);
   s.staged.push({ ...edit, ops: edit.ops.slice(0, 50) });
+  // A new edit starts a new line of history, as in any editor.
+  s.redo = [];
   s.touchedAt = Date.now();
   for (const op of edit.ops) {
     if (op.removeElement === true) say(s, "john", describeRemoval(op));
@@ -692,6 +699,49 @@ export function stageLiveDesignEdit(s: Session, edit: StagedEdit) {
 
 export function liveDesignEditCount(s: Session) {
   return opCount(s);
+}
+
+/** What one edit did, in a few words, for the chat. */
+function editSummary(e: StagedEdit) {
+  const op = e.ops[0] ?? {};
+  if (op.removeElement === true) return describeRemoval(op).replace(/\.$/, "").replace(/^Removed/, "removing");
+  return typeof op.newText === "string" ? `changing “${String(op.originalText ?? "").slice(0, 60)}” to “${op.newText.slice(0, 60)}”` : "an edit";
+}
+
+/** Undo (Cmd or Ctrl Z in the editor): takes back the newest edit not saved yet, one at a time. */
+export function undoLiveDesignEdit(s: Session) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  if (s.editsRequestId) throw new LiveDesignConflict("Your edits are being saved now. Undo when the save has finished.");
+  const last = s.staged.pop();
+  if (!last) return s;
+  s.redo.push(last);
+  s.touchedAt = Date.now();
+  say(s, "gsam", `Undone: ${editSummary(last)}.`);
+  frame(s, { type: "manual_edit_discarded", pendingCount: opCount(s) });
+  return s;
+}
+
+/** Redo (Shift Cmd or Ctrl Z): puts back the edit Undo took, until a new edit is made. */
+export function redoLiveDesignEdit(s: Session) {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  if (s.editsRequestId) throw new LiveDesignConflict("Your edits are being saved now. Redo when the save has finished.");
+  const next = s.redo.pop();
+  if (!next) return s;
+  s.staged.push(next);
+  s.touchedAt = Date.now();
+  say(s, "gsam", `Redone: ${editSummary(next)}.`);
+  frame(s, { type: "manual_edit_stashed", pendingCount: opCount(s) });
+  return s;
+}
+
+/**
+ * The edits not saved yet, for drawing the page as it will be saved (the frame reloads after an
+ * Undo or Redo). Only for the version the session is on: any other version shows as it was saved.
+ */
+export function liveDesignPreviewOps(sessionId: unknown, versionId: string, companyId?: string) {
+  const s = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+  if (!s || s.status === "ended" || s.attachmentId !== versionId || (companyId !== undefined && s.companyId !== companyId)) return [];
+  return s.staged.flatMap((e) => e.ops);
 }
 
 /** Undo one staged op by its ref, or every staged edit. Returns what was dropped, for Impeccable to restore. */
@@ -709,6 +759,7 @@ export function discardLiveDesignEdits(s: Session, ref: string | null) {
     dropped.push(...s.staged);
     s.staged = [];
   }
+  s.redo = [];
   if (dropped.length) say(s, "gsam", "Edits undone.");
   frame(s, { type: "manual_edit_discarded", pendingCount: opCount(s) });
   return { entries: dropped, remainingCount: opCount(s) };
@@ -762,6 +813,7 @@ export async function saveLiveDesignEditsDirect(s: Session, userId: string | nul
     const version = (await s.source.version?.(id).catch(() => null)) ?? null;
     settle();
     s.staged = [];
+    s.redo = [];
     s.attachmentId = id;
     s.appliedAttachmentId = id;
     s.touchedAt = Date.now();
@@ -796,6 +848,7 @@ function replyEdits(s: Session, reply: LiveDesignReply, savedVersion: number | n
   if (reply.appliedAttachmentId) {
     settle();
     s.staged = [];
+    s.redo = [];
     s.appliedAttachmentId = reply.appliedAttachmentId;
     s.attachmentId = reply.appliedAttachmentId;
     say(s, "gsam", s.source?.kind === "website-page" ? savedLine(savedVersion) : "Edits saved into the page as a new version of the file.");

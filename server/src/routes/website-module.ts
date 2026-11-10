@@ -80,6 +80,7 @@ import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { HTML_ATTACHMENT_CSP, WEBSITE_CHROME_COLLECTION, type LiveDesignView } from "@greatstone/shared";
 import {
   LiveDesignConflict,
+  liveDesignPreviewOps,
   openLiveDesignFor,
   restoreLiveDesign,
   startLiveDesign,
@@ -779,7 +780,8 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     try {
       const mediaSecret = mediaLinkSecret();
       const signMedia = mediaSecret ? (file: string) => signWebsiteMediaLink(mediaSecret, { companyId: page.companyId, siteId: page.siteId, file }) : undefined;
-      html = await websitePageFrame(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, assetOrigin, signMedia);
+      // ?session=: the editor's edits not saved yet show too, so the frame can reload after an Undo or Redo.
+      html = await websitePageFrame(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, assetOrigin, signMedia, liveDesignPreviewOps(req.query.session, revisionId, page.companyId));
       html = withIslandPlaceholders(html, (await loadCompanyIslandManifest(db, page.companyId)).placeholderCss);
     } catch (err) {
       if (err instanceof LiveDesignConflict) {
@@ -807,7 +809,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const revisionId = typeof req.query.revision === "string" ? req.query.revision : "";
     try {
       res.setHeader("Cache-Control", "no-store");
-      res.json(await websitePageDraft(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId));
+      res.json(await websitePageDraft(service.store, page, () => loadWebsiteChrome(db, service, page.companyId, page.siteId), revisionId, liveDesignPreviewOps(req.query.session, revisionId, page.companyId)));
     } catch (err) {
       if (err instanceof LiveDesignConflict) {
         res.status(404).json({ error: NOT_FOUND });

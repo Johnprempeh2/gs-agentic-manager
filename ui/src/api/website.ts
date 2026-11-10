@@ -135,8 +135,12 @@ export const websiteModuleApi = {
     ),
   /** Request publish: draft to review. A person with Publish rights approves it; nothing goes live here. */
   /** The draft the site's /live-design route renders: the page's own part, its shared parts and the stylesheet. */
-  liveDraft: (companyId: string, siteId: string, pageId: string, revisionId: string) =>
-    api.get<Record<string, unknown>>(`${pagePath(companyId, siteId, pageId)}/live-draft?revision=${encodeURIComponent(revisionId)}`, { cache: "no-store" }),
+  /** `sessionId`: the open editor's session, so its edits not saved yet show in the draft. */
+  liveDraft: (companyId: string, siteId: string, pageId: string, revisionId: string, sessionId?: string | null) =>
+    api.get<Record<string, unknown>>(
+      `${pagePath(companyId, siteId, pageId)}/live-draft?revision=${encodeURIComponent(revisionId)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ""}`,
+      { cache: "no-store" },
+    ),
   /** Commits on staging that the public site does not have yet, for the editor's deploy button. Fails with 503 when unknown. */
   deployChanges: (companyId: string, siteId: string) =>
     api.get<WebsiteDeployChanges>(`${sitePath(companyId, siteId)}/deploy-changes`),
