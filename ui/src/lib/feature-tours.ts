@@ -2,7 +2,17 @@ import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
 import { IMAGES_TOUR } from "./images-tour";
 import { WELCOME_TOUR } from "./welcome-tour";
-import { COMMERCE_CATALOGUE_TOUR, WEBSITE_EDITOR_TOUR, WEBSITE_HOME_TOUR, WEBSITE_SITEMAP_TOUR } from "./website-tours";
+import {
+  COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_SALES_TOUR,
+  WEBSITE_COLLECTIONS_TOUR,
+  WEBSITE_EDITOR_TOUR,
+  WEBSITE_HOME_TOUR,
+  WEBSITE_PAGES_TOUR,
+  WEBSITE_PROGRESS_TOUR,
+  WEBSITE_RELEASES_TOUR,
+  WEBSITE_SITEMAP_TOUR,
+} from "./website-tours";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
@@ -739,6 +749,38 @@ export const BLOCKED_TOUR: TourDefinition = {
   ],
 };
 
+export const INBOX_TOUR: TourDefinition = {
+  id: "inbox",
+  title: "Inbox",
+  description: "News on the tasks you are part of, how to find one, and how to clear what you have read.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/inbox\/(mine|recent|unread|all)\/?$/, path: "/inbox/mine" },
+  label: "the inbox",
+  steps: [
+    {
+      target: "Inbox views",
+      title: "Four ways to look",
+      body: "Mine is tasks you are part of. Recent is the latest activity, Unread is what you have not opened, and All is everything. Blocked has its own tour.",
+    },
+    {
+      target: "inbox-search",
+      title: "Find one",
+      body: "Type a few words from a task's title to narrow the list.",
+    },
+    {
+      target: "inbox-list",
+      title: "The list",
+      body: "Unread tasks are marked. Open a task to read it, or archive it to clear it from here. Anything that needs your answer is in Decisions, not here.",
+    },
+    {
+      target: "inbox-mark-all-read",
+      title: "Mark all as read",
+      body: "Clears every unread mark on this view in one go. You are asked first.",
+    },
+  ],
+};
+
 export const SCORECARD_TOUR: TourDefinition = {
   id: "scorecard",
   title: "Scorecard",
@@ -947,6 +989,7 @@ export const CORE_TOURS: TourDefinition[] = [
   WEEKLY_REPORT_TOUR,
   SCORECARD_TOUR,
   BLOCKED_TOUR,
+  INBOX_TOUR,
   ORGANISATIONS_TOUR,
   SEARCH_PAGE_TOUR,
   DELIVERABLES_TOUR,
@@ -956,6 +999,7 @@ export const CORE_TOURS: TourDefinition[] = [
   AGENT_DETAIL_TOUR,
   INTEGRATIONS_TOUR,
   COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_SALES_TOUR,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */
@@ -975,6 +1019,10 @@ export const ALL_TOURS: TourDefinition[] = [
   WEBSITE_HOME_TOUR,
   WEBSITE_SITEMAP_TOUR,
   WEBSITE_EDITOR_TOUR,
+  WEBSITE_PAGES_TOUR,
+  WEBSITE_PROGRESS_TOUR,
+  WEBSITE_COLLECTIONS_TOUR,
+  WEBSITE_RELEASES_TOUR,
   WEBSITE_TOUR,
   GITHUB_SHARE_TOUR,
   TEAM_CHAT_TOUR,

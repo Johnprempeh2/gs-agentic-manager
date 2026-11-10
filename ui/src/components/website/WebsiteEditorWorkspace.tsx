@@ -235,12 +235,12 @@ export function WebsitePagesTab({
             ) : null}
           </p>
         </div>
-        <Button type="button" size="sm" onClick={() => openPage(pages[0]!.id)}>
+        <Button type="button" size="sm" onClick={() => openPage(pages[0]!.id)} data-tour="website-pages-edit">
           <PenLine />
           Edit pages
         </Button>
       </div>
-      <ul className="divide-y divide-border rounded-xl border border-border">
+      <ul className="divide-y divide-border rounded-xl border border-border" data-tour="website-pages-list">
         {pages.map((entry) => (
           <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
             <button
@@ -265,7 +265,7 @@ export function WebsitePagesTab({
 
 function PageStatusPill({ status }: { status: WebsitePageStatus }) {
   const copy = PAGE_STATUS_COPY[status] ?? PAGE_STATUS_COPY.draft;
-  return <span className={cn("inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", copy.tone)}>{copy.label}</span>;
+  return <span className={cn("inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", copy.tone)} data-tour="website-page-status">{copy.label}</span>;
 }
 
 /* ---- Full-screen editor ---- */

@@ -589,7 +589,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id={`website-releases-${site.id}-title`} className="text-sm font-semibold">Releases</h2>
         {canManage ? (
-          <Button type="button" size="sm" disabled={!!running || publish.isPending} onClick={() => setConfirmingPublish(true)}>
+          <Button type="button" size="sm" disabled={!!running || publish.isPending} onClick={() => setConfirmingPublish(true)} data-tour="website-publish">
             Publish
           </Button>
         ) : null}
