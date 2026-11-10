@@ -19,7 +19,12 @@ import {
   removeNode,
   type Tree,
   countOf,
+  builtPageRows,
+  builtPageState,
+  isBuiltPage,
+  sitemapMismatches,
 } from "./model";
+import type { WebsitePage } from "@greatstone/shared";
 
 const tree: Tree = {
   nodes: [
@@ -142,5 +147,60 @@ describe("countOf", () => {
     expect(countOf(1, "page")).toBe("1 page");
     expect(countOf(0, "page")).toBe("0 pages");
     expect(countOf(2, "new page")).toBe("2 new pages");
+  });
+});
+
+describe("the site as it is", () => {
+  const page = (id: string, slug: string, patch: Partial<WebsitePage> = {}) =>
+    ({ id, slug, title: id, status: "approved", parentPageId: null, navOrder: null, menu: "none", menuOrder: null, archivedAt: null, publishedRevisionId: null, seo: {}, ...patch }) as WebsitePage;
+
+  it("a planned row is a suggestion, never a built page", () => {
+    expect(isBuiltPage(page("a", "/a"))).toBe(true);
+    expect(isBuiltPage(page("a", "/a", { status: "planned" }))).toBe(false);
+    expect(isBuiltPage(page("a", "/a", { archivedAt: "2026-11-01T00:00:00Z" }))).toBe(false);
+  });
+
+  it("says where a built page stands", () => {
+    expect(builtPageState(page("a", "/a", { status: "published" }))).toBe("live");
+    expect(builtPageState(page("a", "/a"))).toBe("approved");
+    expect(builtPageState(page("a", "/a", { status: "review" }))).toBe("review");
+    expect(builtPageState(page("a", "/a", { status: "draft", publishedRevisionId: "r1" }))).toBe("changed");
+    expect(builtPageState(page("a", "/a", { status: "draft" }))).toBe("draft");
+  });
+
+  it("lays built pages out under their built parents and leaves planned pages out", () => {
+    const rows = builtPageRows([
+      page("kid", "/c/kid", { parentPageId: "c", navOrder: 1 }),
+      page("idea", "/c/idea", { parentPageId: "c", status: "planned" }),
+      page("orphan", "/x/orphan", { parentPageId: "idea" }),
+      page("c", "/c", { parentPageId: "home", navOrder: 0 }),
+      page("home", "/"),
+    ]);
+    expect(rows.map((row) => `${row.depth}:${row.page.id}`)).toEqual(["0:home", "1:c", "2:kid", "0:orphan"]);
+  });
+
+  it("names every place the approved sitemap and the real pages disagree", () => {
+    const pages = [
+      page("home", "/"),
+      page("extra", "/extra"),
+      page("refunds", "/refunds", { status: "planned", menu: "footer" }),
+      page("quiet", "/quiet", { status: "planned" }),
+    ];
+    const approved: Tree = {
+      journeys: [],
+      nodes: [
+        { id: "n1", title: "Home", path: "/", parentId: null, order: 0, menu: "none", menuOrder: null, pageId: "home" },
+        { id: "n2", title: "Refunds", path: "/refunds", parentId: "n1", order: 0, menu: "footer", menuOrder: 1 },
+        { id: "n3", title: "Quiet", path: "/quiet", parentId: "n1", order: 1, menu: "none", menuOrder: null },
+        { id: "n4", title: "Ghost", path: "/ghost", parentId: "n1", order: 2, menu: "none", menuOrder: null },
+      ],
+    };
+    expect(sitemapMismatches(pages, approved).map((entry) => `${entry.kind} ${entry.path}`)).toEqual([
+      "built-not-in-sitemap /extra",
+      "menu-not-built /refunds",
+      "sitemap-no-page /ghost",
+    ]);
+    expect(sitemapMismatches(pages, null).map((entry) => entry.kind)).toEqual(["menu-not-built"]);
+    expect(sitemapMismatches([page("home", "/")], { ...approved, nodes: approved.nodes.slice(0, 1) })).toEqual([]);
   });
 });

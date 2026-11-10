@@ -391,9 +391,9 @@ function TreeRow({
           {onEditPage ? (
             <div className={cn("hidden shrink-0 items-center @5xl:flex @5xl:justify-end", COLS.edit)}>
               {page ? (
-                <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`Edit page ${node.title}`}>
+                <Button type="button" variant="outline" size="xs" onClick={() => onEditPage(page.id)} aria-label={`${page.status === "planned" ? "Build page" : "Edit page"} ${node.title}`}>
                   <PenLine aria-hidden="true" />
-                  Edit page
+                  {page.status === "planned" ? "Build page" : "Edit page"}
                 </Button>
               ) : null}
             </div>
@@ -445,7 +445,7 @@ function RowMenu({ tree, node, onChange, readOnly, onEdit, onEditPage }: {
         {onEditPage ? (
           <DropdownMenuItem onSelect={onEditPage}>
             <PenLine aria-hidden="true" />
-            Edit page
+            Open in editor
           </DropdownMenuItem>
         ) : null}
         {readOnly ? null : (

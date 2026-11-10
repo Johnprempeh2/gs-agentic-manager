@@ -68,6 +68,8 @@ describe("SitemapSection", () => {
     root = createRoot(container);
     vi.clearAllMocks();
     window.localStorage.clear();
+    // The plan tests below start on the Tree; a person with no stored choice starts on "Site now".
+    window.localStorage.setItem(sitemapViewKey("user-1"), "tree");
     authMock.getSession.mockResolvedValue({ user: { id: "user-1" } });
     featuresMock.list.mockResolvedValue([{ id: "f1", name: "Consultancy pages", routePrefixes: ["/consultancy"] }]);
   });
@@ -86,6 +88,8 @@ describe("SitemapSection", () => {
         </QueryClientProvider>,
       );
     });
+    // The stored view is read once the session is known.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
   }
 
   const button = (label: string) => [...container.querySelectorAll("button")].find((entry) => entry.getAttribute("aria-label") === label || entry.textContent === label);
@@ -110,7 +114,38 @@ describe("SitemapSection", () => {
     expect(patch.tree.nodes.find((node: { id: string }) => node.id === "n3").order).toBe(0);
   });
 
-  it("opens on the vertical Tree, shows each page's feature, and remembers the view each person chose (GRE-2509)", async () => {
+  it("opens on Site now: built pages only, ideas apart and uncounted, and no approval controls", async () => {
+    window.localStorage.clear();
+    const onEditPage = vi.fn();
+    const built = { id: "page-1", slug: "/", title: "Home", status: "approved", menu: "none", menuOrder: null, parentPageId: null, navOrder: 0, seo: {}, archivedAt: null, publishedRevisionId: null, updatedAt: "2026-11-08T19:47:00.000Z" };
+    const idea = { ...built, id: "page-2", slug: "/tools", title: "Tools", status: "planned", menu: "header", parentPageId: "page-1" };
+    await render({ pages: [built, idea] as unknown as WebsitePage[], options: [option({ status: "approved" })], onEditPage });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    const tab = [...container.querySelectorAll<HTMLElement>("[role=tab]")].find((entry) => entry.textContent === "Site now")!;
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector("[data-testid=sitemap-now-summary]")!.textContent).toContain("1 page is built: 1 approved, not published.");
+    expect([...container.querySelectorAll("[data-testid=sitemap-now-page]")].map((row) => row.querySelector("p")!.textContent)).toEqual(["Home"]);
+    // The approved option has Consultancy with no page row, and Tools is promised to the header without being built.
+    const attention = container.querySelector("[data-testid=sitemap-now-attention]")!.textContent;
+    expect(attention).toContain("Tools /tools is set to the header menu but is not built, so the menu leaves it out.");
+    expect(attention).toContain("Consultancy /consultancy is in the approved sitemap, but there is no page for it.");
+    const suggested = container.querySelector("[data-testid=sitemap-now-suggested]")!;
+    expect(suggested.textContent).toContain("1 idea from the sitemap plan that nobody has built.");
+    expect(container.textContent).not.toContain("Approve this option");
+    expect(container.textContent).not.toContain("Apply changes to the site");
+    await act(async () => button("Build the page Tools")!.click());
+    expect(onEditPage).toHaveBeenCalledWith("page-2");
+    await act(async () => button("Edit page Home")!.click());
+    expect(onEditPage).toHaveBeenCalledWith("page-1");
+    // Dismiss hides the idea for this person and can be undone.
+    await act(async () => button("Dismiss the suggestion Tools")!.click());
+    expect(container.querySelectorAll("[data-testid=sitemap-now-suggestion]").length).toBe(0);
+    await act(async () => button("Show 1 dismissed suggestion")!.click());
+    await act(async () => button("Bring back the suggestion Tools")!.click());
+    expect(button("Dismiss the suggestion Tools")).toBeDefined();
+  });
+
+  it("shows each page's feature on the vertical Tree, and remembers the view each person chose (GRE-2509)", async () => {
     await render();
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     const tab = (label: string) => [...container.querySelectorAll<HTMLElement>("[role=tab]")].find((entry) => entry.textContent === label)!;

@@ -146,8 +146,8 @@ afterEach(() => {
 });
 
 describe("Website Home helpers", () => {
-  it("counts planned, drafted and live pages", () => {
-    expect(pageProgress(summary().pages)).toEqual({ planned: 170, drafted: 6, live: 2, total: 178 });
+  it("counts built pages only, and keeps planned ideas out of the total", () => {
+    expect(pageProgress(summary().pages)).toEqual({ planned: 170, drafted: 6, live: 2, total: 8 });
   });
 
   it("names events in plain words", () => {
@@ -171,8 +171,10 @@ describe("WebsiteHomeTab", () => {
     expect(byTestId("website-home-status")?.textContent).toContain("Pending");
     expect(byTestId("website-home-release")?.textContent).toContain("Release 1 went live");
     expect(byTestId("website-home-needs-you-empty")?.textContent).toContain("Nothing waiting on you");
-    expect(byTestId("website-home-tile-editor")?.textContent).toContain("8 of 178 started");
-    expect(byTestId("website-home-tile-editor")?.textContent).toContain("2 live · 6 drafted · 170 planned");
+    // Sitemap ideas nobody has built are not pages: they never sit in the total.
+    expect(byTestId("website-home-tile-editor")?.textContent).toContain("8 built");
+    expect(byTestId("website-home-tile-editor")?.textContent).toContain("2 live · 6 not live yet");
+    expect(byTestId("website-home-tile-editor")?.textContent).toContain("170 suggested, not built");
     expect(byTestId("website-home-tile-sitemap")?.textContent).toContain("2 options awaiting review");
     expect(byTestId("website-home-tile-releases")?.textContent).toContain("Release 2: Pending");
     await vi.waitFor(() => expect(byTestId("website-home-tile-progress")?.textContent).toContain("12 of 20"));
