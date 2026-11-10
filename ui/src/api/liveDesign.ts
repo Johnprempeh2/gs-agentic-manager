@@ -21,6 +21,9 @@ export const liveDesignApi = {
   /** Take back the newest edit not saved yet, or put it back. */
   undo: (id: string) => api.post<LiveDesignView>(`${session(id)}/undo`, {}),
   redo: (id: string) => api.post<LiveDesignView>(`${session(id)}/redo`, {}),
+  /** A simple change of words made at once; `quick.done: false` means send it to the agent with steer. */
+  quick: (id: string, message: string) =>
+    api.post<LiveDesignView & { quick: { done: boolean; reason?: string } }>(`${session(id)}/quick`, { message }),
   end: (id: string) => api.post<LiveDesignView>(`${session(id)}/end`, {}),
   /** Impeccable's page scripts calling their helper, which GSAM stands in for. */
   helper: (id: string, request: LiveDesignHelperRequest) =>

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { applyEditsToPage, previewEdits } from "../services/live-design-direct.js";
+import { applyEditsToPage, parseQuickChange, previewEdits, quickTextOp } from "../services/live-design-direct.js";
 import { previewPart } from "../services/website/live-page.js";
 import {
   liveDesignPreviewOps,
   pollLiveDesign,
+  quickLiveDesignEdit,
   redoLiveDesignEdit,
   resetLiveDesignSessions,
   restoreLiveDesign,
@@ -125,3 +126,38 @@ describe("the frame shows the edits not saved yet after it reloads", () => {
   });
 });
 
+describe("quick changes of words from the chat", () => {
+  afterEach(() => resetLiveDesignSessions());
+
+  it("reads only a plain change of quoted words", () => {
+    expect(parseQuickChange(`change "Book a call" to "Talk to us"`)).toEqual({ from: "Book a call", to: "Talk to us" });
+    expect(parseQuickChange(`Replace the button “Book a call” with ‘Talk to us’.`)).toEqual({ from: "Book a call", to: "Talk to us" });
+    expect(parseQuickChange(`"Plan" -> "Discover"`)).toEqual({ from: "Plan", to: "Discover" });
+    expect(parseQuickChange("make the hero bigger")).toBeNull();
+    expect(parseQuickChange(`change "Plan" to "Plan"`)).toBeNull();
+    expect(parseQuickChange(`change "Plan" to "Discover" and make it green`)).toBeNull();
+  });
+
+  it("finds the one place the words are, and refuses words that are not there or there twice", () => {
+    expect(quickTextOp(PAGE, { from: "book a CALL", to: "Talk to us" })).toMatchObject({ originalText: "Book a call", newText: "Talk to us", leaf: { tagName: "a" } });
+    expect(quickTextOp(PAGE, { from: "Same words", to: "x" })).toEqual({ failed: "those words are on the page more than once" });
+    expect(quickTextOp(PAGE, { from: "Nowhere", to: "x" })).toEqual({ failed: "those words are not on the page" });
+  });
+
+  it("stages the change at once, ready to save or undo, and leaves anything else for the agent", async () => {
+    const saved: string[] = [];
+    const { session: s } = startLiveDesign({ companyId: "c1", issueId: "i1", attachmentId: "r6", agentId: "agent1",
+      source: pageSource(async (html) => { saved.push(html); return "r7"; }) });
+    await pollLiveDesign(s, 1000);
+    expect(await quickLiveDesignEdit(s, `change "Book a call" to "Talk to us"`)).toEqual({ done: true });
+    expect(viewLiveDesign(s)).toMatchObject({ stagedCount: 1 });
+    expect(s.messages.at(-1)?.text).toContain("Done at once");
+    // A second quick change builds on the first, as the page shows it.
+    expect(await quickLiveDesignEdit(s, `change "Talk to us" to "Call us"`)).toEqual({ done: true });
+    expect(await quickLiveDesignEdit(s, `change "Same words" to "x"`)).toEqual({ done: false, reason: "those words are on the page more than once" });
+    expect(await quickLiveDesignEdit(s, "make the hero bigger")).toMatchObject({ done: false });
+    undoLiveDesignEdit(s);
+    expect(await saveLiveDesignEditsDirect(s, "user-1")).toMatchObject({ saved: true });
+    expect(saved).toEqual([PAGE.replace("Book a call", "Talk to us")]);
+  });
+});

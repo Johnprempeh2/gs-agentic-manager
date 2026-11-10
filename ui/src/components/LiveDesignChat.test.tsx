@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 import { issuesApi } from "../api/issues";
-import { AgentWork, DeployCard, historyKey, StagedEdits, useLiveDesign } from "./LiveDesignChat";
+vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: null }) }));
+
+import { AgentWork, DeployCard, historyKey, LiveDesignChat, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -157,4 +159,43 @@ describe("historyKey", () => {
   });
 });
 
+describe("the chat's quick changes", () => {
+  afterEach(() => vi.restoreAllMocks());
 
+  const chat = (onEditsChanged: () => void) => {
+    const run = vi.fn(async (fn: (id: string) => Promise<unknown>) => { await fn("s1"); return true; });
+    // A form submits only when it is in the document.
+    const el = document.body.appendChild(document.createElement("div"));
+    act(() => createRoot(el).render(<LiveDesignChat live={{ view: { id: "s1", status: "idle", messages: [], codeTasks: [], queued: [], stagedCount: 0 }, run } as never} onEditsChanged={onEditsChanged} />));
+    const box = el.querySelector("textarea")!;
+    const type = (value: string) => act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(box, value);
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const send = () => act(async () => el.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click());
+    return { type, send };
+  };
+
+  it("makes a simple change of words at once and shows it on the page, without asking the agent", async () => {
+    const quick = vi.spyOn(liveDesignApi, "quick").mockResolvedValue({ id: "s1", quick: { done: true } } as never);
+    const steer = vi.spyOn(liveDesignApi, "steer").mockResolvedValue({ id: "s1" } as never);
+    const changed = vi.fn();
+    const { type, send } = chat(changed);
+    type(`change "Book a call" to "Talk to us"`);
+    await send();
+    expect(quick).toHaveBeenCalledWith("s1", `change "Book a call" to "Talk to us"`);
+    expect(steer).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it("sends anything else to the agent, as before", async () => {
+    vi.spyOn(liveDesignApi, "quick").mockResolvedValue({ id: "s1", quick: { done: false, reason: "not a simple change of words" } } as never);
+    const steer = vi.spyOn(liveDesignApi, "steer").mockResolvedValue({ id: "s1" } as never);
+    const changed = vi.fn();
+    const { type, send } = chat(changed);
+    type("make the hero bigger");
+    await send();
+    expect(steer).toHaveBeenCalledWith("s1", "make the hero bigger");
+    expect(changed).not.toHaveBeenCalled();
+  });
+});

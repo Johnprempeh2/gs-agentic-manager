@@ -290,8 +290,26 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
   const send = () => {
     if (!note.trim() || !view || status === "ended") return;
     dictation.cancel();
-    const target = about !== null && versions[about] ? `About version ${about + 1} ("${versions[about].name}"): ` : "";
-    void run((id) => liveDesignApi.steer(id, target + note.trim())).then((ok) => ok && setNote(""));
+    const text = note.trim();
+    if (about !== null && versions[about]) {
+      const target = `About version ${about + 1} ("${versions[about].name}"): `;
+      void run((id) => liveDesignApi.steer(id, target + text)).then((ok) => ok && setNote(""));
+      return;
+    }
+    // A simple change of words is made at once (no agent round trip); anything else goes to the agent.
+    let quick = false;
+    void run(async (id) => {
+      const answer = await liveDesignApi.quick(id, text);
+      if (answer.quick.done) {
+        quick = true;
+        return answer;
+      }
+      return liveDesignApi.steer(id, text);
+    }).then((ok) => {
+      if (!ok) return;
+      setNote("");
+      if (quick) onEditsChanged?.();
+    });
   };
 
   return (
@@ -413,6 +431,11 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
         </Button>
         </div>
         <DictationInterim dictation={dictation} />
+        {about === null ? (
+          <p className="text-xs text-muted-foreground">
+            Quick change of words: change “old words” to “new words”. It shows on the page at once, ready to save or undo.
+          </p>
+        ) : null}
       </form>
     </div>
   );

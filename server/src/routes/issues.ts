@@ -24,6 +24,7 @@ import {
   startLiveDesign,
   steerLiveDesign,
   undoLiveDesignEdit,
+  quickLiveDesignEdit,
   redoLiveDesignEdit,
   liveDesignPreviewOps,
   refuseLiveDesignSave,
@@ -21474,6 +21475,18 @@ export function issueRoutes(
       await rewakeLiveAgent(req, session);
     }
     res.json(viewLiveDesign(session));
+  });
+
+  // The chat's fast path: a simple change of words is made at once as an edit not saved yet.
+  // `quick.done: false` tells the editor to send the request to the agent instead (the steer route).
+  router.post("/live-design/:sessionId/quick", validate(liveDesignSteerSchema), async (req, res) => {
+    const session = liveSessionForBoard(req);
+    try {
+      const quick = await quickLiveDesignEdit(session, req.body.message);
+      res.json({ ...viewLiveDesign(session), quick });
+    } catch (err) {
+      if (!sendLiveConflict(res, err)) throw err;
+    }
   });
 
   // Undo and Redo of the person's own edits not saved yet, one edit at a time (Cmd or Ctrl Z in the editor).

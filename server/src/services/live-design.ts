@@ -11,7 +11,7 @@ import type {
   LiveDesignView,
 } from "@greatstone/shared";
 import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
-import { applyEditsToPage } from "./live-design-direct.js";
+import { applyEditsToPage, parseQuickChange, previewEdits, quickTextOp } from "./live-design-direct.js";
 
 /**
  * Live design sessions: John uses Impeccable's own page tools on an agent's
@@ -732,6 +732,28 @@ export function redoLiveDesignEdit(s: Session) {
   say(s, "gsam", `Redone: ${editSummary(next)}.`);
   frame(s, { type: "manual_edit_stashed", pendingCount: opCount(s) });
   return s;
+}
+
+/**
+ * The chat's fast path: a request that is only a change of words is made at once, as an edit not
+ * saved yet (the person sees it on the page, then saves or undoes it), with no agent round trip.
+ * `done: false` means it is not that simple, or not certain: the caller sends it to the agent as before.
+ */
+export async function quickLiveDesignEdit(s: Session, message: string): Promise<{ done: true } | { done: false; reason: string }> {
+  if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
+  const change = parseQuickChange(message);
+  if (!change) return { done: false, reason: "not a simple change of words" };
+  if (!s.source || s.editsRequestId || (s.status !== "idle" && s.status !== "waiting_agent")) return { done: false, reason: "the page is busy" };
+  const saved = await s.source.read(s.attachmentId);
+  const staged = s.staged.flatMap((e) => e.ops);
+  const op = quickTextOp(previewEdits(saved, staged), change);
+  if ("failed" in op) return { done: false, reason: String(op.failed) };
+  // It must save the way a hand edit saves, on top of the edits already waiting.
+  const check = applyEditsToPage(saved, [...staged, op]);
+  if ("failed" in check) return { done: false, reason: check.failed };
+  stageLiveDesignEdit(s, { id: `quick-${randomUUID().slice(0, 8)}`, element: null, ops: [op] });
+  say(s, "gsam", "Done at once, without the agent. It shows on the page now.");
+  return { done: true };
 }
 
 /**
