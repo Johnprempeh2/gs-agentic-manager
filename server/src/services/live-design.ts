@@ -11,6 +11,7 @@ import type {
   LiveDesignView,
 } from "@greatstone/shared";
 import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
+import { applyEditsToPage } from "./live-design-direct.js";
 
 /**
  * Live design sessions: John uses Impeccable's own page tools on an agent's
@@ -62,8 +63,8 @@ export interface LivePageSource {
   frameSrc(versionId: string): string;
   /** The HTML of a version, for the agent. */
   read(versionId: string): Promise<string>;
-  /** Save the agent's complete page; returns the new version's id. */
-  save(html: string, agentId: string): Promise<string>;
+  /** Save a complete page; returns the new version's id. `userId`: the person who made the change, when it was not the agent. */
+  save(html: string, agentId: string, userId?: string | null): Promise<string>;
   /** Set an island's words (the home landing's data-copy) on the newest version; returns the new version's id. */
   setIslandCopy?(versionId: string, changes: Record<string, string | boolean>, agentId: string): Promise<string>;
   /** The version number John sees for a version id, when the source numbers them. */
@@ -732,6 +733,53 @@ export function applyLiveDesignEdits(s: Session) {
   return { status: "started", pendingCount: count };
 }
 
+/**
+ * "Save to draft" without the agent: GSAM writes the staged words and removals into the page itself
+ * and saves the next version, so the save takes moments instead of an agent's turn. Null means it
+ * could not (an edit it cannot place for certain, a busy session); the caller then asks the agent,
+ * as before. A page the source refuses (the home page's guard, a size limit) stays staged.
+ */
+export async function saveLiveDesignEditsDirect(s: Session, userId: string | null) {
+  if (!s.source || s.editsRequestId || (s.status !== "idle" && s.status !== "waiting_agent")) return null;
+  const ops = s.staged.flatMap((e) => e.ops);
+  if (!ops.length) return null;
+  const startedAt = Date.now();
+  const was = s.status;
+  // Held while the page is read and saved, so nothing else is staged or applied in between.
+  s.editsRequestId = `direct-${randomUUID().slice(0, 8)}`;
+  s.status = "applying";
+  const settle = () => {
+    s.editsRequestId = null;
+    if (s.status === "applying") s.status = was;
+  };
+  try {
+    const result = applyEditsToPage(await s.source.read(s.attachmentId), ops);
+    if ("failed" in result) {
+      settle();
+      return null;
+    }
+    const id = await s.source.save(result.html, s.agentId, userId);
+    const version = (await s.source.version?.(id).catch(() => null)) ?? null;
+    settle();
+    s.staged = [];
+    s.attachmentId = id;
+    s.appliedAttachmentId = id;
+    s.touchedAt = Date.now();
+    say(s, "gsam", s.source.kind === "website-page" ? savedLine(version) : "Edits saved into the page as a new version of the file.");
+    frame(s, { type: "manual_edit_commit_done", appliedCount: ops.length, remainingCount: 0 });
+    // The agent's copy of the page is now behind: it reads the page again before its next change.
+    push(s, { type: "restored", attachmentId: id, version });
+    return { saved: true as const, attachmentId: id, version, applied: ops.length, ms: Date.now() - startedAt };
+  } catch (err) {
+    settle();
+    if (!(err instanceof LiveDesignConflict)) return null;
+    say(s, "gsam", `Not saved: ${err.message}`);
+    say(s, "gsam", "Your edits are still waiting. Undo them, or ask in the chat.");
+    frame(s, { type: "manual_edit_commit_failed", error: err.message });
+    return { saved: false as const, reason: err.message };
+  }
+}
+
 function replyEdits(s: Session, reply: LiveDesignReply, savedVersion: number | null) {
   if (reply.message) say(s, "agent", reply.message);
   const count = opCount(s);
@@ -898,7 +946,7 @@ function withInstructions(s: Session, event: AgentEvent) {
     case "restored":
       return {
         ...base,
-        _instructions: `John restored an earlier version of the page. ${pageCall(s.id)} and make your workspace copy match it before the next change. Reply nothing. Poll again.`,
+        _instructions: `The page changed without you: John restored an earlier version, or saved his own edits. ${pageCall(s.id)} and make your workspace copy match it before the next change. Reply nothing. Poll again.`,
       };
     case "end":
       return {

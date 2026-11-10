@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkHomeFrozen, HOME_LANDING_ISLAND, landingCopyOf, landingTag, websitePageSource, withLandingCopy, pageDocument, pagePart, siteAssetOrigin, splitPageDocument, websitePageFrame } from "../services/website/live-page.js";
 import { parseWebsiteMediaFileName, signWebsiteMediaLink, verifyWebsiteMediaLink } from "../services/website/media-file.js";
 import { LiveDesignConflict } from "../services/live-design.js";
+import { applyEditsToPage } from "../services/live-design-direct.js";
 
 const page = { title: "Home", slug: "/", companyId: "c1", siteId: "s1" };
 const chrome = {
@@ -135,5 +136,24 @@ describe("the frozen home page", () => {
       expect(saved[0]).toMatchObject({ html: `${landingTag({ cueText: "Old", showCue: false })}<section>Below</section>` });
       expect(withLandingCopy("<main id=\"gs-page\"><section>No landing</section></main>", { showCue: false })).toBeNull();
     });
+  });
+
+  it("saves a person's own edit below the landing as theirs, with the landing and the CSS untouched", async () => {
+    const saved: Array<{ content: { html: string; css: string }; actor: unknown; changeSummary: string }> = [];
+    const stored = { format: "gs-html", html: `${landingTag({ cueText: "Old" })}<section class="gs-new"><h2>New</h2><p>Keep</p></section>`, css: ".gs-new{padding:0}" };
+    const store = {
+      readRevision: async () => ({ revisionNumber: 20, content: stored }),
+      readDocument: async () => ({ latestRevisionId: "r20" }),
+      saveRevision: async (input: (typeof saved)[number]) => { saved.push(input); return { state: "saved" as const, revisionId: "r21" }; },
+    };
+    const source = websitePageSource(store, { id: "p", companyId: "c", siteId: "s", documentId: "d", title: "Home", slug: "/" }, async () => null);
+    const op = (ref: string, more: Record<string, unknown>) => ({ ref: `body>main:nth-of-type(1)>div#gs-page:nth-of-type(1)>${ref}`, ...more });
+    const edit = applyEditsToPage(await source.read("r20"), [op("section.gs-new:nth-of-type(1)>h2:nth-of-type(1)", { tag: "h2", originalText: "New", newText: "Newer", leaf: { tagName: "h2" } })]);
+    if ("failed" in edit) throw new Error(edit.failed);
+    expect(await source.save(edit.html, "agent1", "user-1")).toBe("r21");
+    expect(saved[0]).toMatchObject({ content: { html: stored.html.replace("<h2>New</h2>", "<h2>Newer</h2>"), css: stored.css }, actor: { agentId: null, userId: "user-1" }, changeSummary: "Edited by hand" });
+    // The landing cannot be removed by hand: the edit is refused before anything is saved.
+    expect(applyEditsToPage(await source.read("r20"), [op("div:nth-of-type(1)", { tag: "div", originalText: "two-doors-landing", removeElement: true, leaf: { textContent: "" } })])).toHaveProperty("failed");
+    expect(saved).toHaveLength(1);
   });
 });
