@@ -66,8 +66,8 @@ describe("website and commerce tours", () => {
       .filter((file) => file.endsWith(".tsx") && !/\.(test|stories)\.tsx$/.test(file))
       .map((file) => readFileSync(`${src}/${file}`, "utf8"))
       .join("\n");
-    // Written with a template (Search offerings), or arriving with the catalogue's search and filters.
-    const notLiteral = ["Search offerings", "Category", "commerce-catalogue-count"];
+    // The catalogue writes its search label with a template, so the name is not in the source as text.
+    const notLiteral = ["Search offerings"];
     const targets = WEBSITE_MODULE_TOURS.flatMap((tour) => tour.steps.flatMap((step) => step.target ?? []));
     expect(targets.length).toBeGreaterThan(15);
     const missing = targets.filter((target) =>
