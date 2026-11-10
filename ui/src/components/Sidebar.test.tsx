@@ -7,6 +7,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
+import { findTourTarget } from "./FeatureTour";
+import { WELCOME_TOUR } from "@/lib/welcome-tour";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockHeartbeatsApi = vi.hoisted(() => ({
@@ -292,6 +294,27 @@ describe("Sidebar", () => {
     expect(ask?.getAttribute("href")).toBe("/chats/everest");
     // First link in the navigation.
     expect(container.querySelector("nav a")).toBe(ask);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("gives every stop of the welcome tour something on screen to point at", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableWebsiteView: true });
+    mockAgentsApi.list.mockResolvedValue([
+      { id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null, urlKey: "everest" },
+    ]);
+    const root = await renderSidebar();
+
+    const unanchored = WELCOME_TOUR.steps
+      .filter((step) => step.target && ![step.target].flat().some((target) => findTourTarget(target)))
+      .map((step) => step.title);
+    // Commerce is in the sidebar only for the organisation that has a shop; the tour skips the stop elsewhere.
+    expect(unanchored).toEqual(["Commerce"]);
+    // Admin is folded, so the website stop points at the control that opens it.
+    expect(findTourTarget("nav-website")).toBeNull();
+    expect(findTourTarget("Expand Admin")).not.toBeNull();
 
     flushSync(() => {
       root.unmount();

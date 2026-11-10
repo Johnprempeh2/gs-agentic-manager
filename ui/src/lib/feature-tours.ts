@@ -1,14 +1,16 @@
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
 import { IMAGES_TOUR } from "./images-tour";
+import { WELCOME_TOUR } from "./welcome-tour";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
  * sentence or two. A step with no target is a plain card near the top of the
- * screen, for explaining the page as a whole.
+ * screen, for explaining the page as a whole. A list of targets means the
+ * first one on screen (a row, or the folded section that holds it).
  */
 export interface TourStep {
-  target?: string;
+  target?: string | string[];
   title: string;
   body: string;
 }
@@ -961,6 +963,7 @@ export function coreTourForPath(pathname: string): TourDefinition | null {
 
 /** Every tour, in the order the Tutorials list shows them. */
 export const ALL_TOURS: TourDefinition[] = [
+  WELCOME_TOUR,
   ...CORE_TOURS,
   SEARCH_ASK_TOUR,
   PIPELINES_LIST_TOUR,

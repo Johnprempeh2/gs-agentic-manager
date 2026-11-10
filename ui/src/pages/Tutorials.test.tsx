@@ -107,6 +107,7 @@ describe("Tutorials", () => {
     const ids = [...document.querySelectorAll("[data-testid^='tutorial-']")].map((el) => el.getAttribute("data-testid"));
     // Board and Share with agents are hidden: their switches are off.
     expect(ids).toEqual([
+      "tutorial-welcome",
       ...CORE_TOURS.map((tour) => `tutorial-${tour.id}`),
       "tutorial-search-ask",
       "tutorial-pipelines-list",
@@ -150,6 +151,15 @@ describe("Tutorials", () => {
     expect(pathname).toBe("/decisions");
   });
 
+  it("puts the welcome tour first under Start here and replays it on Home", async () => {
+    await render();
+    expect(document.querySelector("[data-testid^='tutorial-']")).toBe(row("welcome"));
+    expect(row("welcome")!.textContent).toContain("Welcome to GSAM");
+    await act(async () => startButton("welcome").click());
+    await flush();
+    expect(pathname).toBe("/dashboard");
+  });
+
   it("Start opens the first live pipeline's board and starts its tour there", async () => {
     await render();
     await act(async () => startButton("pipeline-board").click());
@@ -185,15 +195,16 @@ describe("Tutorials", () => {
     expect(words.querySelector("#word-routine")?.textContent).toContain("Work that repeats on a schedule");
   });
 
-  it("leads a new person through the first three tours in order", async () => {
-    server.rows = [{ tourKey: "decisions", tourVersion: 1, seenAt: "2026-10-01T00:00:00.000Z" }];
+  it("leads a new person through the first tours in order, the welcome first", async () => {
+    server.rows = ["welcome", "decisions"].map((tourKey) => ({ tourKey, tourVersion: 1, seenAt: "2026-10-01T00:00:00.000Z" }));
     await render();
     const card = document.querySelector<HTMLElement>('[data-testid="tutorials-start-here"]')!;
-    expect(card.textContent).toContain("1 of 3 done");
+    expect(card.textContent).toContain("2 of 4 done");
     expect([...card.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
-      "1. Decisions(done)",
-      "2. Tasks(not done yet)",
-      "3. Agents(not done yet)",
+      "1. Welcome to GSAM(done)",
+      "2. Decisions(done)",
+      "3. Tasks(not done yet)",
+      "4. Agents(not done yet)",
     ]);
     const next = [...card.querySelectorAll("button")].find((el) => el.textContent === "Next: Tasks")!;
     await act(async () => next.click());

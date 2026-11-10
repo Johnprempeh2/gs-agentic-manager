@@ -408,7 +408,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
     // Decisions live in the Desk's Decisions section: one list, one count.
     // Both rows point at /desk, so the hash decides which one is lit: never both (lib/sidebar-active).
-    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:decisions" }),
+    decisions: link("/desk#desk-needs-me", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:decisions", tourId: "nav-decisions" }),
     // The Desk (was My tasks); the layout id stays "my-tasks" so saved sidebars keep it in place.
     "my-tasks": link("/desk", "Desk", UserCheck, { badge: attentionCount, badgeLabel: "decisions", activeKey: "item:my-tasks" }),
     // Unread task updates only: messages, not decisions. Approvals, failed
@@ -432,7 +432,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     // GRE-1477: CRM organisations, part of the pipelines module.
     organisations: gated(showPipelines, link("/organisations", "Organisations", Building2)),
     // GRE-2383: the website's quotes, orders, invoices and licences. Greatstone only, while its Shop feature is on.
-    commerce: gated(showCommerce, link("/commerce", "Commerce", ShoppingBag)),
+    commerce: gated(showCommerce, link("/commerce", "Commerce", ShoppingBag, { tourId: "nav-commerce" })),
     pipelines: gated(showPipelines, {
       label: "Pipelines",
       icon: GitBranch,
@@ -451,7 +451,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     links: link("/links", "Links", Link2),
     images: link("/images", "GS Studio", ImageIcon),
     dashboard: link("/dashboard", "Dashboard", LayoutDashboard, { liveCount: liveRunCount }),
-    tasks: link("/issues", "Tasks", CircleCheck, { activeKey: "item:tasks" }),
+    tasks: link("/issues", "Tasks", CircleCheck, { activeKey: "item:tasks", tourId: "nav-tasks" }),
     projects: {
       label: "Projects",
       icon: FolderOpen,
@@ -484,13 +484,13 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     workspaces: gated(showWorkspacesLink, link("/workspaces", "Workspaces", GitBranch)),
     artifacts: link("/artifacts", "Artifacts", Package),
     cases: gated(showCases, link("/cases", "Cases", Layers)),
-    website: gated(showWebsite, link("/website", "Website", Globe)),
+    website: gated(showWebsite, link("/website", "Website", Globe, { tourId: "nav-website" })),
     activity: link("/activity", "Audit", History),
     releases: gated(canRelease, link("/releases", "Releases", Rocket)),
     billing: gated(hasBillingAccount, link("/billing", "Billing", CreditCard)),
     settings: link("/company/settings", "Settings", Settings),
     "whats-new": link("/whats-new", "What's new", Sparkles, whatsNewUnseen ? { textBadge: "New", textBadgeTone: "amber" } : undefined),
-    tutorials: link("/tutorials", "Tutorials", GraduationCap),
+    tutorials: link("/tutorials", "Tutorials", GraduationCap, { tourId: "nav-tutorials" }),
     "design-guide": link("/design-guide", "Design guide", Palette),
   };
   const available = (id: string) => Boolean(items[id]?.node);
