@@ -67,10 +67,13 @@ export function pageFraming(site: PreviewSite, framing: SitemapFraming | null | 
 // on because some pages show nothing until theirs run.
 // ponytail: one live frame per built page, loaded as it nears the screen. Fine
 // for tens of pages; a site with hundreds wants stored screenshots instead.
+// A laptop-width page (1280 by 800) at one eighth: it fills the 160 by 100 slot.
+const PAGE_THUMB_FRAME = { width: 1280, height: 800, transform: "scale(0.125)" };
+
 function PageThumb({ src }: { src: string }) {
   return (
-    <div aria-hidden="true" data-testid="sitemap-now-thumb" className="relative hidden h-[100px] w-[160px] shrink-0 overflow-hidden rounded-md border border-border bg-muted sm:block">
-      <iframe src={src} title="" tabIndex={-1} loading="lazy" sandbox="allow-scripts allow-same-origin" className="pointer-events-none absolute left-0 top-0 h-[800px] w-[1280px] origin-top-left scale-[0.125] border-0" />
+    <div aria-hidden="true" data-testid="sitemap-now-thumb" className="relative hidden h-25 w-40 shrink-0 overflow-hidden rounded-md border border-border bg-muted sm:block">
+      <iframe src={src} title="" tabIndex={-1} loading="lazy" sandbox="allow-scripts allow-same-origin" className="pointer-events-none absolute left-0 top-0 origin-top-left border-0" style={PAGE_THUMB_FRAME} />
     </div>
   );
 }
