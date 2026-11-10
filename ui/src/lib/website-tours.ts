@@ -1,4 +1,5 @@
 import type { TourDefinition } from "./feature-tours";
+import type { WebsiteTab } from "../components/website/WebsiteHub";
 
 /**
  * Tours of the Website module and the Commerce catalogue. Every stop names a
@@ -167,4 +168,175 @@ export const COMMERCE_CATALOGUE_TOUR: TourDefinition = {
   ],
 };
 
-export const WEBSITE_MODULE_TOURS = [WEBSITE_HOME_TOUR, WEBSITE_SITEMAP_TOUR, WEBSITE_EDITOR_TOUR, COMMERCE_CATALOGUE_TOUR];
+/** Website, Pages tab: the list of built pages. */
+export const WEBSITE_PAGES_TOUR: TourDefinition = {
+  id: "website-pages",
+  title: "Website pages",
+  description: "Every built page of the site, its state, and how to open one in the editor.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the pages",
+  steps: [
+    {
+      target: "website-pages-list",
+      title: "Every built page",
+      body: "One row for each page that exists, with its name and address. Pages the sitemap suggests but nobody has built stay on the Sitemap tab.",
+    },
+    {
+      target: "website-page-status",
+      title: "Its state",
+      body: "Draft, Waiting for approval, Approved or Live. Visitors only see a page once it is Live.",
+    },
+    {
+      target: "website-pages-edit",
+      title: "Open the editor",
+      body: "Edit pages opens the first page full screen. Edit on a row opens that page. You can switch pages inside the editor too.",
+    },
+  ],
+};
+
+/** Website, Progress tab: the website project's task tree. */
+export const WEBSITE_PROGRESS_TOUR: TourDefinition = {
+  id: "website-progress",
+  title: "Website progress",
+  description: "The website project's work as a tree, what is blocked, and what is finished.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the build progress",
+  steps: [
+    {
+      target: "Task tree summary",
+      title: "How far along it is",
+      body: "The website project, who leads it, how many of its tasks are done, and the first thing holding the work up.",
+    },
+    {
+      target: "Task tree",
+      title: "The work, branch by branch",
+      body: "Each box is a task, under the task it belongs to. Select a box to open the task.",
+    },
+    {
+      target: "Only what's blocked and why",
+      title: "Only what is stuck",
+      body: "Turn this on to hide everything that is moving and see only blocked tasks, each with what it waits for.",
+    },
+    {
+      target: "Show finished work",
+      title: "Finished work",
+      body: "Finished tasks are hidden to keep the tree short. Turn this on to see them.",
+    },
+  ],
+};
+
+/** Website, Collections tab: products, team, redirects, forms and media. */
+export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
+  id: "website-collections",
+  title: "Website collections",
+  description: "The lists behind the site, such as products, team and redirects, and how a change goes live.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the collections",
+  steps: [
+    {
+      target: "website-collection-picker",
+      title: "Pick a collection",
+      body: "Products, categories, team, redirects, forms and media each have their own list. Choose one here.",
+    },
+    {
+      target: "website-collection-entries",
+      title: "The entries",
+      body: "One row for each entry, with its state and version. Search narrows the list. Edit opens an entry.",
+    },
+    {
+      target: "website-collection-new",
+      title: "Add one",
+      body: "A new entry starts as a draft. Send it for review, and once a person approves it, it goes live with the next release.",
+    },
+  ],
+};
+
+/** Website, Releases tab: the site connection and every release. */
+export const WEBSITE_RELEASES_TOUR: TourDefinition = {
+  id: "website-releases",
+  title: "Website releases",
+  description: "How the site is connected, what each release put live, and who may publish.",
+  version: 1,
+  flag: "enableWebsiteView",
+  autoStart: false,
+  label: "the releases",
+  steps: [
+    {
+      target: "website-site-connection",
+      title: "Site connection",
+      body: "Where the site lives and how GSAM reaches it. Only people with Publish rights can change it.",
+    },
+    {
+      target: "website-releases",
+      title: "Releases",
+      body: "Each release is one update of the live site. Saved drafts are not live until a release takes them there.",
+    },
+    {
+      target: "website-publish",
+      title: "Publish",
+      body: "Puts every approved change live in one go. It costs credits each time, so it is for the site's owner to press, after the changes are approved.",
+    },
+    {
+      target: "website-release-row",
+      title: "One release",
+      body: "When it went live and who sent it. Details lists the checks it passed. An owner can roll the site back to an older release from here.",
+    },
+  ],
+};
+
+/** The tour for each Website tab that has one. Website.tsx mounts it beside the title; Tutorials opens the tab. */
+export const WEBSITE_TAB_TOURS: Partial<Record<WebsiteTab, TourDefinition>> = {
+  home: WEBSITE_HOME_TOUR,
+  sitemap: WEBSITE_SITEMAP_TOUR,
+  editor: WEBSITE_PAGES_TOUR,
+  progress: WEBSITE_PROGRESS_TOUR,
+  collections: WEBSITE_COLLECTIONS_TOUR,
+  releases: WEBSITE_RELEASES_TOUR,
+};
+
+/** Commerce, Sales: quotes, orders, invoices, licences and payments. In CORE_TOURS. */
+export const COMMERCE_SALES_TOUR: TourDefinition = {
+  id: "commerce-sales",
+  title: "Commerce sales",
+  description: "The website's quotes, orders and invoices, and how one leads to the next.",
+  version: 1,
+  flag: "enableWebsiteView",
+  route: { match: /^\/commerce\/(quotes|orders|invoices|licences|payments)\/?$/, path: "/commerce/quotes" },
+  autoStart: false,
+  label: "Commerce sales",
+  steps: [
+    {
+      target: "Commerce area",
+      title: "Three areas",
+      body: "Sales is what customers asked for and bought. Catalogue is what the site sells. Clients is the companies and enquiries behind them.",
+    },
+    {
+      target: "Commerce records",
+      title: "Quotes to invoices",
+      body: "A quote is a request from the website. An accepted quote becomes an order, and an order becomes an invoice when it gets an invoice number.",
+    },
+    {
+      target: "commerce-list",
+      title: "The list",
+      body: "Newest first, with the total and the state. Select a row to see its details, its items and the records linked to it.",
+    },
+  ],
+};
+
+export const WEBSITE_MODULE_TOURS = [
+  WEBSITE_HOME_TOUR,
+  WEBSITE_SITEMAP_TOUR,
+  WEBSITE_EDITOR_TOUR,
+  WEBSITE_PAGES_TOUR,
+  WEBSITE_PROGRESS_TOUR,
+  WEBSITE_COLLECTIONS_TOUR,
+  WEBSITE_RELEASES_TOUR,
+  COMMERCE_CATALOGUE_TOUR,
+  COMMERCE_SALES_TOUR,
+];

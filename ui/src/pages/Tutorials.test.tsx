@@ -127,11 +127,11 @@ describe("Tutorials", () => {
     // Board, Share with agents and chats are hidden: their switches are off. No shop, so no catalogue.
     expect(byArea).toEqual([
       ["Getting started", ["welcome", "search-ask", "search", "since-last-visit"]],
-      ["Today", ["decisions", "my-tasks", "calendar", "blocked", "approvals", "morning"]],
+      ["Today", ["decisions", "my-tasks", "inbox", "calendar", "blocked", "approvals", "morning"]],
       ["Work", ["dashboard", "tasks", "task-detail", "projects", "goals", "memory"]],
       ["Team", ["agents", "agent-detail", "scorecard", "weekly-report"]],
       ["Clients", ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images"]],
-      ["Website and Commerce", ["website-home", "website-sitemap", "website-editor", "website"]],
+      ["Website and Commerce", ["website-home", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-releases", "website"]],
       ["Set-up", ["routines", "integrations"]],
     ]);
     expect(row("pipelines-list")!.textContent).toContain("Seen");
@@ -170,6 +170,15 @@ describe("Tutorials", () => {
     expect(pathname + search).toBe("/website?tab=sitemap&tour=website-sitemap");
   });
 
+  it("opens each Website tab tour on its own tab", async () => {
+    for (const [id, tab] of [["website-pages", "editor"], ["website-progress", "progress"], ["website-collections", "collections"], ["website-releases", "releases"]]) {
+      await render();
+      await act(async () => startButton(id).click());
+      await flush();
+      expect(pathname + search).toBe(`/website?tab=${tab}&tour=${id}`);
+    }
+  });
+
   it("opens the page editor on the first built page that is not the home page", async () => {
     await render();
     await act(async () => startButton("website-editor").click());
@@ -190,9 +199,14 @@ describe("Tutorials", () => {
     data.shop = true;
     await render();
     expect(row("commerce-catalogue")!.textContent).toContain("Commerce catalogue");
+    expect(row("commerce-sales")!.textContent).toContain("Commerce sales");
     await act(async () => startButton("commerce-catalogue").click());
     await flush();
     expect(pathname).toBe("/commerce/offerings");
+    await render();
+    await act(async () => startButton("commerce-sales").click());
+    await flush();
+    expect(pathname).toBe("/commerce/quotes");
   });
 
   it("Start on the task tour opens the newest task, and says so when there are no agents", async () => {

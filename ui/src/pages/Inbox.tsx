@@ -2529,6 +2529,7 @@ export function Inbox() {
         context={(
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
             <PageTabBar
+              ariaLabel="Inbox views"
               items={[
                 // No number here: the one "needs you" count lives on Decisions.
                 { value: "mine", label: "Mine" },
@@ -2567,6 +2568,7 @@ export function Inbox() {
               }}
               className="h-8 w-full pl-8 text-xs"
               data-page-search-target="true"
+              data-tour="inbox-search"
             />
           </div>
         )}
@@ -2787,6 +2789,7 @@ export function Inbox() {
                     className="h-8 shrink-0"
                     onClick={() => setShowMarkAllReadConfirm(true)}
                     disabled={markAllReadMutation.isPending}
+                    data-tour="inbox-mark-all-read"
                   >
                     {markAllReadMutation.isPending ? "Marking…" : "Mark all as read"}
                   </Button>
@@ -2915,6 +2918,7 @@ export function Inbox() {
             <div
               ref={listRef}
               className="-mx-2 overflow-hidden sm:mx-0"
+              data-tour="inbox-list"
               onPointerDownCapture={noteInboxSortInteraction}
               onWheelCapture={noteInboxSortInteraction}
             >
