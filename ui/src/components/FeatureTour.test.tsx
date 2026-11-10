@@ -209,6 +209,17 @@ describe("FeatureTour", () => {
     expect(document.querySelector("[data-tour-active]")).toBeNull();
   });
 
+  it("adds a step whose element draws after the tour opened, keeping the current step", async () => {
+    await render();
+    expect(card()?.textContent).toContain("Step 1 of 2");
+    const late = document.createElement("div");
+    late.setAttribute("data-tour", "missing");
+    container!.append(late);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expect(card()?.textContent).toContain("Step 1 of 3");
+    late.remove();
+  });
+
   it("opens nothing by itself when none of a tour's elements is on the page", async () => {
     const elsewhere: TourDefinition = { ...tour, steps: [{ target: "missing", title: "Missing", body: "Not here." }, { target: "also-missing", title: "Gone", body: "Not here." }] };
     await render("/page", undefined, elsewhere);

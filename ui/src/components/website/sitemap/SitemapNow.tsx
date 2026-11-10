@@ -100,10 +100,16 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
   const suggestedRef = useRef<HTMLElement>(null);
   const setDismissedFor = (page: WebsitePage, hide: boolean, pressed: HTMLElement) => {
     // A dismissed row leaves the list and takes the pressed button with it:
-    // hand the keyboard to the next suggestion's Dismiss (else the one before, else the group).
+    // hand the keyboard to the next suggestion's Dismiss (else the one before), else the
+    // next group's heading (else the one before), else the section.
     if (hide && !showDismissed) {
       const row = pressed.closest("li");
-      ((row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLElement>("button:last-of-type") ?? suggestedRef.current)?.focus();
+      const group = pressed.closest("details");
+      const neighbour = (group?.nextElementSibling?.matches("details") ? group.nextElementSibling : null)
+        ?? (group?.previousElementSibling?.matches("details") ? group.previousElementSibling : null);
+      ((row?.nextElementSibling ?? row?.previousElementSibling)?.querySelector<HTMLElement>("button:last-of-type")
+        ?? neighbour?.querySelector<HTMLElement>("summary")
+        ?? suggestedRef.current)?.focus();
     }
     setNotice(hide ? `${page.title} dismissed.` : `${page.title} is back in the suggestions.`);
     const next = hide ? [...dismissed, page.id] : dismissed.filter((entry) => entry !== page.id);
