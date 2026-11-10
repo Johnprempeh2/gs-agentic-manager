@@ -207,9 +207,9 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
       return save(next, agentId);
     },
     version: async (revisionId) => (await store.readRevision(page.companyId, page.documentId, revisionId))?.revisionNumber ?? null,
-    save: (html, agentId) => save(html, agentId),
+    save: (html, agentId, userId) => save(html, agentId, userId ?? null),
   };
-  async function save(html: string, agentId: string) {
+  async function save(html: string, agentId: string, userId: string | null = null) {
     const content = { format: WEBSITE_HTML_PAGE_FORMAT, ...splitPageDocument(html) };
     if (page.slug === "/") checkHomeFrozen(content);
     const doc = await store.readDocument(page.companyId, page.documentId);
@@ -219,8 +219,9 @@ export function websitePageSource(store: Store, page: PageLike, loadChrome: Chro
       documentId: page.documentId,
       content,
       baseRevisionId: doc.latestRevisionId,
-      changeSummary: "Live design",
-      actor: { agentId, userId: null },
+      changeSummary: userId ? "Edited by hand" : "Live design",
+      // A person's own edits are theirs in the version list, not the agent's.
+      actor: userId ? { agentId: null, userId } : { agentId, userId: null },
     });
     if (result.state !== "saved") throw new LiveDesignConflict(result.message);
     return result.revisionId;

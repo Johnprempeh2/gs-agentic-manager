@@ -24,8 +24,9 @@ import { formatDateTime } from "@/lib/utils";
 import { PageTabBar } from "../../PageTabBar";
 import { ErrorState, errorStateMessage } from "../../ErrorState";
 import { SitemapBoardView } from "./SitemapBoard";
-import { countOf, pagesLookup } from "./model";
+import { countOf, nodeStatus, pagesLookup } from "./model";
 import { SitemapCompareView } from "./SitemapCompare";
+import { SitemapNow } from "./SitemapNow";
 import { SitemapTreeView } from "./SitemapTree";
 import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./SitemapViews";
 
@@ -34,9 +35,10 @@ import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./
 // writes it, Approve (people who can publish) makes it the site's pages and
 // menus, live when you Deploy.
 
-export type SitemapView = "tree" | "board" | "menus" | "journeys" | "list" | "compare" | "xml";
+export type SitemapView = "now" | "tree" | "board" | "menus" | "journeys" | "list" | "compare" | "xml";
 
 export const SITEMAP_VIEWS: { value: SitemapView; label: string }[] = [
+  { value: "now", label: "Site now" },
   { value: "tree", label: "Tree" },
   { value: "board", label: "Board" },
   { value: "menus", label: "Menus" },
@@ -46,9 +48,13 @@ export const SITEMAP_VIEWS: { value: SitemapView; label: string }[] = [
   { value: "xml", label: "sitemap.xml" },
 ];
 
-/** The view a person last chose, kept per person in this browser (GRE-2509). The vertical Tree is the default. */
+/**
+ * The view a person last chose, kept per person in this browser (GRE-2509).
+ * "Site now" (the pages that exist) is the default; the other views edit a plan.
+ * The key is v2 so everyone meets "Site now" once, then their own choice sticks.
+ */
 export function sitemapViewKey(userId: string) {
-  return `gsam.sitemap.view.${userId}`;
+  return `gsam.sitemap.view.v2.${userId}`;
 }
 
 function readSitemapView(userId: string | null): SitemapView | null {
@@ -65,7 +71,7 @@ export function useSitemapView(): [SitemapView, (view: SitemapView) => void] {
   const session = useQuery({ queryKey: queryKeys.auth.session, queryFn: () => authApi.getSession(), retry: false });
   const userId = session.data?.user?.id ?? null;
   const [chosen, setChosen] = useState<SitemapView | null>(null);
-  const view = chosen ?? readSitemapView(userId) ?? "tree";
+  const view = chosen ?? readSitemapView(userId) ?? "now";
   const choose = (next: SitemapView) => {
     setChosen(next);
     if (!userId) return;
@@ -247,6 +253,8 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
   const tree = draft ?? option.tree;
   const pagesById = useMemo(() => pagesLookup(pages), [pages]);
   const readOnly = !canEdit || option.status === "archived";
+  // An entry is a page only once it is built: the rest of the plan is ideas.
+  const builtCount = useMemo(() => tree.nodes.filter((node) => ["drafted", "live"].includes(nodeStatus(node, pagesById))).length, [tree, pagesById]);
   const confirm = useConfirm();
 
   useEffect(() => {
@@ -319,8 +327,22 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
   const canApproveThis = canApprove && option.status !== "archived" && (option.status !== "approved" || option.changedSinceApproval);
 
   return (
-    <div className="space-y-6" data-testid="website-sitemap-section">
+    <div className="space-y-4" data-testid="website-sitemap-section">
+      {/* The view bar leads: "Site now" is the site as it is, every other view edits a plan. */}
+      <Tabs value={view} onValueChange={(value) => setView(value as SitemapView)}>
+        <PageTabBar items={SITEMAP_VIEWS} value={view} onValueChange={(value) => setView(value as SitemapView)} align="start" ariaLabel="Sitemap view" />
+      </Tabs>
+      {view === "now" ? (
+        <>
+          {draft ? <p role="status" className="text-sm text-status-warning-foreground">You have unsaved changes to {option.name}. Open Tree to save or discard them.</p> : null}
+          <SitemapNow site={site} pages={pages} approvedTree={approved?.tree ?? null} onEditPage={onEditPage} />
+        </>
+      ) : null}
+      {view === "now" ? null : (
       <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          This is the plan. Changing it changes nothing on the site until a person approves it, and editing or publishing a page never needs an approval here.
+        </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex min-w-0 flex-col gap-1 text-sm">
             <span className="font-medium">Option</span>
@@ -342,7 +364,7 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
             {statusPill(option)}
             {draft ? <Pill className="bg-status-warning-soft text-status-warning-foreground">Unsaved changes</Pill> : null}
             <span className="text-xs text-muted-foreground">
-              {countOf(tree.nodes.length, "page")}, {countOf(tree.journeys.length, "journey")}
+              {countOf(tree.nodes.length, "entry", "entries")}, {builtCount} built, {countOf(tree.journeys.length, "journey")}
               {option.approvedAt ? `, approved ${formatDateTime(option.approvedAt)}` : ""}
             </span>
           </div>
@@ -404,11 +426,8 @@ export function SitemapSection({ companyId, site, options, pages, canApprove, ca
         {notice ? <p role="status" className="text-sm text-status-success-foreground">{notice}</p> : null}
         {error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(error)}</p> : null}
       </div>
+      )}
       <div>
-        {/* The view bar sits 16px above the view it switches (DESIGN.md page rhythm). */}
-        <Tabs value={view} onValueChange={(value) => setView(value as SitemapView)} className="mb-4">
-          <PageTabBar items={SITEMAP_VIEWS} value={view} onValueChange={(value) => setView(value as SitemapView)} align="start" ariaLabel="Sitemap view" />
-        </Tabs>
         {view === "tree" ? (
           <SitemapTreeView key={option.id} tree={tree} onChange={setDraft} pagesById={pagesById} readOnly={readOnly} onEditPage={onEditPage} features={features.data ?? []} />
         ) : null}

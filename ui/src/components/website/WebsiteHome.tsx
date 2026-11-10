@@ -118,8 +118,8 @@ export function activityActor(event: Pick<WebsiteHomeActivity, "actorName" | "ac
 /** Planned, drafted (draft, review or approved) and live pages. */
 export function pageProgress(pages: WebsiteHomeSummary["pages"]) {
   const drafted = pages.draft + pages.review + pages.approved;
-  const total = pages.planned + drafted + pages.published;
-  return { planned: pages.planned, drafted, live: pages.published, total };
+  // A planned row is a sitemap idea nobody has built, so it is not a page and not in the total.
+  return { planned: pages.planned, drafted, live: pages.published, total: drafted + pages.published };
 }
 
 /** The live status line of the hero. */
@@ -575,12 +575,13 @@ function Tiles({
       <Tile label="Pages" icon={FileText} onOpen={() => onOpenTab("editor")} testId="website-home-tile-editor">
         {!site ? notConnected : !pages ? loading : (
           <>
-            <Big>{count(pages.live + pages.drafted)} <span className="text-sm font-medium text-muted-foreground">of {count(pages.total)} started</span></Big>
+            <Big>{count(pages.total)} <span className="text-sm font-medium text-muted-foreground">built</span></Big>
             <SlimBar
-              label={`${pages.live} live, ${pages.drafted} drafted, ${pages.planned} planned`}
-              parts={[{ value: pages.live, className: "bg-status-success" }, { value: pages.drafted, className: "bg-status-info" }, { value: pages.planned, className: "bg-transparent" }]}
+              label={`${pages.live} live, ${pages.drafted} not live yet`}
+              parts={[{ value: pages.live, className: "bg-status-success" }, { value: pages.drafted, className: "bg-status-info" }]}
             />
-            <Small>{count(pages.live)} live · {count(pages.drafted)} drafted · {count(pages.planned)} planned</Small>
+            <Small>{count(pages.live)} live · {count(pages.drafted)} not live yet</Small>
+            {pages.planned > 0 ? <Small>{count(pages.planned)} suggested, not built</Small> : null}
           </>
         )}
       </Tile>

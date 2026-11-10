@@ -266,7 +266,7 @@ export type SitemapPageStatus = "new" | "planned" | "drafted" | "live";
 export const SITEMAP_STATUS_LABELS: Record<SitemapPageStatus, string> = {
   new: "New",
   planned: "To build",
-  drafted: "Drafted",
+  drafted: "Built",
   live: "Live",
 };
 
@@ -282,6 +282,81 @@ export function nodeStatus(node: Node, pagesById: Map<string, WebsitePage>): Sit
   if (page.status === "planned") return "planned";
   if (page.status === "published") return "live";
   return "drafted";
+}
+
+/* ---- The site as it is ---- */
+
+/** A page that exists. A planned row is only a sitemap entry waiting to be built, so it is a suggestion, not a page. */
+export function isBuiltPage(page: WebsitePage): boolean {
+  return !page.archivedAt && page.status !== "planned";
+}
+
+export type BuiltPageState = "live" | "approved" | "review" | "changed" | "draft";
+
+export const BUILT_PAGE_STATES: Record<BuiltPageState, { label: string; tone: string }> = {
+  live: { label: "Live", tone: "bg-status-success-soft text-status-success-foreground" },
+  approved: { label: "Approved, not published", tone: "bg-status-info-soft text-status-info-foreground" },
+  review: { label: "Changed, waiting for review", tone: "bg-status-warning-soft text-status-warning-foreground" },
+  changed: { label: "Live, with changes not sent for review", tone: "bg-status-warning-soft text-status-warning-foreground" },
+  draft: { label: "Draft", tone: "bg-status-neutral-soft text-status-neutral-foreground" },
+};
+
+/** Where a built page stands. GSAM marks a page live only when one of its own releases publishes it. */
+export function builtPageState(page: WebsitePage): BuiltPageState {
+  if (page.status === "published") return "live";
+  if (page.status === "approved") return "approved";
+  if (page.status === "review") return "review";
+  return page.publishedRevisionId ? "changed" : "draft";
+}
+
+/** Built pages in their real structure: parents before children, siblings in site order. A page whose parent is not built sits at the top level. */
+export function builtPageRows(pages: WebsitePage[]): Array<{ page: WebsitePage; depth: number }> {
+  const built = pages.filter(isBuiltPage);
+  const ids = new Set(built.map((page) => page.id));
+  const rows: Array<{ page: WebsitePage; depth: number }> = [];
+  const walk = (parentId: string | null, depth: number) => {
+    built
+      .filter((page) => (page.parentPageId && ids.has(page.parentPageId) ? page.parentPageId : null) === parentId)
+      .sort((a, b) => (a.navOrder ?? Number.MAX_SAFE_INTEGER) - (b.navOrder ?? Number.MAX_SAFE_INTEGER) || a.slug.localeCompare(b.slug))
+      .forEach((page) => {
+        rows.push({ page, depth });
+        if (depth < 12) walk(page.id, depth + 1);
+      });
+  };
+  walk(null, 0);
+  return rows;
+}
+
+export type SitemapMismatchKind = "built-not-in-sitemap" | "sitemap-no-page" | "menu-not-built";
+
+export interface SitemapMismatch {
+  kind: SitemapMismatchKind;
+  title: string;
+  path: string;
+  /** The page row, when there is one. */
+  pageId: string | null;
+  menu?: WebsitePageMenu;
+}
+
+/** Where the approved sitemap and the real pages disagree. No approved sitemap: only menu promises can be checked. */
+export function sitemapMismatches(pages: WebsitePage[], approved: Tree | null): SitemapMismatch[] {
+  const current = pages.filter((page) => !page.archivedAt);
+  const found: SitemapMismatch[] = [];
+  if (approved) {
+    const nodeIds = new Set(approved.nodes.flatMap((node) => (node.pageId ? [node.pageId] : [])));
+    const nodePaths = new Set(approved.nodes.map((node) => node.path));
+    for (const page of current.filter(isBuiltPage)) {
+      if (!nodeIds.has(page.id) && !nodePaths.has(page.slug)) found.push({ kind: "built-not-in-sitemap", title: page.title, path: page.slug, pageId: page.id });
+    }
+    const lookup = pagesLookup(current);
+    for (const node of approved.nodes) {
+      if (!(node.pageId && lookup.has(node.pageId)) && !lookup.has(`slug:${node.path}`)) found.push({ kind: "sitemap-no-page", title: node.title, path: node.path, pageId: null });
+    }
+  }
+  for (const page of current) {
+    if (page.status === "planned" && page.menu !== "none") found.push({ kind: "menu-not-built", title: page.title, path: page.slug, pageId: page.id, menu: page.menu });
+  }
+  return found.sort((a, b) => a.kind.localeCompare(b.kind) || a.path.localeCompare(b.path));
 }
 
 /* ---- Board layout (GRE-2542) ---- */

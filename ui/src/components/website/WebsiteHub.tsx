@@ -34,6 +34,7 @@ import { ProjectTreeView } from "../../pages/ProjectTree";
 import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteReleases } from "./WebsiteReleases";
 import { useCanManageWebsite } from "./WebsiteSetup";
+import { SitemapNow } from "./sitemap/SitemapNow";
 import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
 
 // The website hub (23 Oct 2026): the Website page's Releases, Progress,
@@ -331,7 +332,14 @@ export function WebsiteSitemapTab({
     return <SitemapSection companyId={companyId} site={site} options={optionList} pages={pageList} canApprove={canManage} canEdit onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />;
   }
   // A site with pages but no option yet: start from its pages. No pages: the attached sitemap file stays.
-  if (site && pageList.length > 0) return <StartSitemap companyId={companyId} site={site} pages={pageList} />;
+  if (site && pageList.length > 0) {
+    return (
+      <div className="space-y-6">
+        <SitemapNow site={site} pages={pageList} approvedTree={null} onEditPage={onEditPage ? (pageId) => onEditPage(site.id, pageId) : undefined} />
+        <StartSitemap companyId={companyId} site={site} pages={pageList} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       {site ? <StartSitemap companyId={companyId} site={site} pages={pageList} /> : null}
