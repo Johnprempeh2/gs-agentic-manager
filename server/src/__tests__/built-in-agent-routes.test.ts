@@ -206,6 +206,23 @@ describe("built-in agent routes", () => {
     }));
   });
 
+  it("keeps a built-in budget override board-only (upstream paperclipai/paperclip#20213)", async () => {
+    const app = await createApp({
+      type: "agent",
+      agentId: "manager-agent",
+      companyId,
+      source: "agent_key",
+    });
+
+    const res = await request(app)
+      .post(`/api/companies/${companyId}/built-in-agents/briefs/provision`)
+      .send({ adapterType: "codex_local", budgetMonthlyCents: 5000 });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.error).toContain("Board access required");
+    expect(mockBuiltInAgentService.provision).not.toHaveBeenCalled();
+  });
+
   it("denies provision when agents:create is not allowed", async () => {
     mockAccessService.decide.mockResolvedValue(denyDecision());
     const app = await createApp({

@@ -1010,6 +1010,132 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.update).toHaveBeenCalledWith(agentId, expect.objectContaining({ status: "paused" }), expect.anything());
   });
 
+  describe("agent budgets are board-only on every route (upstream paperclipai/paperclip#20213)", () => {
+    const otherAgentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const revisionId = "33333333-3333-4333-8333-333333333333";
+    const agentActor = (actorAgentId: string) => ({
+      type: "agent",
+      agentId: actorAgentId,
+      companyId,
+      source: "agent_key",
+      runId: "run-1",
+    });
+    const boardActor = {
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    };
+
+    beforeEach(() => {
+      mockAccessService.hasPermission.mockResolvedValue(true);
+      mockAccessService.canUser.mockResolvedValue(true);
+      mockAgentService.getById.mockResolvedValue({
+        ...baseAgent,
+        budgetMonthlyCents: 1000,
+        permissions: { canCreateAgents: true },
+      });
+    });
+
+    it.each([
+      ["itself", agentId],
+      ["another agent allowed to configure it", otherAgentId],
+    ])("refuses a PATCH budget change when the caller is %s", async (_who, actorAgentId) => {
+      const app = await createApp(agentActor(actorAgentId));
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}`)
+        .send({ budgetMonthlyCents: 5000 }));
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Board access required");
+      expect(mockAgentService.update).not.toHaveBeenCalled();
+    });
+
+    it("lets an agent PATCH other fields with the unchanged budget", async () => {
+      const app = await createApp(agentActor(agentId));
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}`)
+        .send({ title: "Lead builder", budgetMonthlyCents: 1000 }));
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockAgentService.update).toHaveBeenCalled();
+    });
+
+    it("lets a board user change the budget through PATCH", async () => {
+      const app = await createApp(boardActor);
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}`)
+        .send({ budgetMonthlyCents: 5000 }));
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockAgentService.update).toHaveBeenCalledWith(
+        agentId,
+        expect.objectContaining({ budgetMonthlyCents: 5000 }),
+        expect.anything(),
+      );
+    });
+
+    it("refuses an agent rollback that changes the budget", async () => {
+      mockAgentService.getConfigRevision.mockResolvedValue({
+        id: revisionId,
+        afterConfig: { adapterType: "process", adapterConfig: {}, runtimeConfig: {}, budgetMonthlyCents: 9000 },
+      });
+      const app = await createApp(agentActor(otherAgentId));
+
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl).post(`/api/agents/${agentId}/config-revisions/${revisionId}/rollback`));
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Board access required");
+      expect(mockAgentService.rollbackConfigRevision).not.toHaveBeenCalled();
+    });
+
+    it("refuses direct agent creation with a budget from an agent", async () => {
+      const app = await createApp(agentActor(agentId));
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .post(`/api/companies/${companyId}/agents`)
+        .send({ name: "Spender", role: "engineer", adapterType: "process", adapterConfig: {}, budgetMonthlyCents: 5000 }));
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Board access required");
+      expect(mockAgentService.create).not.toHaveBeenCalled();
+      expect(mockBudgetService.upsertPolicy).not.toHaveBeenCalled();
+    });
+
+    it("refuses an immediate hire with a budget from an agent", async () => {
+      const app = await createApp(agentActor(agentId), { requireBoardApprovalForNewAgents: false });
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .post(`/api/companies/${companyId}/agent-hires`)
+        .send({ name: "Spender", role: "engineer", adapterType: "process", adapterConfig: {}, budgetMonthlyCents: 5000 }));
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Board access required");
+      expect(mockAgentService.create).not.toHaveBeenCalled();
+    });
+
+    it("keeps an agent's proposed budget on a hire that waits for board approval", async () => {
+      mockAgentService.create.mockResolvedValue({ ...baseAgent, status: "pending_approval", budgetMonthlyCents: 5000 });
+      mockApprovalService.create.mockResolvedValue({ id: "approval-1", type: "hire_agent" });
+      const app = await createApp(agentActor(agentId), { requireBoardApprovalForNewAgents: true });
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .post(`/api/companies/${companyId}/agent-hires`)
+        .send({ name: "Spender", role: "engineer", adapterType: "process", adapterConfig: {}, budgetMonthlyCents: 5000 }));
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockApprovalService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({ payload: expect.objectContaining({ budgetMonthlyCents: 5000 }) }),
+      );
+    });
+  });
+
   it("applies the resume change-grant decision to PATCH status idle from an agent", async () => {
     mockAgentService.getById.mockResolvedValue({ ...baseAgent, status: "paused" });
     mockAccessService.decide.mockImplementation(async (input: { action?: string; scope?: { requiresChangeGrant?: boolean } }) => {

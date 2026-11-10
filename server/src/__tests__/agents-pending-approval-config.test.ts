@@ -158,6 +158,27 @@ describeEmbeddedPostgres("pending approval agent config integrity", () => {
     });
   });
 
+  it("refuses an agent-originated budget change in the service (upstream paperclipai/paperclip#20213)", async () => {
+    const companyId = await seedCompany();
+    const service = agentService(db);
+    const agent = await db.insert(agents).values({
+      companyId, name: "Spender", role: "engineer", budgetMonthlyCents: 1000,
+      adapterType: "process", adapterConfig: {}, runtimeConfig: {},
+    }).returning().then(rows => rows[0]!);
+    const byAgent = { recordRevision: { createdByAgentId: agent.id, createdByUserId: null, source: "patch" } };
+
+    await expect(service.update(agent.id, { budgetMonthlyCents: 5000 }, byAgent as never))
+      .rejects.toMatchObject({ status: 403 });
+    // The unchanged amount with another edit still works for an agent.
+    await service.update(agent.id, { title: "Lead", budgetMonthlyCents: 1000 }, byAgent as never);
+    // A board user may change it.
+    await service.update(agent.id, { budgetMonthlyCents: 5000 }, {
+      recordRevision: { createdByAgentId: null, createdByUserId: "board-user", source: "patch" },
+    } as never);
+    const stored = await db.select().from(agents).where(eq(agents.id, agent.id)).then(rows => rows[0]!);
+    expect(stored).toMatchObject({ title: "Lead", budgetMonthlyCents: 5000 });
+  });
+
   it("keeps a CEO's hiring authority as saved when another permission changes", async () => {
     const companyId = await seedCompany();
     const service = agentService(db);

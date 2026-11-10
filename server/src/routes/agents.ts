@@ -4526,6 +4526,10 @@ export function agentRoutes(
     if (!rollbackConfig) {
       throw unprocessable("Invalid revision snapshot");
     }
+    // Budgets are board-only, the same as PATCH /agents/:id/budgets (upstream paperclipai/paperclip#20213).
+    if (typeof rollbackConfig.budgetMonthlyCents === "number" && rollbackConfig.budgetMonthlyCents !== existing.budgetMonthlyCents) {
+      assertBoard(req);
+    }
     assertProviderTraceSettingTransition(
       req,
       rollbackConfig.runtimeConfig,
@@ -4765,6 +4769,9 @@ export function agentRoutes(
       res.status(404).json({ error: "Company not found" });
       return;
     }
+    // Budgets are board-only. An agent may propose one in a hire that waits for
+    // board approval; the approving board user then activates it (upstream paperclipai/paperclip#20213).
+    if (!company.requireBoardApprovalForNewAgents && req.body.budgetMonthlyCents > 0) assertBoard(req);
 
     // Idempotency within a run: if this run already created a hire from this
     // exact request, return that hire instead of creating a duplicate. The
@@ -4967,6 +4974,8 @@ export function agentRoutes(
   router.post("/companies/:companyId/agents", validate(createAgentSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCanCreateAgentsForCompany(req, companyId);
+    // Creation with a budget sets the hard stop, so it is board-only (upstream paperclipai/paperclip#20213).
+    if (req.body.budgetMonthlyCents > 0) assertBoard(req);
 
     const company = await db
       .select()
@@ -5593,6 +5602,11 @@ export function agentRoutes(
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Agent not found");
     if (!existing) return;
+    // A budget change is the board-only budget control (PATCH /agents/:id/budgets),
+    // so PATCH is never a way around it (upstream paperclipai/paperclip#20213).
+    if (hasOwn(req.body as object, "budgetMonthlyCents") && req.body.budgetMonthlyCents !== existing.budgetMonthlyCents) {
+      assertBoard(req);
+    }
 
     if (hasOwn(req.body as object, "permissions")) {
       res.status(422).json({ error: "Use /api/agents/:id/permissions for permission changes" });
