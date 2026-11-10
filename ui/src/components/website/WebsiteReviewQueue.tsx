@@ -5,6 +5,7 @@ import type { WebsiteReviewApproveResult } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { useConfirm } from "../../context/ConfirmContext";
 import { queryKeys } from "../../lib/queryKeys";
+import { entryReading } from "../../lib/commerce-catalogue";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ErrorState, errorStateMessage } from "../ErrorState";
@@ -14,7 +15,8 @@ import { useCanPublishWebsite } from "./WebsiteSiteConnection";
 // with Publish rights on the site approves them all, or the ones they tick, after
 // one confirm that shows the count. Approving never publishes.
 
-type Item = { key: string; kind: "page" | "entry"; id: string; title: string; detail: string; version: string; updatedAt: string };
+/** `detail` says what the item is in plain words; `code` is its address or code, shown small. */
+type Item = { key: string; kind: "page" | "entry"; id: string; title: string; label: string; detail: string; code: string | null; version: string; updatedAt: string };
 type Row = { latestRevisionId: string | null; latestRevisionNumber: number; approvedRevisionId: string | null; updatedAt: string };
 
 /**
@@ -57,8 +59,11 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
 
   // Newest change first.
   const items: Item[] = [
-    ...(reviewQuery.data?.pages ?? []).map((page) => ({ key: `page:${page.id}`, kind: "page" as const, id: page.id, title: page.title, detail: page.slug, ...info(page) })),
-    ...(reviewQuery.data?.entries ?? []).map((entry) => ({ key: `entry:${entry.id}`, kind: "entry" as const, id: entry.id, title: entry.entryKey, detail: entry.collection, ...info(entry) })),
+    ...(reviewQuery.data?.pages ?? []).map((page) => ({ key: `page:${page.id}`, kind: "page" as const, id: page.id, title: page.title, label: "Page", detail: "", code: page.slug, ...info(page) })),
+    ...(reviewQuery.data?.entries ?? []).map((entry) => {
+      const reading = entryReading(entry);
+      return { key: `entry:${entry.id}`, kind: "entry" as const, id: entry.id, title: reading.title, label: reading.kind, detail: reading.meta, code: reading.code, ...info(entry) };
+    }),
   ].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
   const chosen = items.filter((item) => selected.has(item.key));
 
@@ -130,7 +135,7 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
           <p className="text-status-success">{resultText(result)}</p>
           {result.skipped.length ? (
             <ul className="list-disc pl-5 text-xs text-muted-foreground">
-              {result.skipped.map((item) => <li key={`${item.kind}:${item.id}`}>{item.title}: {item.reason}</li>)}
+              {result.skipped.map((item) => <li key={`${item.kind}:${item.id}`}>{items.find((row) => row.key === `${item.kind}:${item.id}`)?.title ?? item.title}: {item.reason}</li>)}
             </ul>
           ) : null}
         </div>
@@ -149,10 +154,14 @@ export function WebsiteReviewQueue({ companyId, siteId }: { companyId: string; s
               ) : null}
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm font-medium">{item.title}</span>
-                <span className="truncate font-mono text-xs text-muted-foreground">{item.detail}</span>
+                {item.detail || item.code ? (
+                  <span className="break-words text-xs text-muted-foreground">
+                    {item.detail}{item.detail && item.code ? " · " : null}{item.code ? <span className="font-mono">{item.code}</span> : null}
+                  </span>
+                ) : null}
                 <span className="truncate text-xs text-muted-foreground" data-testid="website-review-version">{item.version}</span>
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{item.kind === "page" ? "Page" : "Entry"}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{item.label}</span>
             </li>
           ))}
         </ul>

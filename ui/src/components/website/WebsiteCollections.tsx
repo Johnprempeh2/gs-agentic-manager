@@ -4,12 +4,14 @@ import {
   websiteCollectionDefinition,
   websiteCollectionFieldSchema,
   websiteCollectionManifest,
+  websiteEntrySummary,
   type WebsiteEntryDetail,
   type WebsiteEntryStatus,
   type WebsiteProperty,
 } from "@greatstone/shared";
 import { websiteModuleApi } from "../../api/website";
 import { formatDateTime } from "../../lib/utils";
+import { entryMatches, entryReading } from "../../lib/commerce-catalogue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -140,8 +142,8 @@ function SchemaField({ schema, value, label, path, onChange }: {
   </label>;
 }
 
-function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
-  companyId: string; siteId: string; collection: string; entryId: string | null; onClose: () => void;
+function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose }: {
+  companyId: string; siteId: string; collection: string; singular: string; entryId: string | null; onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const definition = websiteCollectionDefinition(collection)!;
@@ -193,7 +195,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
     } catch (error) { setMessage(errorStateMessage(error)); }
   };
   return <section className="space-y-5" data-testid="website-entry-editor">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? entry.entryKey : `New ${collection}`}</h3><p className="text-sm text-muted-foreground">Fields version {definition.fieldsVersion}. {ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? websiteEntrySummary(entry.content)?.name ?? entry.entryKey : `New ${singular}`}</h3><p className="text-sm text-muted-foreground">{ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Changes go live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
     <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <label className="block space-y-1 text-sm"><span className="font-medium">Entry key</span><Input value={entryKey} onChange={(event) => setEntryKey(event.target.value)} required maxLength={200} /></label>
       <SchemaField schema={definition.definition as FieldSchema} value={fields} label="Fields" path="website-entry-fields" onChange={setFields} />
@@ -202,7 +204,7 @@ function EntryEditor({ companyId, siteId, collection, entryId, onClose }: {
     {entry ? <div className="flex flex-wrap gap-2">
       {entry.status === "draft" ? <Button variant="outline" onClick={() => changeStatus.mutate("review")} disabled={changeStatus.isPending || save.isPending || dirty}>Send for review</Button> : null}
       {entry.status === "review" && canManage ? <Button variant="outline" onClick={() => changeStatus.mutate("approve")} disabled={changeStatus.isPending || dirty}>Approve</Button> : null}
-      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${collection}? It leaves the live site when you Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
+      <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${singular}? It leaves the live site when you Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
     </div> : null}
     {message ? <p role="status" className="text-sm text-status-success">{message}</p> : null}
     {save.error || changeStatus.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(save.error ?? changeStatus.error)}</p> : null}
@@ -216,6 +218,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   const { canManage } = useCanManageWebsite(companyId);
   const [collection, setCollection] = useState<string>("product");
   const [entryId, setEntryId] = useState<string | null | undefined>(undefined);
+  const [search, setSearch] = useState("");
   const entries = useQuery({ queryKey: ["website-entries", companyId, site?.id, collection], queryFn: () => websiteModuleApi.entries(companyId, site!.id, collection), enabled: !!site && collection !== "redirect" && collection !== MEDIA_VIEW });
   const importDrafts = useMutation({
     mutationFn: () => websiteModuleApi.importPublicDrafts(companyId, site!.id),
@@ -225,14 +228,34 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading collections</p>;
   if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
   const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
+  const shown = (entries.data ?? []).filter((entry) => entryMatches(entry, search));
   return <div className="space-y-5" data-testid="website-collections">
     <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go live when you Deploy.</p></div>
-    {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Imports 10 vendors, 32 categories, 24 products, six public team cards and three forms from the 22 October snapshot. The product list is partial. Existing entries are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
-    <label className="block max-w-sm space-y-1 text-sm"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
-    {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
+    {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Brings in the vendors, categories, products, public team cards and forms last captured from the website. Entries a person has edited are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
+    <label className="block max-w-sm space-y-1 text-sm"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); setSearch(""); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
+    {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} singular={selected.singular} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
       <section className="space-y-4"><div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">{selected.label}</h3><Button onClick={() => setEntryId(null)}>New {selected.singular}</Button></div>
         {entries.error ? <ErrorState error={entries.error} onRetry={() => void entries.refetch()} /> : entries.isLoading ? <p className="text-sm text-muted-foreground">Loading entries</p> : entries.data?.length ?
-          <ul className="divide-y">{entries.data.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div><span className="font-medium">{entry.entryKey}</span><span className="ml-2 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span><p className="text-muted-foreground">Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}</p></div><Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)}>Edit</Button></li>)}</ul> :
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <Input type="search" className="max-w-sm" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, category or code" aria-label={`Search ${selected.label.toLowerCase()}`} />
+              <p className="text-xs text-muted-foreground" role="status">{search.trim() ? `${shown.length} of ${entries.data.length}` : entries.data.length} {selected.label.toLowerCase()}</p>
+            </div>
+            {shown.length ? <ul className="divide-y">{shown.map((entry) => {
+              const reading = entryReading(entry);
+              return <li key={entry.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate"><span className="font-medium">{reading.title}</span><span className="ml-2 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span></p>
+                  {reading.line ? <p className="truncate text-muted-foreground">{reading.line}</p> : null}
+                  <p className="break-words text-xs text-muted-foreground">
+                    {reading.meta ? `${reading.meta} · ` : null}Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}
+                    {reading.code ? <> · <span className="font-mono">{reading.code}</span></> : null}
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setEntryId(entry.id)} aria-label={`Edit ${reading.title}`}>Edit</Button>
+              </li>;
+            })}</ul> : <p className="text-sm text-muted-foreground">Nothing matches "{search.trim()}". Try part of the name, the category or the code.</p>}
+          </> :
           <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, it goes live when you Deploy.`}</p></div>}
       </section>}
   </div>;

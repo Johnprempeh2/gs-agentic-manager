@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { assets, companySecrets, documentRevisions, documents, websiteEntry, websitePage, websiteSite } from "@greatstone/db";
 import {
   WEBSITE_CONTENT_MAX_BYTES,
+  websiteEntrySummary,
   type CreateWebsiteEntry,
   type CreateWebsitePage,
   type CreateWebsiteSite,
@@ -291,6 +292,15 @@ export function websiteDocumentStore(db: Db) {
   }
 
   return { createDocument, saveRevision, listRevisions, readRevision, readRevisionRow, readDocument };
+}
+
+/**
+ * An entry as a list shows it: with what it is (name, one line, price), so nobody reads an id.
+ * ponytail: reads each entry's whole body to keep a few fields (about 1 MB for 159 products). Store the summary
+ * on the entry row if a collection grows past a few thousand entries.
+ */
+function listedEntry(row: { entry: EntryRow; latestRevisionId: string | null; latestRevisionNumber: number; latestBody: string }): WebsiteEntry {
+  return { ...toWebsiteEntry(row.entry, row), summary: websiteEntrySummary(parseBody(row.latestBody)) };
 }
 
 function parseBody(body: string): unknown {
@@ -703,14 +713,14 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
       .where(and(eq(websitePage.companyId, companyId), eq(websitePage.siteId, siteId), eq(websitePage.status, "review"), isNull(websitePage.archivedAt)))
       .orderBy(asc(websitePage.slug));
     const entries = await db
-      .select({ entry: websiteEntry, latestRevisionId: documents.latestRevisionId, latestRevisionNumber: documents.latestRevisionNumber })
+      .select({ entry: websiteEntry, latestRevisionId: documents.latestRevisionId, latestRevisionNumber: documents.latestRevisionNumber, latestBody: documents.latestBody })
       .from(websiteEntry)
       .innerJoin(documents, eq(documents.id, websiteEntry.documentId))
       .where(and(eq(websiteEntry.companyId, companyId), eq(websiteEntry.siteId, siteId), eq(websiteEntry.status, "review"), isNull(websiteEntry.archivedAt)))
       .orderBy(asc(websiteEntry.collection), asc(websiteEntry.entryKey));
     return {
       pages: pages.map((row) => toWebsitePage(row.page, row)),
-      entries: entries.map((row) => toWebsiteEntry(row.entry, row)),
+      entries: entries.map(listedEntry),
     };
   }
 
@@ -768,7 +778,7 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
 
   async function listEntries(companyId: string, siteId: string, collection?: string, includeArchived = false) {
     const rows = await db
-      .select({ entry: websiteEntry, latestRevisionId: documents.latestRevisionId, latestRevisionNumber: documents.latestRevisionNumber })
+      .select({ entry: websiteEntry, latestRevisionId: documents.latestRevisionId, latestRevisionNumber: documents.latestRevisionNumber, latestBody: documents.latestBody })
       .from(websiteEntry)
       .innerJoin(documents, eq(documents.id, websiteEntry.documentId))
       .where(
@@ -780,7 +790,7 @@ export function websiteModuleService(db: Db, options: WebsiteModuleServiceOption
         ),
       )
       .orderBy(asc(websiteEntry.collection), sql`${websiteEntry.sortOrder} asc nulls last`, asc(websiteEntry.entryKey));
-    return rows.map((row) => toWebsiteEntry(row.entry, row));
+    return rows.map(listedEntry);
   }
 
   async function getEntryRow(companyId: string, siteId: string, entryId: string) {

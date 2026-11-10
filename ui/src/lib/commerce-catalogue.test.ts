@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { catalogueCode, catalogueMatches, catalogueMeta, catalogueOneLine, offeringGaps, offeringPrice, offeringWebsiteUrl } from "./commerce-catalogue";
+import { websiteEntrySummary } from "@greatstone/shared";
+import { catalogueCode, catalogueMatches, catalogueMeta, catalogueOneLine, entryMatches, entryReading, offeringGaps, offeringPrice, offeringWebsiteUrl } from "./commerce-catalogue";
 
 // What a catalogue row says about itself. Rows are shaped as the website sends them (snake_case).
 const product = {
@@ -61,5 +62,48 @@ describe("code, small print and the website link", () => {
     expect(offeringWebsiteUrl(product, "greatstone.example")).toBe("https://greatstone.example/product/aspose-words-for-net");
     expect(offeringWebsiteUrl({ ...product, status: "draft" }, "greatstone.example")).toBeNull();
     expect(offeringWebsiteUrl(product, null)).toBeNull();
+  });
+});
+
+describe("a Website entry reads by what it is", () => {
+  // As the import stores it: the product's id is the entry key, its fields sit under `data`.
+  const key = "0f0f0f0f-0000-4000-8000-000000000001";
+  const summary = websiteEntrySummary({ data: { ...product, vendor: { name: "Aspose Pty" }, category: { name: "File formats" } } });
+  const entry = { entryKey: key, collection: "product", summary };
+
+  it("leads with the name, then one line, vendor, category and price, with the slug as the code", () => {
+    expect(entryReading(entry)).toEqual({
+      title: "Aspose.Words for .NET",
+      line: "Create, edit and convert Word documents in .NET.",
+      meta: "Aspose Pty · File formats · From US$1,199.00",
+      code: "aspose-words-for-net",
+      kind: "Product",
+    });
+  });
+
+  it("says a product has no price, and shows no price line for other kinds", () => {
+    expect(entryReading({ ...entry, summary: { ...summary!, from_price_minor: null } }).meta).toBe("Aspose Pty · File formats · No price set");
+    expect(entryReading({ entryKey: "public-person-1", collection: "public-person", summary: websiteEntrySummary({ name: "A Person", role: "Director" }) }))
+      .toEqual({ title: "A Person", line: "Director", meta: "", code: "public-person-1", kind: "Team member" });
+  });
+
+  it("falls back to the entry key when the content names nothing: nothing is made up", () => {
+    expect(websiteEntrySummary({ data: { slug: "no-name" } })).toBeNull();
+    expect(entryReading({ entryKey: key, collection: "product", summary: null })).toEqual({ title: key, line: null, meta: "", code: null, kind: "Product" });
+    expect(entryReading({ entryKey: "old", collection: "legacy" }).kind).toBe("Entry");
+  });
+
+  it("is found by name, vendor, category, slug, edition SKU and the entry key", () => {
+    for (const search of ["words", "aspose pty", "file formats", "aspose-words-for-net", "aspose-1-2", key.slice(0, 8)]) {
+      expect(entryMatches(entry, search), search).toBe(true);
+    }
+    expect(entryMatches(entry, "java")).toBe(false);
+    expect(entryMatches({ entryKey: "plain-key", summary: null }, "plain")).toBe(true);
+  });
+
+  it("keeps the list light: a long description is cut and the rest of the content is left out", () => {
+    const long = websiteEntrySummary({ data: { name: "Long", description: "x".repeat(900), specs: [{ a: 1 }], seo: { title: "t" } } })!;
+    expect(long.description).toHaveLength(300);
+    expect(Object.keys(long).sort()).toEqual(["category", "description", "from_price_currency", "from_price_minor", "name", "short_description", "slug", "variants", "vendor"]);
   });
 });
