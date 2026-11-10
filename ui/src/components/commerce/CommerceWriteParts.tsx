@@ -170,7 +170,9 @@ export function CommerceField({ field, id, value, onChange, refOptions, disabled
     control = (
       <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-describedby={helpId} disabled={disabled}>
         {field.required && value ? null : <option value="">{field.required ? "Choose one" : "None"}</option>}
-        {value && !options.some((option) => option.value === value) ? <option value={value}>{value}</option> : null}
+        {/* a saved choice that is not in the list stays chosen; a ref's value is an id, so it is never shown */}
+        {value && !options.some((option) => option.value === value)
+          ? <option value={value}>{field.kind === "ref" ? "Current choice (no longer in the list)" : value}</option> : null}
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </NativeSelect>
     );
