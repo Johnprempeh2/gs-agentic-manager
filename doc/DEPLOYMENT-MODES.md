@@ -3,6 +3,14 @@
 Status: Canonical deployment and auth mode model  
 Date: 2026-02-23
 
+### Credential sign-in during an upgrade
+
+The account create hook keeps `local:credential` on new email/password accounts
+so a surviving Better Auth 1.7.2 process can still sign those users in during an
+upgrade. This internal field is not client input. Better Auth 1.7.16 still owns
+account lookup and the unique `(provider_id, account_id)` key. Existing NULL
+issuer rows remain readable by the new version.
+
 ## 1. Purpose
 
 GS Agentic Manager supports two runtime modes:

@@ -64,6 +64,11 @@ type BetterAuthInstance = BetterAuthHandlerTarget & BetterAuthSessionResolver;
 const AUTH_COOKIE_PREFIX_FALLBACK = "default";
 const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
 
+export function legacyAccountIssuerForCreate(account: { providerId: string; issuer?: unknown }): string | null {
+  if (typeof account.issuer === "string" && account.issuer.trim()) return account.issuer;
+  return account.providerId === "credential" ? "local:credential" : null;
+}
+
 export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
   const scopedInstanceId = instanceId
     .trim()
@@ -354,6 +359,20 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
         twoFactor: authTwoFactors,
       },
     }),
+    account: {
+      additionalFields: {
+        issuer: { type: "string" as const, required: false, input: false, returned: false },
+      },
+    },
+    databaseHooks: {
+      account: {
+        create: {
+          before: async (account: { providerId: string; issuer?: unknown }) => ({
+            data: { ...account, issuer: legacyAccountIssuerForCreate(account) },
+          }),
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
