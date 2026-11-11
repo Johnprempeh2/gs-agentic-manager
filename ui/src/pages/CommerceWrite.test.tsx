@@ -252,6 +252,28 @@ describe("Commerce write screens", () => {
     expect(byTestId("commerce-people-only-error")?.textContent).toBe(message);
   });
 
+  it("exports the catalogue as a price book in the import's own columns", async () => {
+    const files: Blob[] = [];
+    Object.assign(URL, { createObjectURL: vi.fn((blob: Blob) => { files.push(blob); return "blob:price-book"; }), revokeObjectURL: vi.fn() });
+    mocks.commerce.list.mockImplementation(async (_c: string, _s: string, resource: string) => ({
+      nextCursor: null,
+      items: resource === "offerings"
+        ? [{ id: "o1", slug: "aspose-total", name: "Aspose.Total", vendor_id: "v1", category_id: null, status: "published", featured: false,
+            variants: [{ id: "x1", sku: "AT-1", name: "Developer", billing_period: "annual", base_price_minor: "290000", currency: "USD" },
+              { id: "x2", sku: null, name: "No sku" }] }]
+        : resource === "vendors" ? [{ id: "v1", name: "Aspose" }] : [],
+    }));
+    render("/commerce/imports");
+    await flush();
+    act(() => buttonNamed("Export SKUs as CSV")!.click());
+    await flush();
+    expect(files).toHaveLength(1);
+    const csv = await files[0]!.text();
+    expect(csv).toContain("sku,offering_slug,offering_name,vendor,category,edition_name,license_type,billing_period,list_price_usd,status,featured");
+    expect(csv).toContain("AT-1,aspose-total,Aspose.Total,Aspose,,Developer,,annual,2900.00,published,false");
+    expect(byTestId("commerce-export-skus")?.textContent).toContain("Exported 1 edition. 1 edition with no SKU is left out");
+  });
+
   it("hides apply on a validated import and issue on a draft invoice from an agent", async () => {
     mocks.commerce.get.mockResolvedValue({ item: { id: "job-1", filename: "prices.csv", status: "validated", dry_run: true, rows: { items: [], nextCursor: null } } });
     render("/commerce/imports/job-1");
