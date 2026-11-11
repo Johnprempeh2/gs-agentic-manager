@@ -52,9 +52,11 @@ function summaryLine(summary: unknown) {
 }
 
 /** Every live offering with its editions, for the planner. Up to 2,000. */
-function useWholeCatalogue(companyId: string, siteId: string, enabled: boolean) {
+export function useWholeCatalogue(companyId: string, siteId: string, enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.website.commerce(companyId, siteId, "offerings", "all"),
+    // Not "all": the catalogue screens cache { items } under that key, and an array here under the same key broke
+    // whichever screen read the other's shape second.
+    queryKey: queryKeys.website.commerce(companyId, siteId, "offerings", "whole"),
     enabled,
     queryFn: async () => {
       const rows: CommerceRow[] = [];

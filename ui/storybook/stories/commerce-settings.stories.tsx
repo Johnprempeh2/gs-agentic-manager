@@ -74,6 +74,15 @@ const DATA: Record<string, Record<string, unknown>[]> = {
   vendors: catalogue.vendors.map(published), categories: catalogue.categories.map(published), offerings,
 };
 
+// The display rate as the bridge sends it: dollars for one pound, set 20 days ago so the ageing note shows.
+const fx = {
+  id: "fx-1", usd_to_gbp_display_rate: "1.320000", row_version: 7, updated_at: new Date(Date.now() - 20 * 86_400_000).toISOString(),
+  history: [
+    { id: "h2", old_rate: "1.300000", new_rate: "1.320000", changed_at: "2026-10-22T09:15:00Z", note: null },
+    { id: "h1", old_rate: null, new_rate: "1.300000", changed_at: "2026-06-17T14:02:00Z", note: null },
+  ],
+};
+
 function installCommerceFixtures() {
   const current = window as typeof window & { __commerceSettingsFixtures?: boolean };
   if (current.__commerceSettingsFixtures) return;
@@ -86,6 +95,7 @@ function installCommerceFixtures() {
     if (path === "/api/companies" && (init?.method ?? "GET").toUpperCase() === "GET") {
       return Response.json([...storybookCompanies, { ...storybookCompanies[0], id: G, name: "Greatstone", issuePrefix: "GRE" }]);
     }
+    if (path === `/api/companies/${G}/website/sites/${SITE}/commerce/fx`) return Response.json({ item: fx });
     const match = path.match(new RegExp(`^/api/companies/${G}/website/sites/${SITE}/(?:data|commerce)/([^/]+)(?:/([^/]+))?$`));
     if (match) {
       const rows = DATA[match[1]!] ?? [];
@@ -146,5 +156,7 @@ export const CatalogueOfferings: Story = { render: () => <CommerceAt path="/comm
 export const CatalogueNeedsAttention: Story = { render: () => <CommerceAt path="/commerce/offerings?attention=1" /> };
 export const CatalogueSearch: Story = { render: () => <CommerceAt path="/commerce/offerings?q=pdf+java" /> };
 export const CatalogueOffering: Story = { render: () => <CommerceAt path={`/commerce/offerings/${OFFERING}`} /> };
+export const Currency: Story = { render: () => <CommerceAt path="/commerce/currency" /> };
+export const CurrencyAsAgent: Story = { render: () => <CommerceAt path="/commerce/currency" person={false} /> };
 export const CatalogueVendors: Story = { render: () => <CommerceAt path="/commerce/vendors" /> };
 export const ClientPageAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };
