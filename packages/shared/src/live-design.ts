@@ -48,11 +48,9 @@ export const liveDesignCodeTaskSchema = z.object({
   status: z.enum(["working", "preview", "done", "blocked"]).default("working"),
   prUrl: httpsUrl.optional(),
   previewUrl: httpsUrl.optional(),
-  /** "deploy": the task that puts website main on the public site, behind John's card on it. */
+  /** "deploy": the old agent deploy task (retired 11 Nov; Deploy is John's button on the Website module). */
   kind: z.enum(["change", "deploy"]).optional(),
 });
-/** What the chat shows when John presses the deploy button. Only the button's `deploy: true` deploys; typing this does not. */
-export const LIVE_DEPLOY_REQUEST = "Deploy these changes to the public site.";
 
 export type LiveDesignCodeTask = z.infer<typeof liveDesignCodeTaskSchema>;
 
@@ -86,7 +84,7 @@ export type LiveDesignHelperRequest = z.infer<typeof liveDesignHelperRequestSche
 
 export const liveDesignSteerSchema = z.object({
   message: z.string().trim().min(1).max(2000),
-  /** Set only by the Deploy button: a typed message never deploys. */
+  /** Retired 11 Nov: the chat never deploys; the route answers 410 if an old client sends it. */
   deploy: z.boolean().optional(),
 });
 

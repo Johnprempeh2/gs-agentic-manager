@@ -5,9 +5,11 @@ import publicImport from "../services/website/public-import-v1.json" with { type
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { assets, websiteProperties } from "@greatstone/db";
+import { assets, companyMemberships, principalPermissionGrants, websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
+  PUBLIC_NETLIFY_SITE_ID,
+  type WebsiteProductionStatus,
   websiteCollectionDefinition,
   websiteCollectionFieldSchema,
   WEBSITE_SITEMAP_API_ROUTES,
@@ -97,6 +99,8 @@ import { websiteTeamAgent } from "../services/website/pending-alert.js";
 import { websiteRedirectService } from "../services/website/redirects.js";
 import { websiteMediaUses } from "../services/website/media-manage.js";
 import { cachedDeployChanges, loadDeployChanges, WEBSITE_PROJECT_ID, WEBSITE_REPO } from "../services/website/deploy-changes.js";
+import { deploySigningKey, productionClient, rawPublicKey, signDeployTicket } from "../services/website/production-deploy.js";
+import { deployRefusal } from "../services/website/deploy-readiness.js";
 import { createGitRemoteAuthProvider, GIT_CREDENTIAL_TOKEN_ENV_KEY } from "../services/git-credentials.js";
 import { secretService } from "../services/secrets.js";
 import { logger } from "../middleware/logger.js";
@@ -165,6 +169,8 @@ export interface WebsiteModuleRouteOptions {
   storage?: StorageService;
   /** The key that signs the live frame's media links (GRE-4265). Default: the instance's run-token key. */
   mediaLinkSecret?: () => string | null;
+  /** Test seam for Deploy: GitHub and Netlify for the public site. Default: the real ones with the site's tokens. */
+  production?: (site: { companyId: string; netlifySiteId: string; netlifyTokenSecretId: string | null; blobsStoreName: string; id: string }) => Promise<ReturnType<typeof productionClient>>;
 }
 
 /** Every origin GSAM may be served from: its public URL, and each allowed hostname over https and http. */
@@ -842,6 +848,115 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       logger.warn({ siteId: site.id, err: err instanceof Error ? err.message : String(err) }, "Website deploy changes unavailable");
       res.status(503).json({ error: "The change list is not available right now." });
     }
+  });
+
+  // ---- Deploy and Roll back of the public site (John, 11 Nov 2026) ----
+
+  /** The real GitHub and Netlify, with the site's Netlify token (read) and the Website project's GitHub grant. */
+  async function productionFor(site: SiteRow) {
+    if (options.production) return options.production(site);
+    if (!site.netlifyTokenSecretId) throw new Error("no Netlify token");
+    const netlifyToken = await secretService(db).resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
+      accessContext: { consumerType: "system", consumerId: `website-production:${site.id}`, configPath: "netlify.token", actorType: "system" },
+    });
+    const auth = await createGitRemoteAuthProvider(db, site.companyId, { projectId: WEBSITE_PROJECT_ID, operation: "inspect" })(`https://github.com/${WEBSITE_REPO}.git`);
+    const githubToken = auth?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY];
+    if (!githubToken) throw new Error("no GitHub token");
+    return productionClient({ netlifySiteId: site.netlifySiteId, netlifyToken, githubToken, storeName: site.blobsStoreName });
+  }
+
+  /**
+   * Deploy and Roll back: a person signed in to GSAM in a browser (not an API key, not an agent, not the local
+   * board), active in the company, with an explicit website:deploy grant. Role defaults and instance admin do not
+   * count: it is John's alone until he grants it to someone.
+   */
+  async function deployerOf(req: Request, companyId: string): Promise<string | null> {
+    const actor = req.actor;
+    if (actor.type !== "board" || actor.source !== "session" || !actor.userId) return null;
+    const [row] = await db
+      .select({ id: principalPermissionGrants.id })
+      .from(principalPermissionGrants)
+      .innerJoin(companyMemberships, and(
+        eq(companyMemberships.companyId, principalPermissionGrants.companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalId, principalPermissionGrants.principalId),
+        eq(companyMemberships.status, "active"),
+      ))
+      .where(and(
+        eq(principalPermissionGrants.companyId, companyId),
+        eq(principalPermissionGrants.principalType, "user"),
+        eq(principalPermissionGrants.principalId, actor.userId),
+        eq(principalPermissionGrants.permissionKey, "website:deploy"),
+      ));
+    return row ? actor.userId : null;
+  }
+
+  async function requireDeployer(req: Request, site: SiteRow) {
+    const userId = await deployerOf(req, site.companyId);
+    if (!userId) throw new HttpError(403, "Only John can Deploy or Roll back the public site.", { code: "website_deploy_refused" });
+    if (site.netlifySiteId !== PUBLIC_NETLIFY_SITE_ID) throw conflict("Deploy is only for greatstoneint.com.", { code: "website_deploy_wrong_site" });
+    return userId;
+  }
+
+  const runningRefusal = () => conflict("A Deploy or Roll back is already running. Wait for it to finish.", { code: "website_deploy_running" });
+
+  router.get(WEBSITE_MODULE_API_ROUTES.production, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    if (site.netlifySiteId !== PUBLIC_NETLIFY_SITE_ID) {
+      res.status(404).json({ error: NOT_FOUND });
+      return;
+    }
+    const userId = await deployerOf(req, site.companyId);
+    try {
+      const status = await (await productionFor(site)).status();
+      // The public half is not a secret, but only the person who sets up the GitHub side needs it.
+      const publicKey = userId ? rawPublicKey(await deploySigningKey(secretService(db), site.companyId, userId)) : null;
+      const body: WebsiteProductionStatus = { ...status, canDeploy: Boolean(userId), publicKey };
+      res.json(body);
+    } catch (err) {
+      logger.warn({ siteId: site.id, err: err instanceof Error ? err.message : String(err) }, "Website production status unavailable");
+      res.status(503).json({ error: "GSAM cannot read Live and Staging right now, so Deploy is off. Try again in a minute." });
+    }
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.productionDeploy, validate(z.object({ stagingCommit: z.string().regex(/^[0-9a-f]{40}$/), stagingRelease: z.number().int().positive() })), async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const userId = await requireDeployer(req, site);
+    const client = await productionFor(site);
+    const status = await client.status();
+    if (status.runs.some((run) => run.status !== "completed")) throw runningRefusal();
+    if (!status.workflowReady) throw conflict("The production workflow is not set up in GitHub yet, so nothing was deployed.", { code: "website_deploy_not_set_up" });
+    if (status.staging.commit !== req.body.stagingCommit || status.staging.release !== req.body.stagingRelease) {
+      throw conflict("Staging changed since you opened this. Look at the new list, then Deploy again.", { code: "website_deploy_staging_moved" });
+    }
+    if (status.blockers.length) throw conflict(deployRefusal(status.blockers), { code: "website_deploy_blocked" });
+    const pointer = await client.stagingPointer();
+    if (!pointer || pointer.release !== req.body.stagingRelease) throw conflict("Staging changed since you opened this. Look at the new list, then Deploy again.", { code: "website_deploy_staging_moved" });
+    const key = await deploySigningKey(secretService(db), site.companyId, userId);
+    const { id, ticket } = signDeployTicket(key, { action: "deploy", sha: req.body.stagingCommit, release: pointer.release, sha256: pointer.sha256 }, userId);
+    await client.dispatch("deploy", id, ticket);
+    await log(req, site.companyId, "website.production_deploy_started", "website_site", site.id, { request: id, commit: req.body.stagingCommit, release: pointer.release });
+    res.status(202).json({ request: id });
+  });
+
+  router.post(WEBSITE_MODULE_API_ROUTES.productionRollback, validate(z.object({ deployId: z.string().regex(/^[0-9a-f]{24}$/) })), async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const userId = await requireDeployer(req, site);
+    const client = await productionFor(site);
+    const status = await client.status();
+    if (status.runs.some((run) => run.status !== "completed")) throw runningRefusal();
+    if (!status.workflowReady) throw conflict("The production workflow is not set up in GitHub yet, so nothing was rolled back.", { code: "website_deploy_not_set_up" });
+    if (status.rollback?.deployId !== req.body.deployId) {
+      throw conflict("The live site changed since you opened this. Look again, then Roll back.", { code: "website_rollback_moved" });
+    }
+    const key = await deploySigningKey(secretService(db), site.companyId, userId);
+    const { id, ticket } = signDeployTicket(key, { action: "rollback", deployId: req.body.deployId }, userId);
+    await client.dispatch("rollback", id, ticket);
+    await log(req, site.companyId, "website.production_rollback_started", "website_site", site.id, { request: id, deployId: req.body.deployId });
+    res.status(202).json({ request: id });
   });
 
   router.get(WEBSITE_MODULE_API_ROUTES.siteStylesheet, async (req, res) => {

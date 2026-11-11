@@ -4,10 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
-import { issuesApi } from "../api/issues";
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: null }) }));
 
-import { AgentWork, DeployCard, historyKey, LiveDesignChat, saveThenApprove, StagedEdits, useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, historyKey, LiveDesignChat, saveThenApprove, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -47,60 +46,16 @@ describe("AgentWork", () => {
   });
 });
 
-describe("Deploy", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it("offers the deploy button, and holds it while a deploy is under way", () => {
+describe("Deploy has left the chat", () => {
+  it("never shows a deploy button; on a website page it says where Deploy is", () => {
     const el = document.createElement("div");
-    const onDeploy = vi.fn();
-    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={onDeploy} />));
-    const button = [...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy these changes")!;
-    act(() => button.click());
-    expect(onDeploy).toHaveBeenCalledOnce();
-    const busy = document.createElement("div");
-    act(() => createRoot(busy).render(
-      <AgentWork view={{ codeTasks: [{ identifier: "GRE-9", title: "Deploy the website", status: "working", kind: "deploy" }], queued: [] } as never} onDeploy={onDeploy} />,
+    act(() => createRoot(el).render(
+      <AgentWork view={{ codeTasks: [{ identifier: "GRE-9", title: "Deploy the website", status: "preview", kind: "deploy" }], queued: [] } as never} deployable />,
     ));
-    expect([...busy.querySelectorAll("button")].find((b) => b.textContent === "Deploy in progress")?.disabled).toBe(true);
-  });
-
-  it("lists what is not live yet next to the button, and shows nothing when GSAM cannot say", async () => {
-    const el = document.createElement("div");
-    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "b", liveContentRelease: 3, stagingContentRelease: 4, commits: [{ sha: "0117d3e0000", title: "Logo carousel" }] }));
-    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
-    await act(async () => { await Promise.resolve(); });
-    expect(el.textContent).toContain("Saved to staging, not live yet (2)");
-    expect(el.textContent).toContain("Page edits: content release 4 (live has 3)");
-    expect(el.textContent).toContain("0117d3e Logo carousel");
-    const down = document.createElement("div");
-    act(() => createRoot(down).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={() => Promise.reject(new Error("503"))} />));
-    await act(async () => { await Promise.resolve(); });
-    expect(down.textContent).not.toContain("not live yet");
-    expect(down.textContent).toContain("Deploy these changes");
-  });
-
-  it("disables the deploy button when everything saved is live", async () => {
-    const el = document.createElement("div");
-    const changes = vi.fn(async () => ({ liveCommit: "a", stagingCommit: "a", liveContentRelease: 4, stagingContentRelease: 4, commits: [] }));
-    act(() => createRoot(el).render(<AgentWork view={{ codeTasks: [], queued: [] } as never} onDeploy={() => undefined} deployChanges={changes} />));
-    await act(async () => { await Promise.resolve(); });
-    expect(el.textContent).toContain("Everything saved is live");
-    expect([...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy these changes")?.disabled).toBe(true);
-  });
-
-  it("shows what goes live and accepts the agent's card on Deploy", async () => {
-    const details = "Approve production deploy: greatstone-home abc\n- Logo carousel";
-    vi.spyOn(issuesApi, "listInteractions").mockResolvedValue([
-      { id: "old", kind: "request_confirmation", status: "accepted", payload: { detailsMarkdown: details } },
-      { id: "c1", kind: "request_confirmation", status: "pending", payload: { detailsMarkdown: details } },
-    ] as never);
-    const accept = vi.spyOn(issuesApi, "acceptInteraction").mockResolvedValue({} as never);
-    const el = document.createElement("div");
-    act(() => createRoot(el).render(<DeployCard identifier="GRE-9" />));
-    await act(async () => { await Promise.resolve(); });
-    expect(el.textContent).toContain("Logo carousel");
-    await act(async () => { [...el.querySelectorAll("button")].find((b) => b.textContent === "Deploy")!.click(); });
-    expect(accept).toHaveBeenCalledWith("GRE-9", "c1");
+    expect([...el.querySelectorAll("button")].map((b) => b.textContent)).not.toEqual(expect.arrayContaining([expect.stringMatching(/Deploy/)]));
+    // The old agent deploy task is not listed.
+    expect(el.textContent).not.toContain("GRE-9");
+    expect(el.textContent).toContain("John puts them on greatstoneint.com with Deploy, on the Website module under Releases.");
   });
 });
 

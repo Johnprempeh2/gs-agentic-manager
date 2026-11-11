@@ -210,6 +210,7 @@ const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
   "website:view": "See the website's pages and content",
   "website:edit": "Edit website drafts",
   "website:publish": "Publish the website",
+  "website:deploy": "Deploy the website to the public site",
   "website:commerce": "Change the website's catalogue, prices and invoices, and ask for refunds",
 };
 

@@ -1,4 +1,4 @@
-import type { LiveDesignView, WebsiteDeployChanges } from "@greatstone/shared";
+import type { LiveDesignView, WebsiteDeployChanges, WebsiteProductionStatus } from "@greatstone/shared";
 import { api, ApiError, plainHttpErrorMessage } from "./client";
 import {
   WEBSITE_NOT_ENTITLED_CODE,
@@ -144,6 +144,15 @@ export const websiteModuleApi = {
   /** Commits on staging that the public site does not have yet, for the editor's deploy button. Fails with 503 when unknown. */
   deployChanges: (companyId: string, siteId: string) =>
     api.get<WebsiteDeployChanges>(`${sitePath(companyId, siteId)}/deploy-changes`),
+  /** Live, Staging, what Deploy would change, the checks and recent Deploys (John, 11 Nov). 503 when GSAM cannot read them. */
+  production: (companyId: string, siteId: string) =>
+    api.get<WebsiteProductionStatus>(`${sitePath(companyId, siteId)}/production`, { cache: "no-store" }),
+  /** John's Deploy of what staging serves; refused if staging moved since the panel read it. */
+  deploy: (companyId: string, siteId: string, stagingCommit: string, stagingRelease: number) =>
+    api.post<{ request: string }>(`${sitePath(companyId, siteId)}/production/deploy`, { stagingCommit, stagingRelease }),
+  /** Puts the previous live deploy back. */
+  rollbackLive: (companyId: string, siteId: string, deployId: string) =>
+    api.post<{ request: string }>(`${sitePath(companyId, siteId)}/production/rollback`, { deployId }),
   /** Live design on the page (plan revision 8): opens or joins the session. */
   liveStart: (companyId: string, siteId: string, pageId: string) =>
     api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live`, {}),

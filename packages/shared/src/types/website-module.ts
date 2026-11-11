@@ -438,6 +438,12 @@ export const WEBSITE_MODULE_API_ROUTES = {
   pageLiveDraft: "/companies/:companyId/website/sites/:siteId/pages/:pageId/live-draft",
   /** GET → `WebsiteDeployChanges`: commits on staging that the public site does not have yet, for the editor's deploy button (website:view). 503 when GitHub or Netlify cannot say. */
   siteDeployChanges: "/companies/:companyId/website/sites/:siteId/deploy-changes",
+  /** GET → `WebsiteProductionStatus`: what staging serves, what is live, what Deploy would change, the checks and recent Deploys and Roll backs (website:view). */
+  production: "/companies/:companyId/website/sites/:siteId/production",
+  /** POST `{ stagingCommit, stagingRelease }` → 202 `{ request }`: John's Deploy of what staging serves to the public site (website:deploy, a signed-in person). */
+  productionDeploy: "/companies/:companyId/website/sites/:siteId/production/deploy",
+  /** POST `{ deployId }` → 202 `{ request }`: put the previous live deploy back (website:deploy, a signed-in person). */
+  productionRollback: "/companies/:companyId/website/sites/:siteId/production/rollback",
   /** GET → text/css: the site stylesheet for schema 2 pages, for agents (website:view). */
   siteStylesheet: "/companies/:companyId/website/sites/:siteId/stylesheet",
   /** POST a schema 2 release file → `{ updated, created, unchanged, chrome }`: import the site's pages as HTML drafts (people, website:edit). */
@@ -645,6 +651,42 @@ export interface WebsiteHomeSummary {
 }
 
 /** What the editor's deploy button would put live: staging's commits that are not on the public site. */
+/** One run of the production workflow (deploy-production.yml): a Deploy or a Roll back. */
+export interface WebsiteProductionRun {
+  id: number;
+  action: "deploy" | "rollback";
+  /** GSAM's id for the request (the ticket id). */
+  request: string;
+  status: "queued" | "in_progress" | "completed";
+  /** When completed: "success", "failure", "cancelled" and so on, as GitHub says. */
+  conclusion: string | null;
+  createdAt: string;
+  url: string;
+  /** The steps of the newest run, while it runs and once it ends. */
+  steps?: { name: string; status: string; conclusion: string | null }[];
+}
+
+/** What the Deploy panel shows (John, 11 Nov 2026): Live, Staging, the difference and the checks. */
+export interface WebsiteProductionStatus {
+  staging: { commit: string | null; release: number | null };
+  live: { commit: string | null; release: number | null; deployId: string | null; publishedAt: string | null };
+  /** Commits on staging the public site does not have, newest first. */
+  commits: { sha: string; title: string }[];
+  /** Reasons Deploy must not run now, in plain words; empty when it may. */
+  blockers: string[];
+  /** The live deploy before the current one, which Roll back puts back. */
+  rollback: { deployId: string; commit: string | null; publishedAt: string | null } | null;
+  runs: WebsiteProductionRun[];
+  /** True only for a signed-in person holding website:deploy. */
+  canDeploy: boolean;
+  /** GitHub has the production workflow on main. */
+  workflowReady: boolean;
+  /** The public half of GSAM's deploy signing key, for the GitHub environment variable (only for a person who can deploy). */
+  publicKey: string | null;
+  /** When GSAM could not read part of this, in plain words. */
+  problems: string[];
+}
+
 export interface WebsiteDeployChanges {
   /** The commit the public site was last deployed from. */
   liveCommit: string;

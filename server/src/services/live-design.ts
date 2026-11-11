@@ -10,7 +10,6 @@ import type {
   LiveDesignVariant,
   LiveDesignView,
 } from "@greatstone/shared";
-import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
 import { applyEditsToPage, parseQuickChange, previewEdits, quickTextOp } from "./live-design-direct.js";
 
 /**
@@ -39,7 +38,7 @@ type AgentEvent =
       request: LiveDesignRequest;
       attachmentId: string;
     }
-  | { type: "steer"; requestId: string | null; message: string; about?: { label: string; selector: string; html: string }; deploy?: true }
+  | { type: "steer"; requestId: string | null; message: string; about?: { label: string; selector: string; html: string } }
   | { type: "edits"; requestId: string; edits: StagedEdit[]; attachmentId: string }
   | { type: "discard"; requestId: string }
   | { type: "restored"; attachmentId: string; version: number | null }
@@ -507,21 +506,21 @@ export function discardLiveDesign(s: Session) {
 
 /** A typed message asking to put the site live. Only the Deploy button deploys, so GSAM answers these itself. */
 const DEPLOY_ASK = /^\s*(please\s+|can you\s+|now\s+)*(deploy|publish)\b(?!\s+(a|an)\s)|\b(deploy|publish|push|ship)\b.{0,40}\b(public site|live site|to live|production|greatstoneint)|\b(put|make|take)\s+(it|this|them|these|these changes|the (page|site|changes))\s+live\b|\bgo live\b/i;
-export const DEPLOY_ANSWER = "Typing does not deploy anything. Deploy is the button below the chat, and only that button puts changes on the public site.";
+export const DEPLOY_ANSWER = "Typing does not deploy anything. Deploy is John's button on the Website module (Releases), and only that button puts changes on the public site.";
 
-/** A note from John to the agent mid-request ("make the second one calmer"). `deploy`: John pressed the Deploy button. */
-export function steerLiveDesign(s: Session, message: string, steerId: string | null = null, deploy = false) {
+/** A note from John to the agent mid-request ("make the second one calmer"). Nothing here deploys. */
+export function steerLiveDesign(s: Session, message: string, steerId: string | null = null) {
   if (s.status === "ended") throw new LiveDesignConflict("This live session has ended. Open the editor again to carry on.");
-  const text = deploy ? LIVE_DEPLOY_REQUEST : message.trim().slice(0, 2000);
+  const text = message.trim().slice(0, 2000);
   if (!text) return s;
   say(s, "john", text);
   s.touchedAt = Date.now();
-  if (!deploy && DEPLOY_ASK.test(text)) {
+  if (DEPLOY_ASK.test(text)) {
     say(s, "gsam", DEPLOY_ANSWER);
     if (steerId) frame(s, { type: "steer_done", id: steerId, message: DEPLOY_ANSWER });
     return s;
   }
-  push(s, deploy ? { type: "steer", requestId: null, message: text, deploy: true } : { type: "steer", requestId: s.request?.id ?? null, message: text });
+  push(s, { type: "steer", requestId: s.request?.id ?? null, message: text });
   s.lastSteer = { requestId: s.request?.id ?? null, message: text };
   // Impeccable keeps its steer box locked until the helper says the note was taken.
   if (steerId) frame(s, { type: "steer_done", id: steerId, message: "Sent to the agent." });
@@ -602,12 +601,9 @@ export function liveDesignAcceptsPage(s: Session, requestId: string) {
 }
 
 /** How an agent takes any request as a code change: John can ask for anything, not just what the page HTML can hold. */
-const LIVE_DEPLOY_LINE = [
-  `A typed message never deploys: if one asks you to deploy or publish, reply only that Deploy is the button below the chat and only that button deploys. When a steer event has "deploy": true (John pressed the Deploy button), he is promoting what staging holds to the public site; that is the only thing he decides. Create a task assigned to you in the Website project, reply codeTask { "identifier": "<GRE-n>", "title": "Deploy the website", "status": "working", "kind": "deploy" }, then on that task:`,
-  `a. Find the staged commit (the newest ready "gsam-source:staging:<sha>" deploy on gre3833-next-db-staging; \`node scripts/deploy-site.mjs inspect gre3833-next-db-staging\`) and the live one (\`... inspect greatstone-home\`), and list the commits between them (one line each, newest first). Also read both content releases (\`node scripts/deploy-site.mjs content\` prints staging's and the public site's GSAM content release).`,
-  `b. Create a request_confirmation card on the task with idempotencyKey "confirmation:<GRE-n>:weekly-release:<full staged sha>", requestedResolverPolicy "human_only", and detailsMarkdown that starts "Approve production deploy: greatstone-home <full staged sha>" followed by the line "Content release <n> (sha256 <first 12 of its sha256>)" for staging's content release (deploy:prod refuses a card that does not name it), then that list. Send the codeTask again with "status": "preview".`,
-  `c. When he accepts it, in a clean checkout detached at exactly the staged sha run \`npm run deploy:prod -- greatstone-home\` with GSAM_TASK_ID set to the task: it promotes the commit and that content release together. Never deploy with \`netlify deploy --dir\` or skip the build: that misses the Netlify Database setup and breaks /api. Then check https://greatstoneint.com/api/auth/get-session and /api/catalogue answer 200; if not, restore the previous deploy at once. Send "status": "done", or "blocked" with the reason.`,
-].join("\n");
+// The lean Deploy (John, 11 Nov): greatstoneint.com changes only when John presses Deploy on the Website module,
+// which starts the production workflow with a ticket GSAM signs. Agents have no part in it.
+const LIVE_DEPLOY_LINE = `Never deploy greatstoneint.com (greatstone-home) or run \`deploy:prod\`, \`netlify deploy\` against it, or anything else that changes the public site: only John's Deploy button on the Website module does that, and the script refuses everyone else. If anyone asks you to deploy, publish or put changes live, reply only that Deploy is John's button on the Website module (Releases), and that your changes are on staging for him to check.`;
 
 function codeTaskLine(s: Session, requestId: string) {
   return [
