@@ -46,11 +46,11 @@ const licences = [
 const orders = [
   { id: ORDER, reference: "GS-1001", customer_id: CLIENT, customer_email: "jo@example-engineering.test", status: "confirmed", currency: "GBP",
     subtotal_minor: "129900", total_minor: "129900", refunded_minor: "0", invoice_number: "INV-0042", placed_at: "2026-10-04T12:00:00Z",
-    created_at: "2026-10-04T12:00:00Z", row_version: 4,
+    created_at: "2026-10-04T12:00:00Z", row_version: 4, has_po_document: true,
     items: [{ id: "i1", offering_name: "Aspose.Total for .NET", variant_name: "Developer OEM", qty: 1, unit_price_minor: "129900", line_total_minor: "129900", currency: "GBP" }] },
 ];
 const enquiries = [
-  { id: "fd-02020202-0000-4000-8000-000000000002", name: "Alex Example", email: "alex@example-retail.test", organisationName: "Example Retail", source: "front-door", status: "new", createdAt: "2026-11-08T15:12:00Z" },
+  { id: "fd-02020202-0000-4000-8000-000000000002", name: "Alex Example", email: "alex@example-retail.test", organisationName: "Example Retail", source: "front-door", status: "new", createdAt: "2026-11-08T15:12:00Z", agentPackage: true },
   { id: "si-01010101-0000-4000-8000-000000000001", name: "Jo Example", email: "jo@example-engineering.test", organisationName: "Example Engineering Ltd", source: "service-enquiry", status: "contacted",
     message: "We want help choosing between two document SDKs for a new reporting service. Could we book a call next week?", createdAt: "2026-11-05T09:30:00Z" },
   { id: "si-01010101-0000-4000-8000-000000000003", name: "Sam Example", email: "sam@sample-analytics.test", source: "service-enquiry", status: "closed", createdAt: "2026-10-28T11:00:00Z" },
@@ -74,7 +74,18 @@ const rules = [{ id: RULE, name: "Aspose autumn offer", status: "draft", active:
   adjustment_value_pct: "15", audience: "public", floor_fraction: "0", label: "Offer price", priority: 100, row_version: 1,
   targets: [{ id: "t1", rule_id: RULE, vendor_id: ASPOSE }] }];
 
+// Seat requests a client's company admin made on the website (admin parity round 2). Synthetic names only.
+const seatRequests = [
+  { id: "5e5e5e5e-0000-4000-8000-000000000001", customer_id: CLIENT, full_name: "Riley Example", email: "riley@example-engineering.test",
+    role: "member", note: "Joining the finance team next month.", status: "pending", created_at: "2026-11-09T10:20:00Z", handled_at: null },
+  { id: "5e5e5e5e-0000-4000-8000-000000000002", customer_id: CLIENT, full_name: null, email: "ops@example-engineering.test",
+    role: "admin", note: null, status: "pending", created_at: "2026-11-10T08:05:00Z", handled_at: null },
+  { id: "5e5e5e5e-0000-4000-8000-000000000003", customer_id: CLIENT, full_name: "Casey Example", email: "casey@example-engineering.test",
+    role: "member", note: null, status: "provisioned", created_at: "2026-10-12T09:00:00Z", handled_at: "2026-10-12T15:30:00Z" },
+];
+
 const DATA: Record<string, Record<string, unknown>[]> = {
+  "invite-requests": seatRequests,
   "pricing-rules": rules,
   customers: clients, engagements, licences, orders, enquiries, "portal-acceptances": receipts,
   quotes: [], invoices: [], "customer-tiers": tiers,
@@ -103,6 +114,9 @@ function installCommerceFixtures() {
       return Response.json([...storybookCompanies, { ...storybookCompanies[0], id: G, name: "Greatstone", issuePrefix: "GRE" }]);
     }
     if (path === `/api/companies/${G}/website/sites/${SITE}/commerce/fx`) return Response.json({ item: fx });
+    if (/\/data\/[^/]+\/[^/]+\/(po-document|agent-package)$/.test(path)) {
+      return Response.json({ error: "Storybook has no file to download." }, { status: 404 });
+    }
     const match = path.match(new RegExp(`^/api/companies/${G}/website/sites/${SITE}/(?:data|commerce)/([^/]+)(?:/([^/]+))?$`));
     if (match) {
       const rows = DATA[match[1]!] ?? [];
@@ -169,3 +183,8 @@ export const PriceBookImport: Story = { render: () => <CommerceAt path="/commerc
 export const PricingRulePreview: Story = { render: () => <CommerceAt path={`/commerce/pricing-rules/${RULE}`} /> };
 export const CatalogueVendors: Story = { render: () => <CommerceAt path="/commerce/vendors" /> };
 export const ClientPageAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };
+export const SeatRequestsWaiting: Story = { render: () => <CommerceAt path="/commerce/customers" /> };
+export const ClientSeatRequests: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} /> };
+export const ClientSeatRequestsAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };
+export const OrderPurchaseOrder: Story = { render: () => <CommerceAt path={`/commerce/orders/${ORDER}`} /> };
+export const LeadAgentPackage: Story = { render: () => <CommerceAt path="/commerce/enquiries" /> };

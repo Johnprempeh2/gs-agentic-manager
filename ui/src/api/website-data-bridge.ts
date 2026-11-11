@@ -34,6 +34,12 @@ export const websiteDataBridgeApi = {
     const search = params.toString();
     return api.get<{ items: WebsiteDataRecord[]; nextCursor: string | null }>(`${dataPath(companyId, siteId, resource)}${search ? `?${search}` : ""}`);
   },
+  /**
+   * One record's file (website:view): a buyer's PO (`quotes`, `orders`) or a lead's agent package (`enquiries`).
+   * GSAM fetches it over the signed bridge; a failure answers JSON with the reason.
+   */
+  fileUrl: (companyId: string, siteId: string, resource: WebsiteDataResource, itemId: string, file: "po-document" | "agent-package") =>
+    `/api${dataPath(companyId, siteId, resource)}/${encodeURIComponent(itemId)}/${file}`,
   /** One record (website:view). */
   get: (companyId: string, siteId: string, resource: WebsiteDataResource, itemId: string) =>
     api.get<{ item: WebsiteDataRecord }>(`${dataPath(companyId, siteId, resource)}/${encodeURIComponent(itemId)}`),

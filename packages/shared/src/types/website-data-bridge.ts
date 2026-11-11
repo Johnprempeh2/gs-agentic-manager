@@ -7,6 +7,8 @@ export const WEBSITE_DATA_RESOURCES = [
   "customers", "quotes", "orders", "invoices", "licences", "portal-documents", "portal-acceptances", "enquiries", "billing-lines",
   // the client timeline (GRE-4782): live items only, `?customer=` for one client
   "engagements",
+  // a client admin's request for a new seat (admin parity round 2): `?customer=` for one client
+  "invite-requests",
 ] as const;
 export type WebsiteDataResource = (typeof WEBSITE_DATA_RESOURCES)[number];
 
@@ -50,6 +52,12 @@ export const WEBSITE_DATA_BRIDGE_API_ROUTES = {
   list: "/companies/:companyId/website/sites/:siteId/data/:resource",
   /** GET → `{ item }` (website:view). */
   item: "/companies/:companyId/website/sites/:siteId/data/:resource/:itemId",
+  /**
+   * GET → the file itself, as a download (website:view; admin parity round 2): `quotes/:id/po-document` and
+   * `orders/:id/po-document` (the buyer's uploaded PO), `enquiries/fd-:uuid/agent-package` (a front door lead's agent
+   * package .zip). GSAM fetches it over the signed bridge and streams it to the signed-in caller; there is no public link.
+   */
+  file: "/companies/:companyId/website/sites/:siteId/data/:resource/:itemId/:file",
   /** GET → `{ item }` (website:view): the USD to GBP display rate, its row version and its last 50 changes. */
   commerceFx: "/companies/:companyId/website/sites/:siteId/commerce/fx",
   /** GET → `{ report: WebsitePaymentReport }` (website:view). `?from=&to=` dates. From the site's database; no Stripe call. */
@@ -119,8 +127,16 @@ const ENQUIRY_ID = /^(?:si|fd)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 
 /** The commerce settings (GRE-4782 contract, "Commerce settings"): the records beside the catalogue. */
 export const WEBSITE_COMMERCE_SETTINGS_RESOURCES = [
-  "orders", "enquiries", "customers", "engagements", "licences", "customer-tiers", "portal-acceptances",
+  "orders", "enquiries", "customers", "engagements", "licences", "customer-tiers", "portal-acceptances", "invite-requests",
 ] as const;
+
+/** The files the bridge streams (admin parity round 2): which record kinds have which file. */
+export const WEBSITE_DATA_FILES = { "po-document": ["quotes", "orders"], "agent-package": ["enquiries"] } as const;
+export type WebsiteDataFile = keyof typeof WEBSITE_DATA_FILES;
+export function isWebsiteDataFile(resource: string, file: string): file is WebsiteDataFile {
+  return Object.prototype.hasOwnProperty.call(WEBSITE_DATA_FILES, file)
+    && (WEBSITE_DATA_FILES[file as WebsiteDataFile] as readonly string[]).includes(resource);
+}
 /** Body fields that hold a licence key or its download link: they go to the vault, never onto a card or a log. */
 export const WEBSITE_LICENCE_SECRET_FIELDS = ["licenceKey", "downloadUrl"] as const;
 
@@ -196,6 +212,10 @@ export function websiteCommerceWriteOperation(method: string, parts: readonly st
   }
   if (res === "portal-acceptances" && id !== undefined) {
     return sub === "resend" && method === "POST" ? op("portal-acceptances.resend", true) : null;
+  }
+  // a client's seat request: approve adds the person to the client's portal, so a person decides it
+  if (res === "invite-requests" && id !== undefined) {
+    return sub === "decision" && method === "POST" ? op("invite-requests.decide", true) : null;
   }
   return null;
 }

@@ -1,0 +1,2155 @@
+{
+ "categories": [
+  {
+   "name": "Websites & Web Apps",
+   "blurb": "Your business's home ground, built right the first time: fast, on-brand, and editable by your own team, not held hostage by a developer queue."
+  },
+  {
+   "name": "Commerce & Storefronts",
+   "blurb": "A real storefront you own: catalogue, pricing, checkout and orders on a backend that won't buckle as you grow, with no per-sale platform tax."
+  },
+  {
+   "name": "AI Agents & Assistants",
+   "blurb": "Custom and privatized AI that does one valuable thing brilliantly, trained on your world, answering, drafting and triaging around the clock, with your data staying yours."
+  },
+  {
+   "name": "Automation & Integration",
+   "blurb": "We connect the tools you already pay for and automate the busywork between them, so a number entered once shows up everywhere, and the repetitive week runs itself."
+  },
+  {
+   "name": "Comms Channels",
+   "blurb": "Meet your customers, members and field teams where they actually are (WhatsApp-first for UK and West Africa, email and SMS behind it) on one trackable channel where nothing gets lost in the scroll."
+  },
+  {
+   "name": "Meetings & Knowledge",
+   "blurb": "One searchable brain for everything your company knows, and every meeting turned into a clean record, so the answer doesn't leave when a person does, and nothing said in a room gets lost."
+  },
+  {
+   "name": "Intelligence & Reporting",
+   "blurb": "One live view of the business and a brief that tells you what changed and what to do, so you steer on current signal instead of last month's autopsy, and reports write themselves."
+  },
+  {
+   "name": "Brand, Content & Media",
+   "blurb": "The mark, the page and the document that make you look the size you actually are: cinematic 3D experiences, generative motion, AI video, and branded content engines that keep producing when the team can't."
+  },
+  {
+   "name": "The Method",
+   "blurb": "We don't advise. We map exactly where your week drains with the 8-pillar Digital Excellence assessment, then build and run the foundation that buys those hours back, and stay embedded improving it."
+  }
+ ],
+ "services": [
+  {
+   "category": "Websites & Web Apps",
+   "name": "Business Website Build",
+   "slug": "business-website-build",
+   "oneLiner": "A fast, credible, multi-page marketing site that becomes your business's home ground: live in days, editable by you.",
+   "format": "Fixed-scope build, live in days to 4 weeks; one-time fee with an optional care plan",
+   "featured": true,
+   "outcome": "A site you're proud to put on a pitch deck, that loads fast, ranks, turns visitors into enquiries, and you can edit yourself afterwards.",
+   "idealClient": "SMEs, founders and professional-services firms replacing a tired, template, or un-editable website.",
+   "bullets": [
+    {
+     "text": "Multi-page marketing site (home, services, about, proof, contact) on our shared component system, mobile-first and fast-loading"
+    },
+    {
+     "text": "Proper SEO foundations and structured metadata so you're found for the searches that matter"
+    },
+    {
+     "text": "Lead-capture forms wired straight to your inbox, CRM, calendar or WhatsApp"
+    },
+    {
+     "text": "Inline editing on our CMS studio so you change words and images yourself, no ticket, no wait"
+    },
+    {
+     "text": "Your own domain, fast hosting, and a handover walkthrough so you own the foundation"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Editable Website CMS",
+   "slug": "editable-website-cms",
+   "oneLiner": "Our Puck-based CMS studio: edit your live site inline, no developer, no tickets, no waiting.",
+   "format": "Build plus onboarding, then an optional monthly hosting and support subscription",
+   "featured": true,
+   "outcome": "Your team ships site changes in minutes instead of waiting weeks on an agency.",
+   "idealClient": "Marketing teams and content owners tired of agency dependency and a developer-gated website.",
+   "bullets": [
+    {
+     "text": "Your site rebuilt on our Puck studio with true inline, what-you-see editing"
+    },
+    {
+     "text": "Command-K palette for instant navigation, search and block insertion"
+    },
+    {
+     "text": "Version history and rollback so no edit is ever final or fatal"
+    },
+    {
+     "text": "Editorial workflow (draft, review, approve, publish) with roles and permissions"
+    },
+    {
+     "text": "A block library matched to your brand so non-technical staff build pages safely"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Campaign Landing Pages",
+   "slug": "campaign-landing-pages",
+   "oneLiner": "A fast, conversion-built landing page or campaign microsite: live in days, wired to capture and ready for your ad spend.",
+   "format": "Quick fixed-scope build, live in days; one-time fee per page with an optional campaign-support plan",
+   "featured": false,
+   "outcome": "A page built to convert the traffic you're paying for, live this week, measurable from day one, instead of pointing ad spend at a slow homepage.",
+   "idealClient": "SMEs and founders running paid ads, launches or events who are burning spend against a generic homepage.",
+   "bullets": [
+    {
+     "text": "A single-purpose, conversion-focused landing page or short microsite, mobile-first and load-fast"
+    },
+    {
+     "text": "One clear call-to-action with lead capture wired straight to your inbox, CRM, calendar or WhatsApp"
+    },
+    {
+     "text": "Built-in analytics and conversion tracking (GA4/GTM-ready) so you see what the spend actually returns"
+    },
+    {
+     "text": "A/B-ready variants for headline, hero and offer so you test rather than guess"
+    },
+    {
+     "text": "Your domain or subdomain, fast hosting, and copy in your house voice"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Client & Member Portal",
+   "slug": "client-member-portal",
+   "oneLiner": "A secure, branded login where clients or members see status, documents and invoices, instead of emailing you to ask.",
+   "format": "Fixed-scope build, then an embedded build-and-run subscription with support",
+   "featured": false,
+   "outcome": "Clients and members self-serve the answers they used to email for, your phone stops ringing, and the relationship feels handled rather than opaque.",
+   "idealClient": "Professional services, associations, agencies and B2B firms with recurring client or member relationships.",
+   "bullets": [
+    {
+     "text": "Authenticated, branded portal with role-based access on Supabase auth"
+    },
+    {
+     "text": "Per-account dashboards showing status, milestones, history and next steps"
+    },
+    {
+     "text": "Secure document vault to share, version and download files in one place"
+    },
+    {
+     "text": "Invoices, balances and payment links surfaced per account"
+    },
+    {
+     "text": "Self-service profile updates and notifications by email or WhatsApp when something changes"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Rapid MVP App Build",
+   "slug": "rapid-mvp-app-build",
+   "oneLiner": "Your first working product (a real app users can sign up for and use) built fast on a foundation that scales.",
+   "format": "Scoped sprint build with a fixed feature set; live deployment",
+   "featured": false,
+   "outcome": "A live product in users' hands within weeks: traction and proof instead of a pitch deck full of promises.",
+   "idealClient": "A non-technical founder with validated demand who needs a usable product to win users, feedback or funding.",
+   "bullets": [
+    {
+     "text": "A working web app MVP with user sign-up and login on Supabase auth"
+    },
+    {
+     "text": "The two or three core features that prove your concept, nothing you don't yet need"
+    },
+    {
+     "text": "A clean, branded interface users can actually navigate"
+    },
+    {
+     "text": "A database and backend that won't be thrown away when you grow"
+    },
+    {
+     "text": "A founder dashboard, deployed live with a real URL you can send to users and investors"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Online Booking System",
+   "slug": "online-booking-system",
+   "oneLiner": "A branded booking site that takes appointments, deposits and confirmations on its own, wired to your calendar and your phone.",
+   "format": "Fixed-scope build with an optional run-and-maintain plan",
+   "featured": false,
+   "outcome": "Appointments book, pay and confirm themselves while you do the work you're actually paid for.",
+   "idealClient": "Clinics, salons, consultants, venues and hospitality across the UK and Ghana.",
+   "bullets": [
+    {
+     "text": "Branded booking flow with real-time availability and service or staff selection"
+    },
+    {
+     "text": "Deposit or full payment at booking via Stripe checkout"
+    },
+    {
+     "text": "Calendar sync and automated confirmations and reminders by email or WhatsApp"
+    },
+    {
+     "text": "No-show and cancellation rules built in to protect your time"
+    },
+    {
+     "text": "Owner dashboard for the day's schedule and revenue at a glance"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Self-Service Citizen Portal",
+   "slug": "self-service-citizen-portal",
+   "oneLiner": "A mobile-first portal that lets members and citizens do online what they currently queue or call to do in person.",
+   "format": "Fixed-scope build (portal plus staff back office) with a monthly run-and-support retainer",
+   "featured": false,
+   "outcome": "The queue empties because routine work moves online: fewer walk-ins, shorter waits, and a front desk freed for the cases that genuinely need a human.",
+   "idealClient": "Professional bodies, associations, SACCOs and public agencies whose members or citizens queue or call for routine tasks.",
+   "bullets": [
+    {
+     "text": "A fast, low-bandwidth portal that loads on a modest phone over 3G"
+    },
+    {
+     "text": "Self-service for the everyday asks: profile updates, status checks, downloads, balances, history"
+    },
+    {
+     "text": "Phone-number sign-in with SMS or WhatsApp reset, no email required"
+    },
+    {
+     "text": "A role-based staff back office to see, approve and action requests"
+    },
+    {
+     "text": "Offline-tolerant pages that hold their place through a dropped connection, branded in your colours"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Custom Internal Web App",
+   "slug": "custom-internal-web-app",
+   "oneLiner": "A custom internal web app that replaces the brittle spreadsheet your operation secretly runs on.",
+   "format": "Scoped build, then a run-and-extend subscription",
+   "featured": false,
+   "outcome": "Your team works in a tool built for the job, not a spreadsheet held together with hope.",
+   "idealClient": "Operations teams whose core process lives in a fragile, single-owner spreadsheet.",
+   "bullets": [
+    {
+     "text": "A purpose-built internal app modelling your real workflow and data"
+    },
+    {
+     "text": "Secure multi-user access with roles, permissions and an audit trail"
+    },
+    {
+     "text": "Forms, lists and dashboards replacing manual spreadsheet entry"
+    },
+    {
+     "text": "Automations and integrations to your existing tools via MCP"
+    },
+    {
+     "text": "Export to branded Word, PDF or Excel where you still need documents"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Job & Fleet Dispatch Board",
+   "slug": "job-fleet-dispatch-board",
+   "oneLiner": "One live board where every job, driver and van sits in front of you, replacing the whiteboard, the spreadsheet and the three open chats.",
+   "format": "Web app on a Supabase backend, branded, on desktop and tablet",
+   "featured": false,
+   "outcome": "The whole day's work is visible in one place, reschedules take seconds instead of a morning, and double-bookings stop happening.",
+   "idealClient": "Logistics and field-services operators running 5 to 50+ drivers or technicians off whiteboards and spreadsheets.",
+   "bullets": [
+    {
+     "text": "A real-time scheduling board (drag a job onto a driver, drag it off) on a Supabase backend"
+    },
+    {
+     "text": "Driver, vehicle and job records with status, skills and availability"
+    },
+    {
+     "text": "Day and week views with conflict and double-booking warnings"
+    },
+    {
+     "text": "Role-based logins so dispatchers, managers and office each see the right slice"
+    },
+    {
+     "text": "Live sync so a change by one person updates everyone's screen instantly"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Digital Forms & Intake",
+   "slug": "digital-forms-intake",
+   "oneLiner": "Clipboards and PDFs rebuilt as guided digital forms that fill, validate and file themselves the moment they're done.",
+   "format": "Per-form-flow build, priced by number of forms, on an optional automation retainer",
+   "featured": false,
+   "outcome": "Paper intake becomes a tracked digital register overnight: submissions arrive complete, staff stop re-keying, and disputes are settled with a timestamped photo and signature.",
+   "idealClient": "Practices, field-services firms and public bodies still running intake, job sheets or registrations on paper or PDFs.",
+   "bullets": [
+    {
+     "text": "Branded online forms (intake, job sheets, consent, registrations) sent automatically when relevant"
+    },
+    {
+     "text": "Conditional questions that adapt to the person, with validation that catches errors on the spot"
+    },
+    {
+     "text": "Photo, document and signature capture attached to the right record"
+    },
+    {
+     "text": "Offline-friendly entry that still saves and syncs from a dead-signal basement"
+    },
+    {
+     "text": "Clean structured submissions landing straight in your register or system, plus an auto-generated branded receipt"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Searchable Member Directory",
+   "slug": "searchable-member-directory",
+   "oneLiner": "A searchable member or 'find a professional' directory that turns your membership into a benefit people can see and use.",
+   "format": "Fixed-scope directory build with an optional maintenance retainer",
+   "featured": false,
+   "outcome": "Your membership becomes a visible, usable network: a reason to join and stay, with real referral value for accredited members.",
+   "idealClient": "A professional body or association whose member network is invisible and underused as a benefit.",
+   "bullets": [
+    {
+     "text": "A branded, searchable member or find-a-professional directory on your portal"
+    },
+    {
+     "text": "Member-controlled profiles, specialisms, locations and verified credentials"
+    },
+    {
+     "text": "Public, member-only or accreditation-gated visibility tiers you control"
+    },
+    {
+     "text": "Filtering by region, discipline, chapter or service for real-world use"
+    },
+    {
+     "text": "Verified badges tied to standing membership and renewals"
+    }
+   ]
+  },
+  {
+   "category": "Websites & Web Apps",
+   "name": "Public Credential Verification",
+   "slug": "public-credential-verification",
+   "oneLiner": "A public lookup page and QR credential so anyone can confirm a member's standing in seconds, no call to your office.",
+   "format": "Fixed-scope build with a small monthly hosting retainer",
+   "featured": false,
+   "outcome": "Verification becomes self-service and trustworthy: third parties confirm standing themselves, fraud gets harder, and your office stops fielding confirmation calls.",
+   "idealClient": "Regulators, professional bodies, licensing authorities and certifying institutions.",
+   "bullets": [
+    {
+     "text": "A clean public lookup page: enter a number or scan a QR and see live standing"
+    },
+    {
+     "text": "Tamper-evident digital certificates and ID cards carrying a verifiable QR code"
+    },
+    {
+     "text": "A shareable verification link members can paste into an email or WhatsApp"
+    },
+    {
+     "text": "Privacy by design: confirms status only, never exposes personal data"
+    },
+    {
+     "text": "A staff console to issue, suspend or revoke a credential, reflected instantly"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "Online Store & E-commerce Build",
+   "slug": "online-store-ecommerce-build",
+   "oneLiner": "A real owned storefront and admin: one catalogue, priced, searchable, checkout-ready, on a backend that won't buckle as you grow.",
+   "format": "Fixed-scope build (commerce platform plus admin), then an optional monthly run-and-maintain retainer",
+   "featured": true,
+   "outcome": "Catalogue ops stops being a founder job: one source of truth, edited by anyone in minutes, selling without a developer in the loop and without per-sale platform tax.",
+   "idealClient": "DTC and B2B brands with 50+ SKUs outgrowing Shopify-style builders and tired of product data living in too many places.",
+   "bullets": [
+    {
+     "text": "A real product catalogue (we've built 159-product catalogues) with listing, detail, search, filters and variants"
+    },
+    {
+     "text": "Pricing, stock and admin on a Supabase backend you control, so the team edits once and it's live everywhere"
+    },
+    {
+     "text": "Bulk import and normalisation of a messy spreadsheet or supplier feed into a clean structured catalogue"
+    },
+    {
+     "text": "Our Puck studio so non-technical staff edit listings inline, with version history to undo mistakes"
+    },
+    {
+     "text": "Stripe checkout with a webhook-driven order pipeline, confirmations and reconciliation built in"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "Stripe Checkout Setup",
+   "slug": "stripe-checkout-setup",
+   "oneLiner": "Start charging customers this week: a real product or service catalogue with Stripe checkout, live and taking payments.",
+   "format": "Scoped commerce build on Supabase and Stripe; admin handover included",
+   "featured": false,
+   "outcome": "Money in the bank this week instead of next quarter: a real storefront you control, not a workaround.",
+   "idealClient": "A founder with something to sell who needs to take real online payments fast without enterprise overhead.",
+   "bullets": [
+    {
+     "text": "A product or service catalogue with listings, pricing and detail pages"
+    },
+    {
+     "text": "Secure Stripe checkout taking real payments"
+    },
+    {
+     "text": "Orders captured to a backend so you can see what sold"
+    },
+    {
+     "text": "A simple admin to add, edit and price your offering yourself"
+    },
+    {
+     "text": "Branded to match your site, mobile-first for UK and West-Africa buyers"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "Course & Event Sales Platform",
+   "slug": "course-event-sales-platform",
+   "oneLiner": "Sell short courses, modules, CPD and event tickets like products: checkout, member pricing, access and certificates handled.",
+   "format": "Commerce build plus per-event or annual run rate",
+   "featured": false,
+   "outcome": "Self-paced, CPD and event revenue runs like a real storefront: people buy and start in minutes, member pricing is always right, and your team stops chasing invoices.",
+   "idealClient": "Education providers and associations monetising short courses, CPD or events through manual invoicing.",
+   "bullets": [
+    {
+     "text": "A catalogue of short courses, microcredentials, modules and events with member vs non-member pricing applied automatically"
+    },
+    {
+     "text": "Stripe checkout with instalments, discount codes, group bookings and automatic receipts"
+    },
+    {
+     "text": "Automatic access provisioning or QR tickets the moment payment clears"
+    },
+    {
+     "text": "Branded confirmations, reminders, joining links and post-event follow-ups"
+    },
+    {
+     "text": "Auto-issued attendance and CPD certificates, plus a clean orders and reconciliation ledger"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "Online Deposits & Patient Payments",
+   "slug": "online-deposits-patient-payments",
+   "oneLiner": "Online deposits, plan pricing and self-pay payments that take money off the front desk and into clean, reconciled records.",
+   "format": "Fixed-scope build",
+   "featured": false,
+   "outcome": "Payments collect themselves, deposits stop slipping, and the books reconcile without a card machine and a spreadsheet.",
+   "idealClient": "Clinics offering higher-value treatment plans or self-pay packages collected manually at the desk.",
+   "bullets": [
+    {
+     "text": "Branded treatment and pricing pages patients can review"
+    },
+    {
+     "text": "Stripe-powered deposits, full payments and pay-in-instalments links sent by message or email"
+    },
+    {
+     "text": "Automatic branded receipts and a clean payment record tied to each patient and plan"
+    },
+    {
+     "text": "Admin dashboard showing outstanding deposits, paid plans and daily takings"
+    },
+    {
+     "text": "Refund and adjustment handling that stays reconciled"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "Membership & Subscription Platform",
+   "slug": "membership-subscription-platform",
+   "oneLiner": "A gated members area or association membership that sells, gates and renews itself: content in, recurring revenue out.",
+   "format": "Build, then an embedded build-and-run subscription",
+   "featured": false,
+   "outcome": "A membership that sells, gates and renews itself: recurring revenue that stops depending on someone remembering to chase.",
+   "idealClient": "Educators, associations and creators monetising gated content, community or recurring membership.",
+   "bullets": [
+    {
+     "text": "Authenticated members area with tiered access and role-based content gating"
+    },
+    {
+     "text": "Self-serve join, upgrade and cancel flows wired to your member tiers"
+    },
+    {
+     "text": "Recurring subscriptions and renewals via Stripe"
+    },
+    {
+     "text": "Member dashboard with progress, status and account management"
+    },
+    {
+     "text": "Onboarding, renewal and re-engagement touchpoints by email and WhatsApp"
+    }
+   ]
+  },
+  {
+   "category": "Commerce & Storefronts",
+   "name": "All-in-One Venue Platform",
+   "slug": "all-in-one-venue-platform",
+   "oneLiner": "A single owned platform tying orders, bookings, menus, payments and guest data into one foundation you control.",
+   "format": "Bespoke commerce platform on Supabase and Stripe, hosted and operated by Greatstone; phased rollout per venue",
+   "featured": false,
+   "outcome": "One platform you own, one source of truth, lower per-transaction fees, and a centre that finally exists.",
+   "idealClient": "Ambitious multi-site venues and operators scaling past stitched-together vendor tools.",
+   "bullets": [
+    {
+     "text": "A unified, owned platform: branded ordering and reservations, central menu CMS, payments and orders on Supabase plus Stripe"
+    },
+    {
+     "text": "One guest and sales database underneath everything, across every venue"
+    },
+    {
+     "text": "Deposits and pre-orders for large parties, with no-show and covers reporting"
+    },
+    {
+     "text": "A command-centre dashboard built in, not bolted on"
+    },
+    {
+     "text": "Phased migration off rented widgets at your pace, built and run by Greatstone as your embedded foundation"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "Private AI Assistant",
+   "slug": "private-ai-assistant",
+   "oneLiner": "Your own AI assistant, trained on your confidential documents, answering only the people cleared to ask, and never leaving your four walls.",
+   "format": "Discovery and secure build, then a monthly hosting-and-retraining retainer",
+   "featured": true,
+   "outcome": "Confidential knowledge stops walking out the door at 6pm: instant, sourced, access-controlled answers from your own brain, and that brain stays inside the company.",
+   "idealClient": "Professional services, finance, healthcare and any SME whose value sits in confidential documents and a few people's heads.",
+   "bullets": [
+    {
+     "text": "A privatized RAG assistant trained on your document store, matters and policies, hosted in your control: your data never trains anyone else's model"
+    },
+    {
+     "text": "Strict role and clearance gating so people only ever see answers drawn from what they're cleared for"
+    },
+    {
+     "text": "Answers cited back to the exact source file, so people verify rather than trust blindly"
+    },
+    {
+     "text": "A branded chat surface on web, plus Teams, Slack or WhatsApp where your team already works"
+    },
+    {
+     "text": "An admin console to add, retire and re-index documents, with a full query audit log for compliance"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "AI Customer-Service Chat Agent",
+   "slug": "ai-customer-service-chat-agent",
+   "oneLiner": "A customer-facing AI agent on your site and WhatsApp that answers, qualifies and books, day and night, in your voice.",
+   "format": "Build plus a monthly run-and-tune retainer; channels added to suit",
+   "featured": true,
+   "outcome": "Routine questions and triage stop reaching your team, qualified enquiries get booked even at midnight, and customers get an instant answer instead of a queue.",
+   "idealClient": "Any business losing staff time to repetitive enquiries and losing after-hours leads to silence.",
+   "bullets": [
+    {
+     "text": "A customer-facing AI agent (web chat plus WhatsApp UK and Ghana, email) trained on your services, pricing and FAQs via RAG"
+    },
+    {
+     "text": "Enquiry qualification that captures intent, urgency and the details that matter before routing"
+    },
+    {
+     "text": "Calendar-aware booking that puts qualified prospects straight into the right diary"
+    },
+    {
+     "text": "Live status and order answers pulled from your real systems, not canned guesses"
+    },
+    {
+     "text": "Clean handoff to a named human with full conversation context whenever judgement is needed"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "AI Phone Answering Agent",
+   "slug": "ai-phone-answering-agent",
+   "oneLiner": "An AI voice agent that answers every call, day or night, in your voice, and never misses a booking.",
+   "format": "Setup plus a per-seat or per-minute build-and-run subscription",
+   "featured": false,
+   "isNew": true,
+   "outcome": "No missed call, no after-hours gap, no front desk buried in repeat questions: every caller is handled and captured.",
+   "idealClient": "Venues, clinics, agencies and any phone-heavy business where a missed call is lost money.",
+   "bullets": [
+    {
+     "text": "A voice agent that answers, qualifies and routes inbound and after-hours calls 24/7 from your own FAQs and procedures"
+    },
+    {
+     "text": "Live booking, enquiry capture and call-back scheduling wired into your calendar and CRM"
+    },
+    {
+     "text": "Natural handling of UK and West-African callers, with clean hand-off to a human when it matters"
+    },
+    {
+     "text": "Every call transcribed, summarised and logged so nothing said on the phone is lost"
+    },
+    {
+     "text": "A guardrailed knowledge scope so the agent only speaks to what you've approved"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "Internal Team AI Copilot",
+   "slug": "internal-team-ai-copilot",
+   "oneLiner": "A role-aware internal assistant that drafts, answers and triages the work your team repeats all day.",
+   "format": "Build plus a per-seat monthly subscription",
+   "featured": false,
+   "outcome": "The repetitive 40% of the day gets drafted in seconds, and your experts get their hours back for the work that matters.",
+   "idealClient": "Professional services, agencies and finance teams whose staff are buried in repeatable drafting and triage.",
+   "bullets": [
+    {
+     "text": "An internal copilot grounded in your tone, templates and policies that drafts replies, documents and proposals"
+    },
+    {
+     "text": "Triage skills that read an inbound request, classify it and route or pre-fill the next step"
+    },
+    {
+     "text": "Connections into the tools your team lives in (email, Notion, CRM, M365) so it acts in context"
+    },
+    {
+     "text": "Reusable prompt 'plays' for your most common tasks, owned and editable by your team"
+    },
+    {
+     "text": "Usage insight so you can see which tasks the copilot is actually buying back hours on"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "Industry-Specific Private AI",
+   "slug": "industry-specific-private-ai",
+   "oneLiner": "A locked-down AI grounded only in your own rulebook, precedents and filings: built for compliance, drafting or diligence in your field.",
+   "format": "Fixed-scope private build (4 to 8 weeks) plus a managed update and hosting retainer; priced per firm and configured to your domain",
+   "featured": false,
+   "isNew": true,
+   "outcome": "The right, sourced answer to a policy question in seconds; a 90-minute drafting job cut to a 10-minute review; first-pass document review that took hours done in minutes, with the audit trail to prove it and nothing sensitive touching a public tool.",
+   "idealClient": "Financial services, legal, healthcare, education and public-sector teams doing regulated, document-heavy work under confidentiality constraints.",
+   "bullets": [
+    {
+     "text": "A private RAG assistant grounded strictly in your policies, precedents, regulations or deal documents, entirely inside your environment"
+    },
+    {
+     "text": "A configured mode for your need: Compliance (answer 'are we allowed to…' with the exact clause), Drafting (brief-to-near-final document from your precedent bank), or Diligence (summarise and extract terms, clauses and risks from long documents)"
+    },
+    {
+     "text": "Hard refusal to invent beyond the source, with every answer cited to its document and clause"
+    },
+    {
+     "text": "Role gating so sensitive guidance and material only reach cleared staff"
+    },
+    {
+     "text": "A full audit trail of every question, draft and review for regulatory defensibility, plus a controlled update flow that re-grounds the assistant when rules change"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "AI Risk & Fraud Screening",
+   "slug": "ai-risk-fraud-screening",
+   "oneLiner": "AI that reads every transaction and case for the risk signals, prioritises the real ones, and shows its working.",
+   "format": "Private build plus a tuning period, then a managed service",
+   "featured": false,
+   "isNew": true,
+   "outcome": "Analysts spend their time on the cases that matter, false positives fall, and every escalation comes with a clear, recorded reason.",
+   "idealClient": "Compliance and risk teams drowning in alerts from rigid rules-based monitoring.",
+   "bullets": [
+    {
+     "text": "A private screening layer reviewing transactions, cases or communications against your risk criteria, entirely inside your environment"
+    },
+    {
+     "text": "AI-written, plain-language explanations for each flag so analysts understand the why, not just a score"
+    },
+    {
+     "text": "Prioritised queues that surface the highest-risk items first and suppress repetitive low-value alerts"
+    },
+    {
+     "text": "A feedback loop where analyst decisions tune what gets escalated over time"
+    },
+    {
+     "text": "Complete logging of every flag, decision and rationale for regulatory defensibility"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "Multilingual AI Translation",
+   "slug": "multilingual-ai-translation",
+   "oneLiner": "AI that lets your site, agents and messages speak your customers' language, including Twi, Ga, Pidgin and more across West Africa.",
+   "format": "Add-on layer to an existing site, agent or comms build, plus a light monthly retainer",
+   "featured": false,
+   "outcome": "You reach the customers and members you were quietly excluding, served properly in their own language, on the channels they actually use.",
+   "idealClient": "Businesses and bodies serving multilingual UK or West-African audiences currently served English-only.",
+   "bullets": [
+    {
+     "text": "A multilingual layer for your site, portal or AI agents that responds in the visitor's own language"
+    },
+    {
+     "text": "Local-language support for West-African contexts (Twi, Ga, Ewe, Hausa, Pidgin) alongside English"
+    },
+    {
+     "text": "Branded message and notification translation for WhatsApp, SMS and email campaigns"
+    },
+    {
+     "text": "A glossary and tone guardrail so your terms and brand voice stay right in every language"
+    },
+    {
+     "text": "A human review path for anything sensitive, with everything logged"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "WhatsApp Sales & Support Agent",
+   "slug": "whatsapp-sales-support-agent",
+   "oneLiner": "A WhatsApp concierge that sells, reorders and supports your customers on the channel they actually use, UK and Ghana.",
+   "format": "WhatsApp agent build plus a monthly managed-channel retainer",
+   "featured": false,
+   "isNew": true,
+   "outcome": "Your highest-intent, most mobile customers get an always-on personal shopper on WhatsApp: repeat orders captured automatically, you freed from playing 24/7 salesperson.",
+   "idealClient": "Brands and operators with loyal, mobile-first or West-Africa customers who already try to buy over WhatsApp.",
+   "bullets": [
+    {
+     "text": "A WhatsApp commerce agent (UK and Ghana) that handles enquiries, recommends products and takes orders in chat"
+    },
+    {
+     "text": "Trained on your live catalogue and policies via RAG so answers and stock are real, not guessed"
+    },
+    {
+     "text": "One-tap reorder for returning customers and Stripe payment links generated in the conversation"
+    },
+    {
+     "text": "Order-status and support answers inline, with clean hand-off to a human for anything sensitive"
+    },
+    {
+     "text": "Broadcast hooks for new drops and back-in-stock to opted-in customers, with every chat captured against the customer record"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "WhatsApp Member Support AI",
+   "slug": "whatsapp-member-support-ai",
+   "oneLiner": "A WhatsApp AI assistant, trained on your own rules and documents, that answers members' and citizens' questions day and night.",
+   "format": "Build plus a monthly hosting, monitoring and content-update retainer",
+   "featured": false,
+   "outcome": "The flood of repeat questions is answered instantly and accurately around the clock, your staff get their evenings back, and members stop waiting for an answer they could have had in seconds.",
+   "idealClient": "Associations, professional bodies and public agencies whose phones are dominated by the same handful of repeat questions.",
+   "bullets": [
+    {
+     "text": "A private AI assistant trained only on your constitution, by-laws, fee schedules, FAQs and notices: answers from your documents, not the open internet"
+    },
+    {
+     "text": "Available 24/7 on WhatsApp and your site, in plain language that reads well on a small screen"
+    },
+    {
+     "text": "Honest hand-off: when it doesn't know, it says so and routes to the right human or queue"
+    },
+    {
+     "text": "Trained to refuse to invent fees, dates or rules it wasn't given"
+    },
+    {
+     "text": "A monthly view of what people actually ask, so you fix the real gaps, updatable by your team as rules change"
+    }
+   ]
+  },
+  {
+   "category": "AI Agents & Assistants",
+   "name": "AI Recruitment Screening Assistant",
+   "slug": "ai-recruitment-screening-assistant",
+   "oneLiner": "A recruiting copilot that screens, replies to and shortlists applicants so your inbox stops being the bottleneck.",
+   "format": "Build plus a per-role or monthly run cost; integrates with your ATS or email",
+   "featured": false,
+   "outcome": "Recruiters spend their time on the ten candidates worth talking to, not the three hundred they had to wade through to find them.",
+   "idealClient": "A scaling company running several open roles at once with a recruiter or two carrying the whole funnel.",
+   "bullets": [
+    {
+     "text": "An AI agent that reads incoming applications and scores them against the role's real criteria, with the reasoning shown"
+    },
+    {
+     "text": "Auto-acknowledgement and status updates so no candidate is left in silence"
+    },
+    {
+     "text": "A candidate-facing assistant that answers questions about the role, process and company"
+    },
+    {
+     "text": "A ranked shortlist with notes, delivered to the hiring manager instead of a raw inbox"
+    },
+    {
+     "text": "Bias guardrails and a human sign-off step before any candidate is rejected"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Workflow Process Automation",
+   "slug": "workflow-process-automation",
+   "oneLiner": "The repetitive, end-to-end processes that eat your week: mapped, automated and running on their own.",
+   "format": "Build per workflow plus a build-and-run monitoring subscription",
+   "featured": true,
+   "outcome": "The work that used to fill your week now runs itself, and your team only steps in for the genuine exceptions.",
+   "idealClient": "Operations-heavy SMEs, e-commerce and back-office teams losing hours to repeatable multi-step processes.",
+   "bullets": [
+    {
+     "text": "Mapped automations for your highest-drain processes (enquiry-to-quote, onboarding, invoicing, reporting)"
+    },
+    {
+     "text": "Scheduled and event-triggered runs via cron and webhooks so work happens without anyone starting it"
+    },
+    {
+     "text": "Data pipelines that move and reshape information between your systems cleanly"
+    },
+    {
+     "text": "Human-in-the-loop checkpoints on anything that needs a sign-off before it fires"
+    },
+    {
+     "text": "An exceptions dashboard so you only ever look at the runs that need attention"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "App & Tool Integration",
+   "slug": "app-tool-integration",
+   "oneLiner": "We connect the tools you already pay for so they finally talk to each other, no more re-keying.",
+   "format": "Discovery-led, scoped per integration after a short audit, then ongoing maintenance",
+   "featured": false,
+   "outcome": "Your tools stop being islands: data and actions flow between them automatically, and nobody re-keys anything.",
+   "idealClient": "SMEs with a pile of disconnected SaaS tools, each holding a slice of the truth, never syncing.",
+   "bullets": [
+    {
+     "text": "MCP and API integrations linking your existing stack (HubSpot/Pipedrive, Microsoft 365, Google, Slack/Teams, Notion, WhatsApp) into one connected fabric"
+    },
+    {
+     "text": "Two-way sync so a change in one system updates the others, killing duplicate manual entry"
+    },
+    {
+     "text": "Deduplication and matching so customers and products line up across systems"
+    },
+    {
+     "text": "A mapped picture of your stack showing exactly what connects to what and where the value is"
+    },
+    {
+     "text": "Guardrails, scheduled jobs and an action log so every automated move is permissioned and traceable"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Onboarding Workflow",
+   "slug": "automated-onboarding-workflow",
+   "oneLiner": "New-client or new-hire onboarding that collects, checks and files itself, with the paper trail built in.",
+   "format": "Web app plus integration build (8 to 10 weeks), then a light retainer",
+   "featured": false,
+   "outcome": "Onboarding drops from weeks to hours, fee-earners and HR stop being a document-collection service, and every case carries a complete, defensible record.",
+   "idealClient": "Firms onboarding regulated clients, or companies hiring at volume, where speed and a clean audit trail both matter.",
+   "bullets": [
+    {
+     "text": "A branded portal where new clients or hires upload documents, e-sign and complete intake"
+    },
+    {
+     "text": "An AI layer that reads submissions, extracts key fields and flags missing or inconsistent items before a human looks"
+    },
+    {
+     "text": "A workflow that triggers on acceptance and runs the full checklist (KYC/AML, access provisioning, welcome) automatically"
+    },
+    {
+     "text": "Scheduled nudges to the person, their manager and your team at each milestone, with timestamped audit logging"
+    },
+    {
+     "text": "Handoff into your CRM, email and case systems via MCP so data is captured once, not re-keyed"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Invoicing & Chasing",
+   "slug": "automated-invoicing-chasing",
+   "oneLiner": "An automated billing and payment-chasing workflow that drafts invoices, sends polite reminders, and tracks who owes what.",
+   "format": "Workflow build plus a light monthly retainer; integrates with your accounting tools",
+   "featured": false,
+   "outcome": "Invoices go out on time, reminders run themselves, and cash comes in faster, without ever sending an awkward 'just following up' email.",
+   "idealClient": "Firms with healthy WIP but slow cash collection because billing and chasing fall to the bottom of the list.",
+   "bullets": [
+    {
+     "text": "Invoice drafting from time and matter data, wired into your accounting tool via MCP"
+    },
+    {
+     "text": "Automated chase sequences over email and WhatsApp (UK and Ghana) in your tone, with sensible escalation"
+    },
+    {
+     "text": "A live debtor dashboard showing aged balances and exactly who needs a nudge"
+    },
+    {
+     "text": "On-brand reminder copy that escalates without owner involvement"
+    },
+    {
+     "text": "Payment links so clients settle in one click, with status synced back automatically"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Appointment Reminders",
+   "slug": "automated-appointment-reminders",
+   "oneLiner": "Automated reminders and recalls that bring people back on schedule and refill empty slots, without a single manual chase.",
+   "format": "Build plus a monthly managed-automation retainer",
+   "featured": false,
+   "outcome": "No-show rates fall, freed slots refill automatically, dormant customers reactivate, and recurring revenue stops leaking.",
+   "idealClient": "Appointment-heavy clinics, dental and physio groups, and any business relying on repeat visits or renewals.",
+   "bullets": [
+    {
+     "text": "Timed reminders over WhatsApp, SMS-style messaging and email, branded as you"
+    },
+    {
+     "text": "One-tap confirm, cancel or reschedule links that write straight back to your calendar"
+    },
+    {
+     "text": "A rules engine that knows when each person is due back (check-up, hygiene, renewal, review)"
+    },
+    {
+     "text": "Automatic waitlist fill when a slot frees up, plus re-engagement sequences for lapsed customers"
+    },
+    {
+     "text": "A dashboard tracking no-show rate and recovered revenue before and after"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Membership Renewals",
+   "slug": "automated-membership-renewals",
+   "oneLiner": "Automated, on-brand renewal and dues reminders with one-click payment that recover lapsing members before they drift away.",
+   "format": "Build plus a per-cycle automation retainer",
+   "featured": false,
+   "outcome": "Renewals collect themselves on time, fewer members slip through the cracks, and retention revenue stops depending on whether someone remembered to send the email.",
+   "idealClient": "Membership organisations, associations, SACCOs and unions collecting recurring dues or annual renewals.",
+   "bullets": [
+    {
+     "text": "An automated renewal and dues sequence across email, WhatsApp and SMS, timed to each member's expiry"
+    },
+    {
+     "text": "One-click secure renewal and payment via Stripe with instant digital receipt, no login gymnastics"
+    },
+    {
+     "text": "A scannable digital membership card and certificate, refreshed automatically when dues are current"
+    },
+    {
+     "text": "A win-back track for recently lapsed members with a clear path back in"
+    },
+    {
+     "text": "A live leadership view of active vs lapsed, collections this cycle, and who still owes"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Customer Order Status Tracking",
+   "slug": "customer-order-status-tracking",
+   "oneLiner": "A live status link customers check themselves, so they stop phoning the office to ask where their job or order is.",
+   "format": "Hosted status page plus messaging automation wired to your job data",
+   "featured": false,
+   "outcome": "Inbound 'where are you?' calls drop sharply and customers feel informed without anyone in the office lifting the phone.",
+   "idealClient": "Field-services and logistics businesses whose customers wait at home or on site for a delivery or visit.",
+   "bullets": [
+    {
+     "text": "A customer-facing tracking page (booked, on the way, on site, complete) updated from your job or order data"
+    },
+    {
+     "text": "Automatic 'on the way' and 'running late' messages over SMS, email or WhatsApp"
+    },
+    {
+     "text": "A unique link per job, no app download and no login required for the customer"
+    },
+    {
+     "text": "An arrival-window that tightens as the day progresses"
+    },
+    {
+     "text": "A simple post-job confirmation the customer acknowledges in one tap"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Inbox & Request Triage",
+   "slug": "automated-inbox-request-triage",
+   "oneLiner": "An AI front door for every inbox and channel that reads, answers what it can, and routes the rest with SLA timers running.",
+   "format": "Integration build (M365 or Google) plus a monthly run-and-improve retainer",
+   "featured": false,
+   "outcome": "Your team starts the day with a triaged, drafted queue instead of an overflowing inbox: the routine clears itself; the judgement calls surface to the top.",
+   "idealClient": "Teams drowning in shared-inbox and multi-channel volume where most messages are routine but the important ones get buried.",
+   "bullets": [
+    {
+     "text": "An AI triage layer that classifies incoming mail and messages by type, urgency and matter across every channel"
+    },
+    {
+     "text": "Draft replies for routine and repetitive messages, ready for one-click send or edit"
+    },
+    {
+     "text": "Routing rules that send each item to the right owner with full context attached"
+    },
+    {
+     "text": "SLA timers and escalation on regulated or urgent request types before a deadline breaches"
+    },
+    {
+     "text": "A daily prioritised digest and a log of volume, type and response time"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Abandoned-Cart & Win-Back Emails",
+   "slug": "abandoned-cart-win-back-emails",
+   "oneLiner": "Always-on recovery and lifecycle messaging that wins back carts and turns one-time buyers into repeat buyers.",
+   "format": "Automation build plus a monthly managed-retention retainer",
+   "featured": false,
+   "outcome": "A retention and recovery engine that runs itself: money the brand was already losing, returned, and repeat purchase lifted without a lifecycle hire.",
+   "idealClient": "DTC brands with real checkout volume but weak repeat purchase and no CRM or lifecycle owner.",
+   "bullets": [
+    {
+     "text": "Automated multi-step cart recovery across email and WhatsApp (UK and Ghana), triggered the moment a cart is abandoned"
+    },
+    {
+     "text": "Lifecycle journeys (welcome, post-purchase, replenishment, win-back) keyed to what each customer actually bought"
+    },
+    {
+     "text": "AI-personalised, on-brand messaging with smart timing, incentive and stop rules to protect margin"
+    },
+    {
+     "text": "Triggered off real order events from the commerce backend, with segmentation for VIPs, lapsed and first-timers"
+    },
+    {
+     "text": "A dashboard showing carts recovered, repeat rate, second-order time and revenue per cohort"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Stock Alerts",
+   "slug": "automated-stock-alerts",
+   "oneLiner": "Inventory that watches itself and tells the right person before you sell something you can't ship.",
+   "format": "Automation build plus light monthly maintenance",
+   "featured": false,
+   "outcome": "No more overselling, no more silent stockouts: the system flags what needs reordering and captures demand on sold-out items.",
+   "idealClient": "Physical-product brands and distributors stung by stockouts and overselling, managing stock timing in someone's head.",
+   "bullets": [
+    {
+     "text": "Stock thresholds and reorder rules layered onto your commerce or inventory backend"
+    },
+    {
+     "text": "Automated low-stock and out-of-stock alerts to the right person via WhatsApp, email or Slack/Teams"
+    },
+    {
+     "text": "Auto-hide or back-in-stock capture on listings that run dry, instead of dead checkouts"
+    },
+    {
+     "text": "Back-in-stock customer notifications fired automatically when inventory returns"
+    },
+    {
+     "text": "A supplier and reorder view so reordering is a glance, not an investigation"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Automated Review Requests",
+   "slug": "automated-review-requests",
+   "oneLiner": "Automated, well-timed review requests that turn happy customers into the reviews that fill your books.",
+   "format": "Build plus a monthly automation retainer",
+   "featured": false,
+   "outcome": "Steady five-star reviews flow in, issues get caught privately before they go public, and new customers keep finding you.",
+   "idealClient": "Clinics, venues, agencies and service businesses that compete on reputation but have no system for collecting reviews.",
+   "bullets": [
+    {
+     "text": "Automatic review requests sent after a visit or job over WhatsApp and email, timed to the right moment"
+    },
+    {
+     "text": "A quick private feedback step that routes unhappy customers to you first, and happy ones to Google"
+    },
+    {
+     "text": "Branded messaging that sounds like you, not a robot"
+    },
+    {
+     "text": "A dashboard tracking review volume, rating trend and response rate"
+    },
+    {
+     "text": "Alerts to the manager for any low-score feedback so it's handled fast"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Case & Complaints Tracking System",
+   "slug": "case-complaints-tracking-system",
+   "oneLiner": "A trackable case system so every citizen or member request has a reference number and a visible status.",
+   "format": "Fixed-scope build plus a monthly run-and-support retainer",
+   "featured": false,
+   "outcome": "Every request becomes a tracked case with a reference and an honest status: citizens stop chasing, staff stop losing cases, and leadership sees where service breaks down.",
+   "idealClient": "Public-sector service desks, regulators and member bodies handling complaints or service requests at volume.",
+   "bullets": [
+    {
+     "text": "Intake on WhatsApp and web that issues a reference number the moment a case is logged"
+    },
+    {
+     "text": "A status the person checks themselves any time: submitted, in review, resolved"
+    },
+    {
+     "text": "A staff back office to assign, escalate, comment and close, with a full audit trail"
+    },
+    {
+     "text": "Automatic status-update messages as a case moves, plus SLA timers and alerts"
+    },
+    {
+     "text": "Reporting on volumes, response times and recurring issues for leadership"
+    }
+   ]
+  },
+  {
+   "category": "Automation & Integration",
+   "name": "Supplier & Purchase-Order Portal",
+   "slug": "supplier-purchase-order-portal",
+   "oneLiner": "A shared portal where POs, confirmations and delivery dates live in one place instead of buried in a buyer's inbox.",
+   "format": "Discovery plus build (5 to 7 weeks), then a hosting-and-support retainer",
+   "featured": false,
+   "outcome": "Procurement stops living in the inbox, late deliveries are caught early, and there's a single accountable record of what each supplier promised.",
+   "idealClient": "Buyers and ops managers coordinating a regular roster of suppliers by email.",
+   "bullets": [
+    {
+     "text": "A supplier-facing portal where you issue POs and suppliers confirm quantities, prices and dates"
+    },
+    {
+     "text": "A live status on every open PO (confirmed, in transit or overdue) at a glance"
+    },
+    {
+     "text": "Automated chase reminders to suppliers on unconfirmed or late orders"
+    },
+    {
+     "text": "A clean record of agreed prices and lead times per supplier, so disputes settle by fact not memory"
+    },
+    {
+     "text": "Email and WhatsApp notifications for suppliers who won't log into a portal, captured back into the system"
+    }
+   ]
+  },
+  {
+   "category": "Comms Channels",
+   "name": "Automated Email Newsletters",
+   "slug": "automated-email-newsletters",
+   "oneLiner": "A branded email and newsletter channel that designs, personalises and sends itself, and tells you what landed.",
+   "format": "Build plus a monthly managed-send retainer; integrates with your CRM and commerce data",
+   "featured": false,
+   "outcome": "A consistent, professional email presence that runs on a cadence instead of stopping the moment the team gets busy, with proof of what reached and moved people.",
+   "idealClient": "SMEs, associations and brands whose email is sporadic, off-brand or stuck in a generic tool nobody enjoys using.",
+   "bullets": [
+    {
+     "text": "A branded email and newsletter system with reusable, on-brand templates anyone can send safely"
+    },
+    {
+     "text": "AI-drafted copy in your house voice from a short brief, with a human approval step before anything ships"
+    },
+    {
+     "text": "Segmentation by customer, member, region or status so the right message reaches the right list"
+    },
+    {
+     "text": "Automated sequences (welcome, nurture, re-engagement, announcements) triggered off your real data"
+    },
+    {
+     "text": "Open, click and delivery reporting plus list health, integrated with your CRM and commerce backend"
+    }
+   ]
+  },
+  {
+   "category": "Comms Channels",
+   "name": "WhatsApp Ordering Channel",
+   "slug": "whatsapp-ordering-channel",
+   "oneLiner": "A WhatsApp channel where customers and reps place and check orders, captured straight into your system instead of a phone log.",
+   "format": "Build plus channel setup (4 to 6 weeks), then a managed run retainer",
+   "featured": false,
+   "outcome": "The orders already happening over chat get captured cleanly the first time, reps stop re-keying from their phones, and customers order on the channel they actually use.",
+   "idealClient": "Distributors and brands with field reps and customers who order by chat and phone, UK or West Africa.",
+   "bullets": [
+    {
+     "text": "A managed WhatsApp line (UK and Ghana numbers) for orders, reorders and stock checks"
+    },
+    {
+     "text": "An assistant that takes the order over chat, confirms the details and writes it into your order log"
+    },
+    {
+     "text": "Order-status and stock-availability replies on demand, no human in the loop for the routine ones"
+    },
+    {
+     "text": "Handover to a person the moment anything is non-standard, so customers never hit a dead end"
+    },
+    {
+     "text": "Every conversation captured against the customer record, so nothing lives only in a phone"
+    }
+   ]
+  },
+  {
+   "category": "Comms Channels",
+   "name": "Multi-Channel Broadcast Messaging",
+   "slug": "multi-channel-broadcast-messaging",
+   "oneLiner": "Reach every member or citizen on the channel they actually use (WhatsApp first, SMS and email behind it) from one place.",
+   "format": "Hub build plus a monthly send-volume retainer",
+   "featured": false,
+   "outcome": "Every announcement reaches people once, on the channel they read, with proof it landed: no more notices half the membership never saw.",
+   "idealClient": "Any organisation needing to reach a large, phone-based membership or public reliably and on time.",
+   "bullets": [
+    {
+     "text": "One console to compose once and send across WhatsApp, SMS and email"
+    },
+    {
+     "text": "Segmented broadcasts (by branch, region, category or dues status) so the right people get the right notice"
+    },
+    {
+     "text": "Scheduling for deadlines, events and AGMs, with automatic reminders as the date nears"
+    },
+    {
+     "text": "Light, image-friendly messages that render on low-end phones and low data"
+    },
+    {
+     "text": "Delivery and read insight, plus a two-way option so replies route to staff instead of vanishing"
+    }
+   ]
+  },
+  {
+   "category": "Comms Channels",
+   "name": "Two-Way Field & Beneficiary SMS",
+   "slug": "two-way-field-beneficiary-sms",
+   "oneLiner": "A two-way WhatsApp line that reaches and hears from the people you serve or the crews in the field, at a scale a team can't reach by hand.",
+   "format": "WhatsApp automation plus assistant build, with a monthly retainer to run campaigns and flows",
+   "featured": false,
+   "outcome": "You stay in real, two-way contact at a scale your team could never reach by hand, and every reply and acknowledgement lands on the record.",
+   "idealClient": "Frontline nonprofits serving WhatsApp-first communities, and field teams coordinating crews over personal WhatsApp.",
+   "bullets": [
+    {
+     "text": "Two-way WhatsApp outreach (UK and Ghana) for reminders, check-ins, assignments and programme messages"
+    },
+    {
+     "text": "Automated surveys and feedback collection that feed straight into your data"
+    },
+    {
+     "text": "An AI assistant that answers common questions automatically, in plain language and local languages"
+    },
+    {
+     "text": "Job assignments and acknowledgements logged against the record, not lost in a group"
+    },
+    {
+     "text": "Consent-respecting flows and an audit trail of who was told what and when"
+    }
+   ]
+  },
+  {
+   "category": "Comms Channels",
+   "name": "Event RSVP & Check-In System",
+   "slug": "event-rsvp-check-in-system",
+   "oneLiner": "Run conferences, AGMs and trainings end-to-end on the phone: RSVP, ticket, pay, and tap-to-check-in at the door.",
+   "format": "Per-event build or an annual events package with run-of-event support",
+   "featured": false,
+   "outcome": "Events run smoothly from invite to door, you know exactly who attended and paid, and reconciliation that took a week is done before you leave the hall.",
+   "idealClient": "Associations, professional bodies and agencies holding AGMs, conferences, CPD trainings or public events.",
+   "bullets": [
+    {
+     "text": "A mobile event page and WhatsApp RSVP flow with mobile-money-friendly payment"
+    },
+    {
+     "text": "QR tickets sent to each attendee's phone, with a paper fallback"
+    },
+    {
+     "text": "Fast door check-in by scanning the QR, with live headcount as people arrive"
+    },
+    {
+     "text": "Automatic reminders before, and a branded recap or certificate of attendance after"
+    },
+    {
+     "text": "A live organiser view (registered, paid, checked-in) and clean post-event reconciliation, exportable in a tap"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "AI Meeting Notes & Recaps",
+   "slug": "ai-meeting-notes-recaps",
+   "oneLiner": "Every meeting captured, recapped and turned into action, automatically, on-brand, before you've left the room.",
+   "format": "Fixed-scope build plus a per-seat monthly subscription, or bundled into a retainer",
+   "featured": true,
+   "outcome": "Nothing said in a meeting gets lost: recaps, actions and follow-ups are handled before you've left the call, captured the same day instead of reconstructed a week later.",
+   "idealClient": "Consultancies, sales teams, client-facing and professional-services teams who live in meetings and lose the output.",
+   "bullets": [
+    {
+     "text": "An AI notetaker wired to your Zoom, Teams or Meet that joins, transcribes and produces a clean, branded recap"
+    },
+    {
+     "text": "Decisions, owners and action items extracted and pushed into your task tool or CRM"
+    },
+    {
+     "text": "Branded client-facing follow-up drafted automatically, plus an internal file note and billing narrative where you need it"
+    },
+    {
+     "text": "Every meeting filed into a searchable archive so any past call is one query away"
+    },
+    {
+     "text": "Optional shareable, branded recap pages via a link"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "Company Knowledge AI Search",
+   "slug": "company-knowledge-ai-search",
+   "oneLiner": "A private AI that has read everything your company knows, and answers in seconds, with the source.",
+   "format": "Build-and-run subscription (foundation build plus monthly hosting, tuning and growth)",
+   "featured": false,
+   "outcome": "Institutional memory stops walking out the door: your team stops hunting and starts asking, and a new hire gets senior-level answers from day one.",
+   "idealClient": "Document-heavy organisations (law, finance, consultancy, healthcare, education, manufacturing) drowning in their own files.",
+   "bullets": [
+    {
+     "text": "A privatized, company-wide knowledge base built on your own documents, drives, wikis and policies: your data never trains a public model"
+    },
+    {
+     "text": "Ingestion from where knowledge already lives: SharePoint/M365, Google Drive, Notion, Confluence, email"
+    },
+    {
+     "text": "A natural-language ask-and-search layer that answers in plain English with citations back to the original doc"
+    },
+    {
+     "text": "Permission-aware answers so people only see what they're cleared to see"
+    },
+    {
+     "text": "An always-current index that re-reads new documents, plus a 'what we couldn't answer' report showing the gaps"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "Notion / M365 Workspace Build",
+   "slug": "notion-m365-workspace-build",
+   "oneLiner": "We build the company brain in Notion or M365: databases, dashboards and a command centre that actually gets used.",
+   "format": "Fixed-scope build (3 to 5 weeks), migration and training, with an optional care plan",
+   "featured": false,
+   "outcome": "One place that holds the truth of the business, and a team that trusts it enough to live in it, with new joiners productive in days not months.",
+   "idealClient": "Growing teams of 5 to 50 whose tools have outgrown spreadsheets but who can't justify heavyweight enterprise software.",
+   "bullets": [
+    {
+     "text": "A bespoke Notion or Microsoft 365 workspace architected to how your business actually runs: clients, matters, projects, tasks, pipeline, knowledge"
+    },
+    {
+     "text": "Connected databases with the right relations and rollups so data entered once shows up everywhere"
+    },
+    {
+     "text": "A leadership command dashboard surfacing status, risk and what needs a decision at a glance"
+    },
+    {
+     "text": "Templates and automations that make the right way the easy way for staff"
+    },
+    {
+     "text": "Migration of the spreadsheet and drive sprawl into one trusted source, with hands-on rollout and training"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "Searchable Decision Log",
+   "slug": "searchable-decision-log",
+   "oneLiner": "A searchable record of every decision your company has made, and the why behind it.",
+   "format": "Fixed-scope build, often paired with The Scribe or The Cairn",
+   "featured": false,
+   "outcome": "Your company's reasoning is preserved, not just its conclusions, so you stop re-litigating settled calls.",
+   "idealClient": "Leadership teams, boards and scaling startups where context evaporates between decisions and consequences.",
+   "bullets": [
+    {
+     "text": "A structured decision log that captures decisions automatically from meeting recaps and key threads"
+    },
+    {
+     "text": "Each entry holds the decision, the options weighed, the rationale, the owner and the date"
+    },
+    {
+     "text": "Natural-language search across the whole history: 'why did we choose vendor X?'"
+    },
+    {
+     "text": "Links from each decision back to the meeting, document or message it came from"
+    },
+    {
+     "text": "A leadership view of open, pending and reversed decisions over time"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "Automated Meeting Pre-Briefs",
+   "slug": "automated-meeting-pre-briefs",
+   "oneLiner": "Walk into every important meeting already briefed: context, history and the right questions, delivered before you sit down.",
+   "format": "Build-and-run subscription, often paired with The Scribe",
+   "featured": false,
+   "outcome": "No meeting starts from zero: every conversation picks up exactly where the last one left off.",
+   "idealClient": "Sales teams, account managers and consultants whose edge is showing up sharp and remembering everything.",
+   "bullets": [
+    {
+     "text": "A pre-meeting brief engine that assembles context from past recaps, CRM history, emails and relevant documents"
+    },
+    {
+     "text": "A one-page prep sheet auto-delivered before each meeting: who's in the room, what was last agreed, what's outstanding, a suggested agenda"
+    },
+    {
+     "text": "Tight calendar integration so briefs fire automatically for flagged meetings"
+    },
+    {
+     "text": "Account- and person-level research pulled in for external meetings"
+    },
+    {
+     "text": "A link back into the full archive for anyone who wants to go deeper"
+    }
+   ]
+  },
+  {
+   "category": "Meetings & Knowledge",
+   "name": "New-Hire Onboarding AI",
+   "slug": "new-hire-onboarding-ai",
+   "oneLiner": "A private AI that walks every new hire through how your company actually works.",
+   "format": "Fixed-scope build plus monthly run, or folded into The Archive",
+   "featured": false,
+   "outcome": "New hires get productive in days, not months, without draining your senior team's calendar.",
+   "idealClient": "Fast-growing teams and high-turnover operations where onboarding is a recurring bottleneck.",
+   "bullets": [
+    {
+     "text": "A privatized AI assistant trained on your processes, policies, tools and tribal knowledge"
+    },
+    {
+     "text": "A conversational onboarding copilot new hires can ask anything: 'how do I raise an invoice?', 'who owns the X account?'"
+    },
+    {
+     "text": "Curated learning paths that surface the right docs and people at the right moment"
+    },
+    {
+     "text": "A capture loop that turns repeat questions into permanent, searchable answers"
+    },
+    {
+     "text": "Connectors into your HR, comms and document tools so it stays current"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Live Operations Dashboard",
+   "slug": "live-operations-dashboard",
+   "oneLiner": "One screen that pulls your scattered numbers into a live operations dashboard, so the state of the business is never a mystery.",
+   "format": "Dashboard build plus integration, then an embedded build-and-run subscription with data upkeep",
+   "featured": true,
+   "outcome": "Leadership sees the true state of the business at a glance and acts the same day: the status meeting shrinks or dies.",
+   "idealClient": "Founders, COOs and ops leaders flying blind across disconnected tools and lagging manual reports.",
+   "bullets": [
+    {
+     "text": "A single branded dashboard aggregating data from your existing tools via MCP and API"
+    },
+    {
+     "text": "Live KPI tiles, trends and drill-downs for the metrics that actually govern your week"
+    },
+    {
+     "text": "Role-based views (leadership, ops, sales) each seeing what they need"
+    },
+    {
+     "text": "Threshold alerts that warn before an SLA or deadline slips, not after"
+    },
+    {
+     "text": "A scheduled daily or weekly pulse to inbox or WhatsApp so the exec view is automatic"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Plain-English Finance Brief",
+   "slug": "plain-english-finance-brief",
+   "oneLiner": "Your financial numbers, read for you: a plain-English brief that explains what moved on the money and why.",
+   "format": "Build-and-run subscription (integration build plus recurring reporting)",
+   "featured": false,
+   "outcome": "The monthly financial report writes itself, and finally tells you what the numbers actually mean for the business.",
+   "idealClient": "SMEs and finance leaders who have revenue and cash data everywhere but no analyst to turn it into a story.",
+   "bullets": [
+    {
+     "text": "Connectors into your financial and revenue sources: Stripe, accounting, CRM, spreadsheets"
+    },
+    {
+     "text": "A KPI layer tracking the money metrics that matter: revenue, cash, margin, collections, runway"
+    },
+    {
+     "text": "An AI narrative explaining the financials: what changed, by how much, likely why, what to watch"
+    },
+    {
+     "text": "Scheduled branded financial reports (weekly or monthly) delivered to leadership automatically"
+    },
+    {
+     "text": "Threshold alerts when a financial metric breaks out of its normal range"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Daily Operations Brief",
+   "slug": "daily-operations-brief",
+   "oneLiner": "A branded morning operational brief: what happened overnight across your ops, and what needs you today.",
+   "format": "Build-and-run subscription (setup plus ongoing daily or weekly delivery and tuning)",
+   "featured": false,
+   "outcome": "Everyone walks in already knowing where today stands operationally: the day starts on the front foot, not catching up.",
+   "idealClient": "Founders, executives and team leads who need to stay on top of daily operations without living in their tools.",
+   "bullets": [
+    {
+     "text": "A scheduled automation pulling from your calendar, inbox, CRM, project tools, support queue and operational sources"
+    },
+    {
+     "text": "An AI that filters the noise and writes a short, plain-English brief on today's operations: priorities, decisions needed, meetings, what slipped, signal worth knowing"
+    },
+    {
+     "text": "A clean branded page or email delivered at a set time, every day or week"
+    },
+    {
+     "text": "Tailored editions per recipient: leadership sees the cross-business view, ops sees throughput and queues"
+    },
+    {
+     "text": "Tuning over the first month so the brief learns what actually matters to you"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Customer Churn Early Warning",
+   "slug": "customer-churn-early-warning",
+   "oneLiner": "See the customer, student or member drifting away while you can still reach them, not after they've gone.",
+   "format": "Dashboard build plus automation wiring and a monthly retainer",
+   "featured": false,
+   "outcome": "Your team intervenes in the window that still matters: retention becomes something you act on, and fewer earned customers walk away.",
+   "idealClient": "Education providers, membership bodies and subscription businesses where disengagement is only spotted after it's too late.",
+   "bullets": [
+    {
+     "text": "A risk dashboard pulling activity signals (logins, attendance, submissions, orders, support contact) into one view per person and cohort"
+    },
+    {
+     "text": "Plain risk tiers (on track, drifting, at risk) with the reason shown, not a black-box score"
+    },
+    {
+     "text": "Automated nudges to the person and an alert to their owner when they start to slip"
+    },
+    {
+     "text": "A weekly 'who needs a call this week' list for the success team"
+    },
+    {
+     "text": "Cohort- and programme-level retention trends for leadership"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Demand & Stock Forecasting",
+   "slug": "demand-stock-forecasting",
+   "oneLiner": "A forecast of what you'll need (stock, crew or buy-ahead) built from your own history so you plan ahead of demand, not behind it.",
+   "format": "Discovery plus model build (6 to 8 weeks), delivered as a weekly running service",
+   "featured": false,
+   "outcome": "You plan against expected demand instead of a rear-view mirror: working capital and idle time both fall, and stockouts on your fast movers become rare.",
+   "idealClient": "Distributors, manufacturers and field-services operators with enough history to forecast and real money tied up in stock or labour.",
+   "bullets": [
+    {
+     "text": "A forecasting model built on your historical orders, bookings and seasonality"
+    },
+    {
+     "text": "Per-SKU or per-day demand projections with suggested reorder or staffing quantities and timing"
+    },
+    {
+     "text": "A weekly buying or staffing brief that says what to do this week and why"
+    },
+    {
+     "text": "Scenario views ('what if we win this contract?') to plan capacity ahead"
+    },
+    {
+     "text": "Plain-English commentary on each recommendation, not a wall of numbers"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Board & Accreditation Reporting",
+   "slug": "board-accreditation-reporting",
+   "oneLiner": "The board pack, trustee report or accreditation submission, assembled for you: current, consistent and on demand.",
+   "format": "Build plus a monthly retainer with on-demand report generation",
+   "featured": false,
+   "outcome": "The report writes itself from one source of truth, the numbers reconcile, and board or accreditation season stops eating your team's month.",
+   "idealClient": "Nonprofits, education providers and member bodies hand-assembling board, trustee or accreditation reports from disconnected systems.",
+   "bullets": [
+    {
+     "text": "A reporting layer pulling finances, KPIs, programme and member data into one trusted source"
+    },
+    {
+     "text": "Pre-built dashboards for leadership and for board, accreditation or regulatory submissions"
+    },
+    {
+     "text": "One-click branded report generation to Word, PowerPoint, PDF and Excel from live data"
+    },
+    {
+     "text": "Scheduled monthly and termly packs delivered automatically, with auto-drafted plain-language narrative"
+    },
+    {
+     "text": "An audit trail so every number traces back to its source"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Customer Feedback Analysis",
+   "slug": "customer-feedback-analysis",
+   "oneLiner": "Turn every customer call, ticket, review and survey into a clear read on what people actually think.",
+   "format": "Build-and-run subscription (pipeline build plus recurring reporting)",
+   "featured": false,
+   "outcome": "Leadership hears the real, aggregated voice of the customer, not just the loudest complaint of the week.",
+   "idealClient": "E-commerce, education, hospitality and service businesses with high feedback volume and no one to read it all.",
+   "bullets": [
+    {
+     "text": "An ingestion pipeline pulling in transcripts, support tickets, survey responses and reviews from every platform and venue"
+    },
+    {
+     "text": "AI synthesis that clusters the noise into themes, sentiment and recurring pain points"
+    },
+    {
+     "text": "A recurring branded report: what customers love, what's hurting, what's trending up or down"
+    },
+    {
+     "text": "Drill-down into the actual quotes and sources behind every theme"
+    },
+    {
+     "text": "Alerts when a new issue starts spiking so you act before it spreads"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "Live Market Intelligence Hub",
+   "slug": "live-market-intelligence-hub",
+   "oneLiner": "A live, client-facing intelligence hub that tracks your market, ranks what matters, and refreshes itself.",
+   "format": "Build-and-run subscription (hub build plus scheduled refresh, hosting and curation)",
+   "featured": false,
+   "outcome": "You become the authoritative, always-current view of your space: a living resource your market checks regularly and credits to you.",
+   "idealClient": "Consultancies, membership bodies, trade associations and category leaders who want to own the intelligence layer in their field.",
+   "bullets": [
+    {
+     "text": "A branded, always-on intelligence hub: leaderboards, movement tracking, side-by-side comparisons for your sector"
+    },
+    {
+     "text": "An engine that refreshes the data daily or weekly and redeploys the updated site automatically"
+    },
+    {
+     "text": "Curated sources and scoring tuned to what your audience cares about, UK, Ghana and West Africa covered"
+    },
+    {
+     "text": "A shareable public or gated link you can put in front of clients, members or your team"
+    },
+    {
+     "text": "An accompanying brief that flags the notable movements each cycle"
+    }
+   ]
+  },
+  {
+   "category": "Intelligence & Reporting",
+   "name": "On-Demand Market Research",
+   "slug": "on-demand-market-research",
+   "oneLiner": "A fact-checked deep-dive on any market, competitor or question, on demand, in your brand.",
+   "format": "Per-report fixed price, or a research retainer for recurring intelligence",
+   "featured": false,
+   "outcome": "Board-grade research without a research team: sourced, current and ready to act on.",
+   "idealClient": "Leadership teams entering new markets, sizing up competitors, or preparing pitches, deals and board papers.",
+   "bullets": [
+    {
+     "text": "A multi-source research engine that fans out across the web, fetches and reads primary sources"
+    },
+    {
+     "text": "Adversarial fact-checking so claims are verified before they reach you, with citations attached"
+    },
+    {
+     "text": "A synthesised, branded report (market landscape, competitor moves, opportunities, risks) built for a real decision"
+    },
+    {
+     "text": "On-demand commissioning: name the question, get the dossier"
+    },
+    {
+     "text": "Optional recurring editions to track a market or rival over time"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Cinematic 3D Brand Website",
+   "slug": "cinematic-3d-brand-website",
+   "oneLiner": "A cinematic, 3D-led brand site or pitch experience: animated logo, scroll story, the kind of page that makes people stop.",
+   "format": "Premium fixed-scope build per site or pitch; one-time fee with a retainer option for recurring decks",
+   "featured": true,
+   "outcome": "A page that makes prospects stop, stay and take you seriously before they've read a word, and a link that keeps selling after you've gone.",
+   "idealClient": "Brands launching flagships, founders raising, and agencies running high-stakes pitches where the work has to out-class the competition.",
+   "bullets": [
+    {
+     "text": "A bespoke 3D hero: animated, cursor-responsive brand mark or product"
+    },
+    {
+     "text": "A scroll-driven narrative with motion, colour grading and paced reveals, or an interactive browser-based pitch deck"
+    },
+    {
+     "text": "Generative brand animation unique to your business, where the central object fractures into your pillars and reassembles"
+    },
+    {
+     "text": "A shareable link plus presenter mode, built mobile-first so it lands on every device"
+    },
+    {
+     "text": "Tuned for performance so the spectacle never costs you load speed, with a PDF fallback for procurement"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Interactive 3D Logo",
+   "slug": "interactive-3d-logo",
+   "oneLiner": "Your logo, rebuilt as a real-time, light-responsive 3D object that reacts to the visitor.",
+   "format": "Fixed-scope build, 2 to 3 weeks, one-off fee",
+   "featured": false,
+   "outcome": "A first impression that proves you build modern things: the brand greets every visitor instead of just sitting there.",
+   "idealClient": "SMEs and professional-services firms relaunching or pitching who want a hero moment without a full rebrand.",
+   "bullets": [
+    {
+     "text": "A real-time WebGL build of your existing logo or symbol: extruded, lit and shaded with material depth, fresnel rim-glow and bloom"
+    },
+    {
+     "text": "Cursor and pointer interaction so the mark responds as the visitor moves across it"
+    },
+    {
+     "text": "A single self-contained drop-in for your homepage hero, splash or loader"
+    },
+    {
+     "text": "Reduced-motion and mobile fallbacks so it stays fast and accessible on every device"
+    },
+    {
+     "text": "Source files and a still-frame variant for decks and email"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "3D Icon Set Design",
+   "slug": "3d-icon-set-design",
+   "oneLiner": "Your flat icons rebuilt as light-responsive 3D gems for a dimensional brand system.",
+   "format": "Fixed-scope set, priced per icon count, 2 to 3 weeks",
+   "featured": false,
+   "outcome": "Every feature grid and pillar page gains physical depth: your brand reads as crafted, not assembled.",
+   "idealClient": "Brands with an existing icon set or methodology who want a dimensional upgrade across web, decks and product.",
+   "bullets": [
+    {
+     "text": "Each icon, logo or pictogram rebuilt as a real 3D relief element: extruded body, bevelled edges, a displaced face that catches light"
+    },
+    {
+     "text": "A consistent set tuned to one palette so the whole system feels carved from the same material"
+    },
+    {
+     "text": "Drop-in components for feature badges, methodology diagrams, pillar pages and decorative accents"
+    },
+    {
+     "text": "Static renders supplied alongside the live versions for decks and documents"
+    },
+    {
+     "text": "A reusable builder so new icons can join the set later"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Daily Brand Animation Service",
+   "slug": "daily-brand-animation-service",
+   "oneLiner": "A fresh, on-brand generative motion study delivered every day, on autopilot, so you never run dry.",
+   "format": "Build-and-run subscription (daily cron plus gallery and catalogue), or a fixed-scope one-off signature piece",
+   "featured": false,
+   "outcome": "You never run dry: there's always a fresh, unmistakably-you piece of motion ready to ship, and a signature animation that exists nowhere else.",
+   "idealClient": "Brands with an always-on content presence who need a steady supply of original motion without a studio retainer.",
+   "bullets": [
+    {
+     "text": "A daily generator that invents one brand-new generative animation in your palette and type, never repeating a technique-and-feel"
+    },
+    {
+     "text": "Bespoke signature motion built from your brand's own metaphor where you want one defining piece"
+    },
+    {
+     "text": "A live gallery that grows automatically and a catalogue of every study for easy reuse"
+    },
+    {
+     "text": "Brand chrome on each piece, with export-ready loops for social, hero backgrounds, loaders and deck covers"
+    },
+    {
+     "text": "Pause-on-hidden and reduced-motion handling, run on a schedule so the pipeline produces without anyone lifting a finger"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "AI Explainer & Product Videos",
+   "slug": "ai-explainer-product-videos",
+   "oneLiner": "Branded explainer videos, product clips and social video generated from a script or a single asset, without a film crew.",
+   "format": "Per-video build or a monthly video-content retainer",
+   "featured": false,
+   "outcome": "Professional video your audience expects (explainers, demos and social clips) produced in days from words, not weeks from a shoot.",
+   "idealClient": "Brands, educators and founders who need video to compete but can't justify a production team or agency rates.",
+   "bullets": [
+    {
+     "text": "Branded explainer and product videos generated from a script, brief or existing long-form asset"
+    },
+    {
+     "text": "AI voiceover, captions and on-brand motion graphics in your palette and type"
+    },
+    {
+     "text": "Short vertical cuts for social and longer-form pieces for your site, deck or landing page"
+    },
+    {
+     "text": "A reusable branded template kit so new videos stay consistent and fast to produce"
+    },
+    {
+     "text": "Hosting and embed-ready delivery, with a refresh path as your message changes"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Branded Proposal & Document Builder",
+   "slug": "branded-proposal-document-builder",
+   "oneLiner": "Branded proposals, decks, contracts and reports generated from a short brief in minutes: built to win and impossible to get wrong.",
+   "format": "Fixed-scope build per document type; embedded build-and-run for high-volume pipelines",
+   "featured": false,
+   "outcome": "Proposals and documents go out same-day, look unmistakably premium, are correct every time, and a faster, sharper pitch wins more of the work it chases.",
+   "idealClient": "Agencies, consultancies, professional services, finance, education and HR teams producing branded documents at volume.",
+   "bullets": [
+    {
+     "text": "A proposal builder that assembles scope, approach, team and fees from reusable, on-brand modules, output to interactive web or PDF"
+    },
+    {
+     "text": "A document engine generating branded Word, PowerPoint, PDF and Excel from your live data and approved language"
+    },
+    {
+     "text": "Merge from your CRM or HRIS so names, dates, terms and figures fill themselves with no retyping"
+    },
+    {
+     "text": "A reusable library of your best case studies, bios and pricing so the next document starts at 80%"
+    },
+    {
+     "text": "E-signature and acceptance flow, plus an approval step on legal-sensitive documents and a versioned template library"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Always-On Content Production",
+   "slug": "always-on-content-production",
+   "oneLiner": "An always-on pipeline that turns your raw material (and your house voice) into a steady stream of on-brand content.",
+   "format": "Embedded build-and-run subscription, monthly fee",
+   "featured": false,
+   "outcome": "A blank page becomes a full draft in minutes: the team moves from writing-from-scratch to editing-and-shipping, and a consistent, unmistakably-you presence keeps running when the team can't.",
+   "idealClient": "Marketing teams, agencies and content-heavy brands capped by writer hours and needing a reliable cadence.",
+   "bullets": [
+    {
+     "text": "A private AI engine (RAG) trained on your past work, tone guide and best-performing pieces so every draft sounds like you"
+    },
+    {
+     "text": "One-brief-to-many: feed a single brief, get blog drafts, social variants, email copy and ad lines in your formats"
+    },
+    {
+     "text": "Channel-shaped outputs (LinkedIn, Instagram, newsletter) with the right length and structure each time"
+    },
+    {
+     "text": "A review-and-publish step so a human approves before anything ships, never auto-published"
+    },
+    {
+     "text": "Scheduled runs, a catalogue, and write-back into your Notion or Drive so approved content files itself"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Social Clip Repurposing",
+   "slug": "social-clip-repurposing",
+   "oneLiner": "A production line that turns one long asset into a month of branded, channel-ready cuts.",
+   "format": "Repurposing pipeline plus a branded template and motion kit, with content-calendar handoff",
+   "featured": false,
+   "outcome": "One asset becomes a month of content without a month of work: the studio shifts from manual slicing to creative direction.",
+   "idealClient": "Content-heavy brands and agencies producing long-form material that should fuel many channels but doesn't.",
+   "bullets": [
+    {
+     "text": "An intake flow that takes a long-form asset (recording, article, deck) and plans the cut-down set"
+    },
+    {
+     "text": "AI-drafted captions, hooks and post copy in your brand voice for each platform"
+    },
+    {
+     "text": "Branded graphic and short-clip templates auto-populated so design drops to review-and-polish"
+    },
+    {
+     "text": "Generative brand animation and motion accents for standout pieces"
+    },
+    {
+     "text": "Everything filed into your content calendar or command centre, ready to schedule"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Interactive Data Visualisation",
+   "slug": "interactive-data-visualisation",
+   "oneLiner": "Your numbers turned into a branded, interactive visualisation that actually persuades.",
+   "format": "Fixed-scope build per visualisation; retainer for live, refreshing dashboards",
+   "featured": false,
+   "outcome": "A number that was invisible becomes the thing the room remembers and acts on.",
+   "idealClient": "Founders, finance and ops leaders, and consultancies needing to make a data point land with a board, client or investor.",
+   "bullets": [
+    {
+     "text": "A branded, interactive data visualisation built from your real data: charts, maps, leaderboards, dashboards"
+    },
+    {
+     "text": "A narrative layer so the visual makes a point, not just shows numbers"
+    },
+    {
+     "text": "Live or refreshed-on-schedule, so it never goes stale"
+    },
+    {
+     "text": "Hosted on a shareable link, embeddable in a deck, site or report"
+    },
+    {
+     "text": "Designed in your palette and type so the data carries the brand"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Impact Storytelling Content",
+   "slug": "impact-storytelling-content",
+   "oneLiner": "Turn the good you do every day into a steady stream of polished, on-brand content, without a comms hire.",
+   "format": "Content-engine build plus a light monthly retainer for drafting and templates",
+   "featured": false,
+   "outcome": "A consistent, professional voice in front of supporters every week, more reasons for them to keep giving, and not a single new salary on the books.",
+   "idealClient": "Mission-led nonprofits with real stories to tell but no spare capacity to turn them into fundraising content.",
+   "bullets": [
+    {
+     "text": "A content engine that turns raw field notes, beneficiary updates and photos into newsletters, social posts and case studies in your voice"
+    },
+    {
+     "text": "Branded templates so everything looks consistent and professional whoever hits send"
+    },
+    {
+     "text": "A monthly supporter newsletter drafted for you, ready to review and go"
+    },
+    {
+     "text": "Repurposing of one story into email, social and web in one pass"
+    },
+    {
+     "text": "An approval flow so your team stays in control of every word"
+    }
+   ]
+  },
+  {
+   "category": "Brand, Content & Media",
+   "name": "Annual & Impact Report Design",
+   "slug": "annual-impact-report-design",
+   "oneLiner": "The flagship annual or impact report that wins trust: written, designed and built from your data, not a month of agony.",
+   "format": "Annual project (content draft, design, web build), repeatable each year at lower cost",
+   "featured": false,
+   "outcome": "A report that lands like a much larger organisation produced it and builds trust with the funders who matter most, without the month of dread or the designer bill.",
+   "idealClient": "Nonprofits and social enterprises whose annual or impact report is their key trust document but who lack the writing, design and budget.",
+   "bullets": [
+    {
+     "text": "A polished report drafted from your own impact and programme data, in your voice"
+    },
+    {
+     "text": "Professional design as a downloadable PDF and a shareable web version"
+    },
+    {
+     "text": "An optional cinematic, branded online edition that makes a small organisation feel genuinely impressive"
+    },
+    {
+     "text": "Data visualisations of your numbers, built for non-experts to grasp at a glance"
+    },
+    {
+     "text": "A reusable structure so next year's edition starts from a head start, not a blank page"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "8-Pillar Digital Assessment",
+   "slug": "8-pillar-digital-assessment",
+   "oneLiner": "Our 8-pillar read on exactly where your operating week drains, with a costed, sequenced plan to win it back.",
+   "format": "Fixed-fee assessment (2 to 3 weeks), delivered as a branded report and roadmap, creditable against the build that follows",
+   "featured": true,
+   "outcome": "You stop guessing: an evidence-based map of where your hours go and a clear, ranked plan to buy them back, grounded in your real workflow not a vendor's wish list.",
+   "idealClient": "A leader who senses the inefficiency but needs it named, quantified and prioritised before committing budget.",
+   "bullets": [
+    {
+     "text": "A structured walkthrough of how work moves through your business, step by step, end to end"
+    },
+    {
+     "text": "An 8-pillar Digital Excellence assessment scoring where hours and money actually drain"
+    },
+    {
+     "text": "A digital-maturity score benchmarked against where a strong operator in your sector should be"
+    },
+    {
+     "text": "A quantified picture of time lost to manual work and what each leak costs"
+    },
+    {
+     "text": "A prioritised, costed build roadmap (the safe wins first, the ambitious builds sequenced) in a branded, board-ready report and leadership readout"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "Operations Command-Centre Build",
+   "slug": "operations-command-centre-build",
+   "oneLiner": "We map where your week drains, then build and run the command centre that takes the busywork off the founders entirely, assessment-led.",
+   "format": "DXP assessment then command-centre build then an embedded run-and-improve retainer",
+   "featured": true,
+   "outcome": "The founders stop being the operating system: the business runs on a foundation Greatstone builds and runs, buying back the hours growth was waiting on. We don't advise; we become your foundation.",
+   "idealClient": "A founder team that has hit a ceiling because every function still routes through them and wants a partner to take operations off their plate, starting from a full assessment.",
+   "bullets": [
+    {
+     "text": "An 8-pillar Digital Excellence assessment to find exactly where the founders' hours leak"
+    },
+    {
+     "text": "A command centre (orders, inventory, suppliers, support, content) as one operating cockpit"
+    },
+    {
+     "text": "MCP integrations stitching the existing stack (Stripe, email, WhatsApp, calendar, support, social) into that cockpit"
+    },
+    {
+     "text": "Scheduled automations and AI copilots that run the recurring ops work the founders do today"
+    },
+    {
+     "text": "An embedded run phase where Greatstone operates and improves the system, not just hands it over"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "Outsourced Web Team (Retainer)",
+   "slug": "outsourced-web-team-retainer",
+   "oneLiner": "We become the team that builds, hosts, runs and keeps improving your entire web presence, month after month, no assessment required to start.",
+   "format": "Embedded build-and-run monthly subscription, ongoing rolling scope, no DXP prerequisite",
+   "featured": false,
+   "outcome": "You get the output of a tech team without the cost, the hiring or the risk: a foundation that grows with you instead of one you outgrow, and is always getting better.",
+   "idealClient": "Growing businesses and non-technical founders who already know what they want built and want a digital and engineering team without hiring one.",
+   "bullets": [
+    {
+     "text": "Your full stack (site, studio, portal, dashboards, commerce, AI, automations) built and hosted by us"
+    },
+    {
+     "text": "A standing monthly cycle of fixes, improvements and new features, delivered sprint by sprint"
+    },
+    {
+     "text": "Proactive critique: we improve the whole estate, not just process your requests"
+    },
+    {
+     "text": "Monitoring, security, backups and uptime owned end to end"
+    },
+    {
+     "text": "A direct channel: we operate as your embedded digital and engineering team, not a ticket queue"
+    },
+    {
+     "text": "Architecture and decisions made to scale, not to be rebuilt later"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "AI Training & Adoption Support",
+   "slug": "ai-training-adoption-support",
+   "oneLiner": "We don't just build the AI. We get your team actually using it, with the training, playbooks and adoption support to make it stick.",
+   "format": "Enablement engagement (onboarding plus training) then a light monthly adoption retainer; bundles with any build",
+   "featured": true,
+   "outcome": "The tools we built get used: adoption sticks, the hours actually come back, and the investment doesn't quietly die because nobody changed how they work.",
+   "idealClient": "Any organisation that has bought tools or AI before and watched them go unused because nobody owned the human change.",
+   "bullets": [
+    {
+     "text": "Hands-on, role-based onboarding so every team uses the tools we built, not just the keen few"
+    },
+    {
+     "text": "Branded prompt 'plays' and how-to guides for your most common tasks, owned and editable by your team"
+    },
+    {
+     "text": "An adoption dashboard tracking who's using what and where the hours are actually being bought back"
+    },
+    {
+     "text": "A standing office-hours and support channel for the first weeks so questions don't kill momentum"
+    },
+    {
+     "text": "A quarterly review that finds the next thing worth automating once the basics are embedded"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "Overnight AI Agent",
+   "slug": "overnight-ai-agent",
+   "oneLiner": "A standing AI agent that works your queue overnight so your team wakes up to it done.",
+   "format": "Embedded build-and-run monthly subscription",
+   "featured": false,
+   "outcome": "The backlog gets worked while you sleep, and your team starts each day on the exceptions instead of the grind.",
+   "idealClient": "Support, ops and sales teams with a constant queue and a backlog that never quite clears.",
+   "bullets": [
+    {
+     "text": "A custom autonomous agent that runs on a schedule against a defined queue: tickets, leads, reconciliations, content"
+    },
+    {
+     "text": "Plan-first execution: it reads the work, does the safe items end-to-end, and parks the high-stakes ones for a human"
+    },
+    {
+     "text": "Action across your connected tools via MCP, with every action permissioned and logged"
+    },
+    {
+     "text": "A morning brief showing exactly what it did, what it parked and why"
+    },
+    {
+     "text": "We run, monitor and tune it as an embedded service: you see results, not maintenance"
+    }
+   ]
+  },
+  {
+   "category": "The Method",
+   "name": "Website Audit & Rebuild",
+   "slug": "website-audit-rebuild",
+   "oneLiner": "A fixed-scope audit and rebuild of the site you already have (faster, clearer, converting) before you commit to a bigger build.",
+   "format": "Quick fixed-scope engagement, 1 to 2 weeks, one-time fee",
+   "featured": false,
+   "outcome": "A measurably faster, clearer, better-converting site, and a clear-eyed decision on what comes next.",
+   "idealClient": "Businesses unsure whether to fix or rebuild their existing site.",
+   "bullets": [
+    {
+     "text": "A full audit of speed, SEO, accessibility, conversion and brand consistency"
+    },
+    {
+     "text": "A prioritised, plain-English findings report: ship-now wins and bigger plays"
+    },
+    {
+     "text": "Hands-on fixes to the safe, high-impact issues within the engagement"
+    },
+    {
+     "text": "Conversion and load-speed improvements with before-and-after measurement"
+    },
+    {
+     "text": "A clear path to The Studio or Foundation Site if a rebuild is warranted"
+    }
+   ]
+  }
+ ]
+}

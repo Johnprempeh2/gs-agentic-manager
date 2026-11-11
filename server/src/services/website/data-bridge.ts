@@ -250,6 +250,11 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     return result;
   }
 
+  /** A file the site streams for one record (admin parity round 2), on the read key. */
+  async function file(site: BridgeSite, resource: string, id: string, kind: string, actor: WebsiteBridgeActor) {
+    return (await client(site)).file(`${resource}/${encodeURIComponent(id)}/${kind}`, actor);
+  }
+
   /** Commerce reads (GRE-2354 2c(a)): the same read key and the same audit on the site. */
   const commerce = {
     async list(site: BridgeSite, resource: WebsiteCommerceResource, filters: WebsiteCommerceListQuery | WebsiteDataListQuery, actor: WebsiteBridgeActor) {
@@ -319,7 +324,7 @@ export function websiteDataBridgeService(db: Db, options: WebsiteDataBridgeOptio
     },
   };
 
-  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, commerce, portalDocumentWrite,
+  return { client, commerceClient, createKey, status, releaseHealth, activityEvents, schemaProbe, list, get, file, commerce, portalDocumentWrite,
     enquiryReader };
 }
 export type WebsiteDataBridgeService = ReturnType<typeof websiteDataBridgeService>;

@@ -184,6 +184,7 @@ export function catalogueMatches(row: CommerceRow, search: string, names: (strin
 
 const ENTRY_KINDS: Record<string, string> = {
   product: "Product", category: "Category", vendor: "Vendor", "public-person": "Team member", form: "Form", redirect: "Redirect",
+  service: "Service", "service-category": "Service category",
 };
 
 /**

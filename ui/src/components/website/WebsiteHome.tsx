@@ -67,6 +67,7 @@ export const HOME_COLLECTIONS: { key: string; label: string }[] = [
   { key: "public-person", label: "Team" },
   { key: "redirect", label: "Redirects" },
   { key: "form", label: "Forms" },
+  { key: "service", label: "Services" },
 ];
 
 const ACTIVITY_VERBS: Record<string, string> = {
