@@ -18,6 +18,8 @@ export const STAGING_WATCH_TITLE = "Put website main on staging";
 export const STAGING_WATCH_ALERT_TITLE = "Staging watch cannot reach";
 /** Sweeps in a row that must fail before the team gets a task: one blip is not worth a task. */
 export const STAGING_WATCH_FAILURES_BEFORE_ALERT = 3;
+/** Each GitHub or Netlify call's own limit: Netlify's staging deploy list takes 2 to 4 s and can spike past 15 s (GRE-5060). */
+export const STAGING_WATCH_CALL_TIMEOUT_MS = 20_000;
 const CHECK_EVERY_MS = 2 * 60_000;
 
 export interface StagingWatchDeps {
@@ -40,6 +42,33 @@ export interface StagingWatchDeps {
 export class StagingWatchError extends Error {
   constructor(readonly service: "GitHub" | "Netlify", message: string) {
     super(message);
+  }
+}
+
+/**
+ * One GitHub or Netlify call, tried once more when it times out or the network drops it (GRE-5060). What still
+ * fails becomes a StagingWatchError naming the service and step, so the alert says which one to look at, never
+ * "GitHub or Netlify". A service's own answer (a StagingWatchError, such as a 401) is not retried.
+ */
+export async function watchCall<T>(
+  service: StagingWatchError["service"],
+  step: string,
+  call: (signal: AbortSignal) => Promise<T>,
+  timeoutMs = STAGING_WATCH_CALL_TIMEOUT_MS,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await call(AbortSignal.timeout(timeoutMs));
+    } catch (err) {
+      if (err instanceof StagingWatchError) throw err;
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      // fetch reports a dropped connection or failed lookup as a TypeError ("fetch failed").
+      if (attempt < 2 && (timedOut || err instanceof TypeError)) continue;
+      const tries = attempt === 1 ? "" : `, tried ${attempt} times`;
+      throw new StagingWatchError(service, timedOut
+        ? `${service}: ${step} timed out after ${timeoutMs / 1000} s${tries}`
+        : `${service}: ${step} failed${tries}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
@@ -99,20 +128,21 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
       const auth = await createGitRemoteAuthProvider(db, site.companyId, { projectId: WEBSITE_PROJECT_ID, operation: "inspect" })(`https://github.com/${WEBSITE_REPO}.git`);
       const token = auth?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY];
       if (!token) throw new StagingWatchError("GitHub", "no GitHub token for the Website project (its GitHub grant, or a GITHUB_TOKEN company secret)");
-      const res = await fetch(`https://api.github.com/repos/${WEBSITE_REPO}/commits/main`, {
-        headers: { ...headers(token), accept: "application/vnd.github+json", "user-agent": "GS Agentic Manager" },
-        signal: AbortSignal.timeout(15_000),
+      return watchCall("GitHub", "website main commit", async (signal) => {
+        const res = await fetch(`https://api.github.com/repos/${WEBSITE_REPO}/commits/main`, {
+          headers: { ...headers(token), accept: "application/vnd.github+json", "user-agent": "GS Agentic Manager" }, signal,
+        });
+        if (!res.ok) throw new StagingWatchError("GitHub", `GitHub answered ${res.status} for ${WEBSITE_REPO} main`);
+        return ((await res.json()) as { sha: string }).sha;
       });
-      if (!res.ok) throw new StagingWatchError("GitHub", `GitHub answered ${res.status} for ${WEBSITE_REPO} main`);
-      return ((await res.json()) as { sha: string }).sha;
     },
     async stagedCommit() {
       const token = await readNetlifyToken();
-      const res = await fetch(`https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=100`, {
-        headers: headers(token), signal: AbortSignal.timeout(15_000),
+      return watchCall("Netlify", "staging deploy list", async (signal) => {
+        const res = await fetch(`https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=100`, { headers: headers(token), signal });
+        if (!res.ok) throw new StagingWatchError("Netlify", `Netlify answered ${res.status} for the staging site's deploys (check the website site's Netlify token)`);
+        return lastGuardedCommit(await res.json(), "staging");
       });
-      if (!res.ok) throw new StagingWatchError("Netlify", `Netlify answered ${res.status} for the staging site's deploys (check the website site's Netlify token)`);
-      return lastGuardedCommit(await res.json(), "staging");
     },
     async openTask() {
       const [row] = await db
@@ -152,22 +182,20 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
       await issueService(db).update(id, { status: "done" });
     },
     async storeRelease() {
-      try {
-        return await contentPointer(STAGING_NETLIFY_SITE_ID, site.blobsStoreName, await readNetlifyToken());
-      } catch (err) {
-        if (err instanceof StagingWatchError) throw err;
-        throw new StagingWatchError("Netlify", `could not read staging's content store: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      const token = await readNetlifyToken();
+      // contentPointer sets its own 15 s signal; this fetch swaps in the watch's, so one limit and one retry apply.
+      return watchCall("Netlify", "staging content store", (signal) =>
+        contentPointer(STAGING_NETLIFY_SITE_ID, site.blobsStoreName, token, (url, init) => fetch(url, { ...init, signal })));
     },
     async builtRelease() {
-      const res = await fetch(`https://${STAGING_DOMAIN}/`, {
-        cache: "no-store", headers: { "user-agent": "GS Agentic Manager" }, signal: AbortSignal.timeout(15_000),
+      return watchCall("Netlify", "staging home page", async (signal) => {
+        const res = await fetch(`https://${STAGING_DOMAIN}/`, { cache: "no-store", headers: { "user-agent": "GS Agentic Manager" }, signal });
+        if (!res.ok) throw new StagingWatchError("Netlify", `staging's home page answered ${res.status}`);
+        // The page's meta mark is baked in at build; a release header may come from the store at request time (as
+        // /_release does), so it is left out: only the mark says what staging was built with.
+        const seen = Number(reportedRelease({ status: res.status, headers: new Headers(), body: await res.text() }) ?? NaN);
+        return Number.isInteger(seen) ? seen : null;
       });
-      if (!res.ok) throw new StagingWatchError("Netlify", `staging's home page answered ${res.status}`);
-      // The page's meta mark is baked in at build; a release header may come from the store at request time (as
-      // /_release does), so it is left out: only the mark says what staging was built with.
-      const seen = Number(reportedRelease({ status: res.status, headers: new Headers(), body: await res.text() }) ?? NaN);
-      return Number.isInteger(seen) ? seen : null;
     },
     async createTask(sha, staged, content) {
       const team = await websiteTeamAgent(db, site.companyId, site.propertyId);
