@@ -374,13 +374,17 @@ function ClientTimeline({ companyId, siteId, clientId }: { companyId: string; si
 
 // ---- a client's licences ----
 
-function IssueLicenceForm({ orders, saving, onSave, onCancel }: {
+type LicenceStart = { offeringName?: string; variantName?: string; orderId?: string; seats?: string };
+
+function IssueLicenceForm({ orders, saving, onSave, onCancel, start = {} }: {
   orders: CommerceRow[];
   saving: boolean;
   onSave: (body: Record<string, unknown>) => void;
   onCancel: () => void;
+  /** Filled in from an order line. */
+  start?: LicenceStart;
 }) {
-  const [values, setValues] = useState({ offeringName: "", variantName: "", secretKind: "licenceKey", secret: "", orderId: "", seats: "", expiresAt: "", notes: "" });
+  const [values, setValues] = useState({ offeringName: "", variantName: "", secretKind: "licenceKey", secret: "", orderId: "", seats: "", expiresAt: "", notes: "", ...start });
   const [problem, setProblem] = useState<string | null>(null);
   const set = (name: keyof typeof values) => (event: { target: { value: string } }) => setValues((current) => ({ ...current, [name]: event.target.value }));
   const submit = (event: FormEvent) => {
@@ -442,6 +446,58 @@ function IssueLicenceForm({ orders, saving, onSave, onCancel }: {
         <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Parity with the website's old orders screen: issue a licence straight from an order line, filled in from the line
+ * (product, edition, seats, the order). A line already holding a licence for this order says so. People only.
+ */
+export function OrderLineLicences({ companyId, siteId, order }: { companyId: string; siteId: string; order: CommerceRow }) {
+  const isPerson = useCommercePerson();
+  const customerId = text(order.customer_id);
+  const orderId = text(order.id) ?? "";
+  const licences = useBridgeList(companyId, siteId, "licences", customerId ?? undefined);
+  const [line, setLine] = useState<number | null>(null);
+  const issue = useCommerceWrite(companyId, siteId, { onSuccess: () => setLine(null) });
+  const items = Array.isArray(order.items) ? (order.items as CommerceRow[]) : [];
+  if (!customerId || items.length === 0 || ["cancelled", "refunded"].includes(text(order.status) ?? "")) return null;
+  const held = (licences.data?.pages.flatMap((page) => page.items) ?? [])
+    .filter((row) => text(row.order_id) === orderId && text(row.status) !== "revoked");
+  const issuedFor = (item: CommerceRow) => held.some((row) => text(row.offering_name) === text(item.offering_name)
+    && (text(row.variant_name) ?? "") === (text(item.variant_name) ?? ""));
+  return (
+    <section className="space-y-2" aria-label="Licences for this order" data-testid="commerce-order-licences">
+      <h2 className="text-sm font-semibold">Licences for this order</h2>
+      {isPerson ? null : <PeopleOnlyNote>A person issues licences, in GSAM.</PeopleOnlyNote>}
+      <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+        {items.map((item, index) => {
+          const name = [text(item.offering_name), text(item.variant_name)].filter(Boolean).join(", ") || "Item";
+          const done = issuedFor(item);
+          return (
+            <li key={text(item.id) ?? index} className="space-y-3 px-4 py-2.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 break-words">{name}</span>
+                {done ? <StatusPill status="issued" /> : licences.data ? <span className="text-xs text-status-warning-foreground">No licence yet</span> : null}
+                {isPerson && line !== index ? (
+                  <Button size="sm" variant="outline" onClick={() => { issue.reset(); setLine(index); }} data-testid={`commerce-order-licence-${index}`}>
+                    <Plus aria-hidden="true" />
+                    {done ? "Issue another" : "Issue licence"}
+                  </Button>
+                ) : null}
+              </div>
+              {line === index ? (
+                <IssueLicenceForm orders={[order]} saving={issue.isPending}
+                  start={{ offeringName: text(item.offering_name) ?? "", variantName: text(item.variant_name) ?? "", orderId, seats: text(item.qty) ?? "" }}
+                  onCancel={() => { setLine(null); issue.reset(); }}
+                  onSave={(body) => issue.mutate({ method: "POST", parts: ["customers", customerId, "licences"], body })} />
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      <CommerceWriteError error={issue.error} />
+    </section>
   );
 }
 

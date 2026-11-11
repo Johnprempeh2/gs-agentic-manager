@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Building2, ShoppingBag, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, ExternalLink, ShoppingBag, X } from "lucide-react";
 import { organisationsApi } from "@/api/organisations";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,7 +13,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { LicenceActivationSteps } from "@/components/commerce/CommerceActivationSteps";
 import { CatalogueList, CatalogueRecord, type CatalogueResource } from "@/components/commerce/CommerceCatalogue";
-import { ClientList, ClientRecord, CustomerTierList, EnquiryList, ReceiptList } from "@/components/commerce/CommerceClients";
+import { ClientList, ClientRecord, CustomerTierList, EnquiryList, OrderLineLicences, ReceiptList } from "@/components/commerce/CommerceClients";
 import { CommerceCurrency } from "@/components/commerce/CommerceCurrency";
 import { CommerceImportJob, CommerceImports } from "@/components/commerce/CommerceImports";
 import { CommercePayments } from "@/components/commerce/CommercePayments";
@@ -25,6 +25,7 @@ import {
   COMMERCE_COPY,
   COMMERCE_RESOURCES,
   formatMinor,
+  invoiceWebsiteUrl,
   isCommerceResource,
   maskedLicenceKey,
   newestFirst,
@@ -304,11 +305,13 @@ function relatedLinks(resource: CommerceResource, record: CommerceRecord) {
   return links;
 }
 
-export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
+export function CommerceRecordView({ companyId, siteId, resource, recordId, domain }: {
   companyId: string;
   siteId: string;
   resource: CommerceResource;
   recordId: string;
+  /** The website's address, for the printable invoice. */
+  domain?: string | null;
 }) {
   const [searchParams] = useSearchParams();
   const customers = useCustomerMap(companyId, siteId);
@@ -340,6 +343,7 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
   });
   const total = recordTotal(resource, record);
   const related = relatedLinks(resource, record);
+  const invoiceUrl = resource === "invoices" || resource === "orders" ? invoiceWebsiteUrl(record, domain) : null;
 
   return (
     <div className="space-y-6" data-testid="commerce-record">
@@ -356,8 +360,17 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
           </h2>
           {recordCode(resource, record) ? <p className="font-mono text-xs text-muted-foreground">{recordCode(resource, record)}</p> : null}
         </div>
-        {total ? <p className="text-xl font-semibold tabular-nums">{total}</p> : null}
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          {total ? <p className="text-xl font-semibold tabular-nums">{total}</p> : null}
+          {invoiceUrl ? (
+            <a href={invoiceUrl} target="_blank" rel="noreferrer" className={cn(RECORD_LINK, "gap-1.5")} data-testid="commerce-invoice-website">
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+              Print or save the invoice on the website
+            </a>
+          ) : null}
+        </div>
       </header>
+      {invoiceUrl ? <p className="text-xs text-muted-foreground">The website's printable VAT invoice opens in a new tab. You sign in there as staff.</p> : null}
 
       {resource === "licences" ? (
         <section className="rounded-xl border border-border bg-card p-4" aria-label="Licence key">
@@ -382,6 +395,7 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId }: {
       {resource === "licences" ? <LicenceActivationSteps companyId={companyId} siteId={siteId} licence={record} /> : null}
       {resource === "quotes" ? <QuoteActions companyId={companyId} siteId={siteId} quote={record} /> : null}
       {resource === "orders" ? <OrderStatusActions companyId={companyId} siteId={siteId} order={record} /> : null}
+      {resource === "orders" && !isDraftInvoice(record) ? <OrderLineLicences companyId={companyId} siteId={siteId} order={record} /> : null}
       {resource === "orders" && isDraftInvoice(record) ? <DraftInvoiceActions companyId={companyId} siteId={siteId} order={record} /> : null}
       {resource === "orders" && !isDraftInvoice(record) && Number(record.total_minor ?? 0) > 0 ? (
         <RefundRequest companyId={companyId} siteId={siteId} order={record} />
@@ -476,7 +490,7 @@ export function CommercePage() {
   let body: ReactNode;
   if (resource) {
     body = recordId
-      ? <CommerceRecordView key={`${resource}:${recordId}`} companyId={companyId} siteId={siteId} resource={resource} recordId={recordId} />
+      ? <CommerceRecordView key={`${resource}:${recordId}`} companyId={companyId} siteId={siteId} resource={resource} recordId={recordId} domain={commerce.site?.domain} />
       : <CommerceList key={resource} companyId={companyId} siteId={siteId} resource={resource} />;
   } else if (isCatalogueResource(section)) {
     body = recordId

@@ -436,7 +436,7 @@ export const COMMERCE_SALES_TOUR: TourDefinition = {
   id: "commerce-sales",
   title: "Commerce sales",
   description: "The website's quotes, orders and invoices, and how one leads to the next.",
-  version: 1,
+  version: 2,
   flag: "enableWebsiteView",
   route: { match: /^\/commerce\/(quotes|orders|invoices|licences|payments)\/?$/, path: "/commerce/quotes" },
   autoStart: false,
@@ -456,6 +456,10 @@ export const COMMERCE_SALES_TOUR: TourDefinition = {
       target: "commerce-list",
       title: "The list",
       body: "Newest first, with the total and the state. Select a row to see its details, its items and the records linked to it.",
+    },
+    {
+      title: "Inside an order",
+      body: "An order lists its lines with a licence state for each. A person issues a licence straight from a line, already filled in. An invoiced order links to the website's printable invoice.",
     },
   ],
 };
