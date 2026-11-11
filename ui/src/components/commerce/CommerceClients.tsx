@@ -26,7 +26,8 @@ import {
 } from "@/lib/commerce-settings";
 import { rowVersionOf } from "@/lib/commerce-write";
 import { queryKeys } from "@/lib/queryKeys";
-import { Link, useNavigate } from "@/lib/router";
+import { lastEngagementByClient, recencyLine, recencyOf, RECENCY, ENGAGEMENT_TEMPLATES, type RecencyKey } from "@/lib/commerce-recency";
+import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { CommerceRowForm, CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
@@ -97,6 +98,33 @@ const tierName = (options: { value: string; label: string }[], id: unknown) => {
 
 // ---- clients ----
 
+/** Every client's latest timeline item, from the whole timeline (up to 2,000 items). */
+function useLastEngagements(companyId: string, siteId: string) {
+  return useQuery({
+    queryKey: queryKeys.website.data(companyId, siteId, "engagements", "latest-by-client"),
+    queryFn: async () => {
+      const rows: CommerceRow[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page += 1) {
+        const result = await websiteDataBridgeApi.list(companyId, siteId, "engagements", { limit: 100, ...(cursor ? { cursor } : {}) });
+        rows.push(...result.items);
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      return lastEngagementByClient(rows);
+    },
+    staleTime: 60_000,
+  });
+}
+
+const RECENCY_TONE: Record<RecencyKey, string> = {
+  active: "text-status-success-foreground",
+  steady: "text-muted-foreground",
+  quiet: "text-status-warning-foreground",
+  cold: "text-status-danger-foreground",
+  none: "text-muted-foreground",
+};
+
 export function ClientList({ companyId, siteId }: { companyId: string; siteId: string }) {
   const navigate = useNavigate();
   const isPerson = useCommercePerson();
@@ -107,8 +135,23 @@ export function ClientList({ companyId, siteId }: { companyId: string; siteId: s
     onSuccess: (item) => { const id = text(item?.id); if (id) navigate(`/commerce/customers/${encodeURIComponent(id)}`); },
   });
   const fields = isPerson ? [...CUSTOMER_FIELDS, CUSTOMER_TIER_FIELD] : CUSTOMER_FIELDS;
-  const rows = [...(clients.data?.pages.flatMap((page) => page.items) ?? [])]
-    .sort((a, b) => (text(a.name) ?? "").localeCompare(text(b.name) ?? ""));
+  const latest = useLastEngagements(companyId, siteId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wanted = RECENCY.find((r) => r.key === searchParams.get("recency"))?.key ?? null;
+  const quietFirst = searchParams.get("sort") === "quiet";
+  const setParam = (name: string, value: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(name, value); else next.delete(name);
+    setSearchParams(next, { replace: true });
+  };
+  const lastOf = (row: CommerceRow) => latest.data?.get(text(row.id) ?? "") ?? null;
+  const all = clients.data?.pages.flatMap((page) => page.items) ?? [];
+  const counts = Object.fromEntries(RECENCY.map((r) => [r.key, 0])) as Record<RecencyKey, number>;
+  if (latest.data) for (const row of all) counts[recencyOf(lastOf(row))] += 1;
+  const quietness = (row: CommerceRow) => { const at = lastOf(row); return at ? Date.parse(at) : -Infinity; }; // oldest item first, none at all before that
+  const rows = all
+    .filter((row) => !wanted || !latest.data || recencyOf(lastOf(row)) === wanted)
+    .sort((a, b) => (quietFirst && latest.data ? quietness(a) - quietness(b) : 0) || (text(a.name) ?? "").localeCompare(text(b.name) ?? ""));
 
   return (
     <section className="space-y-3" aria-label="Clients" data-testid="commerce-clients">
@@ -131,9 +174,27 @@ export function ClientList({ companyId, siteId }: { companyId: string; siteId: s
           <CommerceWriteError error={create.error} />
         </div>
       ) : null}
+      {latest.data && all.length ? (
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter clients by their latest timeline item" data-testid="commerce-client-recency">
+          <Button size="sm" variant={wanted ? "ghost" : "secondary"} aria-pressed={!wanted} onClick={() => setParam("recency", null)}>
+            All {all.length}
+          </Button>
+          {RECENCY.map((r) => (
+            <Button key={r.key} size="sm" variant={wanted === r.key ? "secondary" : "ghost"} aria-pressed={wanted === r.key}
+              title={r.help} onClick={() => setParam("recency", wanted === r.key ? null : r.key)} disabled={counts[r.key] === 0 && wanted !== r.key}>
+              {r.label} {counts[r.key]}
+            </Button>
+          ))}
+          <Button size="sm" variant={quietFirst ? "secondary" : "ghost"} aria-pressed={quietFirst} onClick={() => setParam("sort", quietFirst ? null : "quiet")}>
+            Quietest first
+          </Button>
+        </div>
+      ) : null}
+      {latest.error ? <p className="text-sm text-muted-foreground">The timelines did not load, so the recency filter is hidden.</p> : null}
       {clients.isLoading ? <PageSkeleton variant="list" /> : null}
       {clients.error ? <ErrorState error={clients.error} onRetry={() => void clients.refetch()} retrying={clients.isFetching} /> : null}
-      {clients.data && rows.length === 0 ? <EmptyState icon={Users} message="No client companies on the website yet." /> : null}
+      {clients.data && all.length === 0 ? <EmptyState icon={Users} message="No client companies on the website yet." /> : null}
+      {all.length > 0 && rows.length === 0 ? <p className="text-sm text-muted-foreground">No client is in this group.</p> : null}
       {rows.length ? (
         <ul className={LIST}>
           {rows.map((row) => {
@@ -148,6 +209,9 @@ export function ClientList({ companyId, siteId }: { companyId: string; siteId: s
                     <span className="block truncate text-sm font-medium">{text(row.name) ?? "Client"}</span>
                     <span className="block truncate text-xs text-muted-foreground">{meta || text(row.slug) || " "}</span>
                   </span>
+                  {latest.data ? (
+                    <span className={cn("shrink-0 text-xs", RECENCY_TONE[recencyOf(lastOf(row))])}>{recencyLine(lastOf(row))}</span>
+                  ) : null}
                   <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 </Link>
               </li>
@@ -333,7 +397,8 @@ function ClientTimeline({ companyId, siteId, clientId }: { companyId: string; si
   const isPerson = useCommercePerson();
   const items = useBridgeList(companyId, siteId, "engagements", clientId);
   const [adding, setAdding] = useState(false);
-  const create = useCommerceWrite(companyId, siteId, { onSuccess: () => setAdding(false) });
+  const [startFrom, setStartFrom] = useState<number | null>(null);
+  const create = useCommerceWrite(companyId, siteId, { onSuccess: () => { setAdding(false); setStartFrom(null); } });
   const rows = byDateDesc(items.data?.pages.flatMap((page) => page.items) ?? [], "occurred_on")
     .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true));
   return (
@@ -352,9 +417,20 @@ function ClientTimeline({ companyId, siteId, clientId }: { companyId: string; si
       </div>
       {isPerson ? null : <PeopleOnlyNote>A person shares items, and changes a shared one, in GSAM.</PeopleOnlyNote>}
       {adding ? (
-        <div className="rounded-lg border border-border p-3">
-          <CommerceRowForm idPrefix="engagement-new" fields={ENGAGEMENT_FIELDS} base={null} saving={create.isPending} submitLabel="Add draft"
-            onCancel={() => { setAdding(false); create.reset(); }}
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Start from a template" data-testid="commerce-timeline-templates">
+            <span className="text-xs text-muted-foreground">Start from</span>
+            {ENGAGEMENT_TEMPLATES.map((template, index) => (
+              <Button key={template.label} type="button" size="sm" variant={startFrom === index ? "secondary" : "ghost"} aria-pressed={startFrom === index}
+                onClick={() => setStartFrom(startFrom === index ? null : index)}>
+                {template.label}
+              </Button>
+            ))}
+          </div>
+          <CommerceRowForm key={startFrom ?? "blank"} idPrefix="engagement-new" fields={ENGAGEMENT_FIELDS} base={null}
+            initial={startFrom === null ? null : { ...ENGAGEMENT_TEMPLATES[startFrom]!.row, occurred_on: today() }}
+            saving={create.isPending} submitLabel="Add draft"
+            onCancel={() => { setAdding(false); setStartFrom(null); create.reset(); }}
             onSave={(body) => create.mutate({ method: "POST", parts: ["customers", clientId, "engagements"], body })} />
         </div>
       ) : null}
@@ -370,6 +446,12 @@ function ClientTimeline({ companyId, siteId, clientId }: { companyId: string; si
       <LoadMore query={items} />
     </section>
   );
+}
+
+/** Today as the date field's yyyy-mm-dd, in local time. */
+function today() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 // ---- a client's licences ----

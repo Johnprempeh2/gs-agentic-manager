@@ -507,7 +507,7 @@ export const COMMERCE_CLIENTS_TOUR: TourDefinition = {
   id: "commerce-clients",
   title: "Commerce clients",
   description: "The client companies on the website, their enquiries and leads, and the receipts for documents they accept.",
-  version: 1,
+  version: 2,
   flag: "enableWebsiteView",
   route: { match: /^\/commerce\/(customers|enquiries|portal-acceptances)\/?$/, path: "/commerce/customers" },
   autoStart: false,
@@ -525,7 +525,7 @@ export const COMMERCE_CLIENTS_TOUR: TourDefinition = {
     {
       target: "commerce-clients",
       title: "Client companies",
-      body: "Open a company for its details, its people, its timeline and its licences. New client adds one on the website.",
+      body: "Open a company for its details, its people, its timeline and its licences. The filters above the list show who has gone quiet, by their latest timeline item. A new timeline item can start from a template.",
     },
     {
       target: "commerce-enquiries",
