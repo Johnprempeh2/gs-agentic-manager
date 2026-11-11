@@ -257,8 +257,10 @@ function useElapsed(since: string | undefined, running: boolean) {
  * Impeccable's own bar on the page.
  */
 /** `deployable`: a website page, so the chat offers the deploy button. */
-export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onEditsChanged }: {
+export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onEditsChanged, onApprove }: {
   live: ReturnType<typeof useLiveDesign>;
+  /** Only for a person with Publish rights on a website page: approves the page's latest saved version. */
+  onApprove?: () => Promise<unknown>;
   /** The edits not saved yet changed outside the page (Undo, Redo, Discard, a quick change): reload the frame to show them. */
   onEditsChanged?: () => void;
   onPreview?: (url: string, label: string) => void;
@@ -364,7 +366,7 @@ export function LiveDesignChat({ live, onPreview, deployable, deployChanges, onE
         onDeploy={deployable && view && status !== "ended" ? () => void run((id) => liveDesignApi.deploy(id)) : undefined}
       />
 
-      <StagedEdits live={live} onChanged={onEditsChanged} />
+      <StagedEdits live={live} onChanged={onEditsChanged} onApprove={onApprove} />
 
       <form
         className="space-y-1 border-t border-border p-3 pb-(--sz-pad-safe-bottom)"
@@ -465,23 +467,57 @@ export function useEditHistory(live: ReturnType<typeof useLiveDesign>, onChanged
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
 
+const SAVE_WAIT_SECONDS = 180;
+
+/**
+ * Save and approve: Save to draft, then approve only once that save has landed as a new version. A save GSAM makes
+ * itself is done when the commit answers; one the agent makes runs while the view says "applying", so this waits.
+ * Any failed, refused or unfinished save throws, and nothing is approved.
+ */
+export async function saveThenApprove(
+  sessionId: string,
+  before: string,
+  approve: () => Promise<unknown>,
+  pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<LiveDesignView> {
+  const answer = await liveDesignApi.helper(sessionId, { method: "POST", path: "/manual-edit-commit", body: null, extra: {} });
+  if (answer.status >= 300) {
+    let reason = "";
+    try { reason = String((JSON.parse(answer.body) as { error?: unknown }).error ?? ""); } catch { /* not JSON */ }
+    throw new Error(`The save did not go through${reason ? ` (${reason.replace(/[.\s]+$/, "")})` : ""}, so nothing was approved.`);
+  }
+  let view = await liveDesignApi.get(sessionId);
+  for (let waited = 0; view.status === "applying" && waited < SAVE_WAIT_SECONDS; waited++) {
+    await pause(1000);
+    view = await liveDesignApi.get(sessionId);
+  }
+  if (view.status === "applying") throw new Error("The save is still running, so nothing was approved. Approve the page once it has saved.");
+  if (view.attachmentId === before || view.stagedCount > 0) throw new Error("The edits were not saved, so nothing was approved. Try Save and approve again.");
+  await approve();
+  return view;
+}
+
 /**
  * Direct edits made on the page wait here until saved, so a removal is never a silent no-op.
  * Undo and Redo step through them one at a time; Discard drops them all; Save to draft saves them as the next version.
+ * `onApprove` (people with Publish rights only) adds Save and approve.
  */
-export function StagedEdits({ live, onChanged }: { live: ReturnType<typeof useLiveDesign>; onChanged?: () => void }) {
+export function StagedEdits({ live, onChanged, onApprove }: { live: ReturnType<typeof useLiveDesign>; onChanged?: () => void; onApprove?: () => Promise<unknown> }) {
   const { view, run } = live;
   const history = useEditHistory(live, onChanged);
+  const [approving, setApproving] = useState(false);
   const count = view?.stagedCount ?? 0;
   const redo = view?.redoCount ?? 0;
   if (!view || (!count && !redo) || view.status === "ended") return null;
-  const saving = view.status === "applying";
+  const saving = view.status === "applying" || approving;
   const helper = (path: string) => (id: string) =>
     liveDesignApi.helper(id, { method: "POST", path, body: null, extra: {} }).then(() => liveDesignApi.get(id));
   return (
     <section className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-xs" aria-label="Unsaved edits" role="status">
       <span className="w-full font-medium text-foreground">
-        {saving
+        {approving
+          ? "Saving, then approving…"
+          : saving
           ? "Saving to the draft…"
           : count && view.restoredCount
             ? `Restored ${view.restoredCount} unsaved edit${view.restoredCount === 1 ? "" : "s"} from last time`
@@ -505,9 +541,17 @@ export function StagedEdits({ live, onChanged }: { live: ReturnType<typeof useLi
             onClick={() => void run(helper("/manual-edit-discard")).then((ok) => ok && onChanged?.())}>
             Discard all
           </Button>
-          <Button type="button" size="sm" className="h-7" disabled={saving} onClick={() => void run(helper("/manual-edit-commit"))}>
+          <Button type="button" size="sm" variant={onApprove ? "outline" : "default"} className="h-7" disabled={saving} onClick={() => void run(helper("/manual-edit-commit"))}>
             Save to draft
           </Button>
+          {onApprove ? (
+            <Button type="button" size="sm" className="h-7" disabled={saving} onClick={() => {
+              setApproving(true);
+              void run((id) => saveThenApprove(id, view.attachmentId, onApprove)).finally(() => setApproving(false));
+            }}>
+              Save and approve
+            </Button>
+          ) : null}
         </>
       ) : null}
     </section>

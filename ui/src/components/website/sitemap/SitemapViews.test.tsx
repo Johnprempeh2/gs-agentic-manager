@@ -7,6 +7,7 @@ import type { WebsitePage } from "@greatstone/shared";
 import { pagesLookup, type Tree } from "./model";
 import { SitemapJourneysView, SitemapMenusView } from "./SitemapViews";
 import { SitemapTreeView } from "./SitemapTree";
+import { WebsiteContentLiveContext } from "@/lib/website-status";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,14 +44,15 @@ describe("Sitemap Menus and Journeys status", () => {
   it("shows each menu item's status and says a planned page stays out of the menu", () => {
     render(<SitemapMenusView tree={tree} onChange={() => {}} pagesById={pagesById} readOnly />);
     const items = [...container.querySelectorAll("li")].map((item) => item.textContent);
+    // Published, but not known to be on the live site yet: On staging, never Live.
     expect(items).toEqual([
-      "HomeLive",
+      "HomeOn staging",
       "ToolsTo buildTools is planned, so it stays out of this menu until it is live.",
     ]);
   });
 
   it("shows each journey step's status and names the steps visitors cannot take yet", () => {
-    render(<SitemapJourneysView tree={tree} onChange={() => {}} pagesById={pagesById} readOnly />);
+    render(<WebsiteContentLiveContext.Provider value><SitemapJourneysView tree={tree} onChange={() => {}} pagesById={pagesById} readOnly /></WebsiteContentLiveContext.Provider>);
     const steps = container.querySelector("ol")!.textContent;
     expect(steps).toContain("Home");
     expect(steps).toContain("Live");

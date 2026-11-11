@@ -270,6 +270,11 @@ export const SITEMAP_STATUS_LABELS: Record<SitemapPageStatus, string> = {
   live: "Live",
 };
 
+/** The label for a node's status: a published page reads On staging until Deploy has put its content live. */
+export function sitemapStatusLabel(status: SitemapPageStatus, onLive: boolean): string {
+  return status === "live" && !onLive ? "On staging" : SITEMAP_STATUS_LABELS[status];
+}
+
 /** Site pages by id and by `slug:<path>`, so a draft option's page shows the status of the page it would become. */
 export function pagesLookup(pages: WebsitePage[]): Map<string, WebsitePage> {
   return new Map(pages.flatMap((page) => [[page.id, page], [`slug:${page.slug}`, page]] as const));
@@ -289,24 +294,6 @@ export function nodeStatus(node: Node, pagesById: Map<string, WebsitePage>): Sit
 /** A page that exists. A planned row is only a sitemap entry waiting to be built, so it is a suggestion, not a page. */
 export function isBuiltPage(page: WebsitePage): boolean {
   return !page.archivedAt && page.status !== "planned";
-}
-
-export type BuiltPageState = "live" | "approved" | "review" | "changed" | "draft";
-
-export const BUILT_PAGE_STATES: Record<BuiltPageState, { label: string; tone: string }> = {
-  live: { label: "Live", tone: "bg-status-success-soft text-status-success-foreground" },
-  approved: { label: "Approved, not published", tone: "bg-status-info-soft text-status-info-foreground" },
-  review: { label: "Changed, waiting for review", tone: "bg-status-warning-soft text-status-warning-foreground" },
-  changed: { label: "Live, with changes not sent for review", tone: "bg-status-warning-soft text-status-warning-foreground" },
-  draft: { label: "Draft", tone: "bg-status-neutral-soft text-status-neutral-foreground" },
-};
-
-/** Where a built page stands. GSAM marks a page live only when one of its own releases publishes it. */
-export function builtPageState(page: WebsitePage): BuiltPageState {
-  if (page.status === "published") return "live";
-  if (page.status === "approved") return "approved";
-  if (page.status === "review") return "review";
-  return page.publishedRevisionId ? "changed" : "draft";
 }
 
 /** Built pages in their real structure: parents before children, siblings in site order. A page whose parent is not built sits at the top level. */

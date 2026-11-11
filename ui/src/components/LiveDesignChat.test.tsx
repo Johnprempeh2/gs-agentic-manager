@@ -7,7 +7,7 @@ import { liveDesignApi } from "../api/liveDesign";
 import { issuesApi } from "../api/issues";
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: null }) }));
 
-import { AgentWork, DeployCard, historyKey, LiveDesignChat, StagedEdits, useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, DeployCard, historyKey, LiveDesignChat, saveThenApprove, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -106,6 +106,44 @@ describe("Deploy", () => {
 
 describe("StagedEdits", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("offers Save and approve only to a person who can approve", () => {
+    const run = vi.fn(async () => true);
+    const view = { status: "idle", stagedCount: 1, attachmentId: "rev-1" };
+    const labels = (onApprove?: () => Promise<unknown>) => {
+      const el = document.createElement("div");
+      act(() => createRoot(el).render(<StagedEdits live={{ view, run } as never} onApprove={onApprove} />));
+      return [...el.querySelectorAll("button")].map((b) => b.textContent);
+    };
+    expect(labels(async () => undefined)).toEqual(expect.arrayContaining(["Save to draft", "Save and approve"]));
+    expect(labels()).toContain("Save to draft");
+    expect(labels()).not.toContain("Save and approve");
+  });
+
+  it("approves only after the save has landed as a new version", async () => {
+    const approve = vi.fn(async () => undefined);
+    vi.spyOn(liveDesignApi, "helper").mockResolvedValue({ status: 202, body: "{}" });
+    // The agent's save: applying for a while, then the new version.
+    const get = vi.spyOn(liveDesignApi, "get")
+      .mockResolvedValueOnce({ status: "applying", stagedCount: 1, attachmentId: "rev-1" } as never)
+      .mockResolvedValueOnce({ status: "applying", stagedCount: 1, attachmentId: "rev-1" } as never)
+      .mockResolvedValue({ status: "idle", stagedCount: 0, attachmentId: "rev-2" } as never);
+    const view = await saveThenApprove("s1", "rev-1", async () => { expect(get).toHaveBeenCalledTimes(3); await approve(); }, async () => undefined);
+    expect(view.attachmentId).toBe("rev-2");
+    expect(approve).toHaveBeenCalledOnce();
+  });
+
+  it("does not approve when the save fails, conflicts or saves nothing", async () => {
+    const approve = vi.fn(async () => undefined);
+    const helper = vi.spyOn(liveDesignApi, "helper").mockResolvedValue({ status: 409, body: JSON.stringify({ error: "The page changed since you opened it." }) });
+    await expect(saveThenApprove("s1", "rev-1", approve, async () => undefined)).rejects.toThrow(
+      "The save did not go through (The page changed since you opened it), so nothing was approved.",
+    );
+    helper.mockResolvedValue({ status: 200, body: "{}" });
+    vi.spyOn(liveDesignApi, "get").mockResolvedValue({ status: "idle", stagedCount: 1, attachmentId: "rev-1" } as never);
+    await expect(saveThenApprove("s1", "rev-1", approve, async () => undefined)).rejects.toThrow("The edits were not saved, so nothing was approved.");
+    expect(approve).not.toHaveBeenCalled();
+  });
 
   it("shows unsaved direct edits with Save to draft, which asks the helper to apply them", async () => {
     const helper = vi.spyOn(liveDesignApi, "helper").mockResolvedValue({ status: 202, body: "{}" });
