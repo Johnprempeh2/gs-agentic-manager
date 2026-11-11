@@ -490,9 +490,9 @@ export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
       body: "Select a row to open it, or add one with the New button. Vendors, categories and pricing rules start as drafts, and only published ones show on the website. Customer tiers save straight away. A pricing rule shows what it does to real prices, so check a draft before publishing it.",
     },
     {
-      target: "Display rate",
-      title: "The display rate",
-      body: "The rate is US dollars for one pound. The website shows and charges the dollar price divided by it, rounded to the whole pound. Type a new rate to preview real prices; only a person saves it, after a confirm, and every change is kept in the history.",
+      target: ["Shop currency", "Display rate"],
+      title: "Currency and rate",
+      body: "The shop sells in pounds or US dollars. In pounds it shows and charges the dollar price divided by the rate (US dollars for one pound), rounded to the whole pound; in dollars it sells the stored prices as they are. Only a person switches the currency or saves a rate, after a confirm, and every change is kept in the history.",
     },
     {
       target: "commerce-import-new",

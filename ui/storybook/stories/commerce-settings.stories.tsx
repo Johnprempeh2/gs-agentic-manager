@@ -92,10 +92,14 @@ const DATA: Record<string, Record<string, unknown>[]> = {
   vendors: catalogue.vendors.map(published), categories: catalogue.categories.map(published), offerings,
 };
 
-// The display rate as the bridge sends it: dollars for one pound, set 20 days ago so the ageing note shows.
+// The shop currency and display rate as the bridge sends them: pounds, at dollars for one pound, set 20 days ago so
+// the ageing note shows. The history has a currency switch and its switch back.
 const fx = {
-  id: "fx-1", usd_to_gbp_display_rate: "1.320000", row_version: 7, updated_at: new Date(Date.now() - 20 * 86_400_000).toISOString(),
+  id: "fx-1", usd_to_gbp_display_rate: "1.320000", shop_currency: "GBP", row_version: 7,
+  updated_at: new Date(Date.now() - 20 * 86_400_000).toISOString(),
   history: [
+    { id: "h4", old_rate: "1.320000", new_rate: "1.320000", old_currency: "USD", new_currency: "GBP", changed_at: "2026-10-22T09:40:00Z", note: null },
+    { id: "h3", old_rate: "1.320000", new_rate: "1.320000", old_currency: "GBP", new_currency: "USD", changed_at: "2026-10-22T09:20:00Z", note: null },
     { id: "h2", old_rate: "1.300000", new_rate: "1.320000", changed_at: "2026-10-22T09:15:00Z", note: null },
     { id: "h1", old_rate: null, new_rate: "1.300000", changed_at: "2026-06-17T14:02:00Z", note: null },
   ],

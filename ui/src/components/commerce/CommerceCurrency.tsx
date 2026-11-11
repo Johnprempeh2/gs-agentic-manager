@@ -7,16 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCommercePerson, useCommerceWrite } from "@/hooks/useCommerceWrite";
 import { formatMinor, text } from "@/lib/commerce";
-import { parseRate, poundsPerDollar, showRate, previewRows, priceCounts, rateStaleness, usdToGbpMinor } from "@/lib/commerce-currency";
+import {
+  canSwitchCurrency, parseRate, poundsPerDollar, showRate, previewRows, priceCounts, rateStaleness, SHOP_CURRENCY_NAMES, shopCurrencyOf,
+  shopMoney, usdToGbpMinor, type ShopCurrency,
+} from "@/lib/commerce-currency";
 import { rowVersionOf } from "@/lib/commerce-write";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, formatDateTime, formatNumber } from "@/lib/utils";
 import { useWholeCatalogue } from "./CommerceImports";
 import { CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
-// Currency (GRE-3972 slice 2, parity with the website's old FX editor): the website's display rate, which is US
-// dollars for one pound. The shop shows and charges USD / rate, rounded to the whole pound. A person changes it,
-// after a preview of real prices and a confirm; the last 50 changes are listed.
+// Currency (GRE-3972 slice 2, parity with the website's old FX editor): the shop currency and the website's display
+// rate, which is US dollars for one pound. In pounds (the default) the shop shows and charges USD / rate, rounded to
+// the whole pound; in US dollars it sells the stored prices as they are. A person changes either, after a confirm;
+// the last 50 changes to both are listed.
 
 function when(value: unknown) {
   const at = text(value);
@@ -26,6 +30,7 @@ function when(value: unknown) {
 // Whole pounds, as the website shows them.
 const POUNDS = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
 const gbp = (minor: number | null) => (minor === null ? "Price on application" : POUNDS.format(minor / 100));
+const NAME = (value: unknown) => SHOP_CURRENCY_NAMES[shopCurrencyOf(value)];
 const STALE_TONE = {
   fresh: "border-border bg-muted text-muted-foreground",
   ageing: "border-status-warning/40 bg-status-warning/15 text-status-warning-foreground",
@@ -54,13 +59,17 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
   const currentRate = Number(current);
   const history = Array.isArray(item.history) ? (item.history as CommerceRow[]) : [];
   const stale = rateStaleness(item.updated_at);
+  const shop = shopCurrencyOf(item.shop_currency);
+  const other: ShopCurrency = shop === "GBP" ? "USD" : "GBP";
+  const switchable = canSwitchCurrency(item);
 
   const parsed = editing ? parseRate(rate) : null;
   const nextRate = parsed && "rate" in parsed ? parsed.rate : null;
   const changed = nextRate !== null && Math.abs(nextRate - currentRate) > 1e-9;
   const problem = editing && rate.trim() !== "" && parsed && "problem" in parsed ? parsed.problem
     : editing && nextRate !== null && !changed ? "That is the rate now." : null;
-  const rows = previewRows(catalogue.data ?? [], currentRate, changed ? nextRate : null);
+  const rows = previewRows(catalogue.data ?? [], currentRate, changed && shop === "GBP" ? nextRate : null, 10, shop);
+  const showNext = changed && shop === "GBP";
   const counts = priceCounts(catalogue.data ?? []);
   const otherCurrencies = Object.entries(counts.other);
   const plural = (n: number, word: string) => `${formatNumber(n)} ${word}${n === 1 ? "" : "s"}`;
@@ -77,6 +86,13 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
     if (!changed || nextRate === null) return;
     write.mutate({ method: "PATCH", parts: ["fx"], body: { usdToGbpDisplayRate: rate.trim(), expectedRowVersion: rowVersionOf(item) } });
   };
+  const switchCurrency = () => {
+    write.reset();
+    write.mutate({ method: "PATCH", parts: ["fx"], body: { shopCurrency: other, expectedRowVersion: rowVersionOf(item) } });
+  };
+  const switchDescription = other === "USD"
+    ? `The website will show and charge prices in ${SHOP_CURRENCY_NAMES.USD}: the stored dollar prices as they are, with no rate. ${repriced} on the website at once, in listings, product pages, the basket, quotes and card payments. To undo, switch back.`
+    : `The website will show and charge prices in ${SHOP_CURRENCY_NAMES.GBP}: each dollar price divided by $${current} and rounded to the whole pound. ${repriced} on the website at once, in listings, product pages, the basket, quotes and card payments. To undo, switch back.`;
   const loadCurrent = (row: CommerceRow) => {
     queryClient.setQueryData(key, { item: { ...item, ...row } });
     setRate(showRate(row.usd_to_gbp_display_rate) ?? "");
@@ -86,6 +102,36 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
 
   return (
     <div className="space-y-6" data-testid="commerce-currency">
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4" aria-label="Shop currency" data-testid="commerce-shop-currency">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Shop currency</p>
+            <p className="text-2xl font-semibold" data-testid="commerce-shop-currency-value">{SHOP_CURRENCY_NAMES[shop]}</p>
+            <p className="text-sm text-muted-foreground">
+              {shop === "GBP"
+                ? "The website shows and charges pounds, converted from the stored dollar prices at the display rate below."
+                : "The website shows and charges the stored US dollar prices as they are. The display rate is not used until you switch back to pounds."}
+            </p>
+          </div>
+          {isPerson && switchable ? (
+            <ConfirmButton
+              label={write.isPending ? "Saving" : `Switch to ${SHOP_CURRENCY_NAMES[other]}`}
+              disabled={write.isPending || editing}
+              testId="commerce-shop-currency-switch"
+              title={`Switch the shop to ${SHOP_CURRENCY_NAMES[other]}?`}
+              description={switchDescription}
+              confirmLabel={`Switch to ${SHOP_CURRENCY_NAMES[other]}`}
+              onConfirm={switchCurrency}
+            />
+          ) : null}
+        </div>
+        {switchable ? null : (
+          <p className="text-sm text-muted-foreground" data-testid="commerce-shop-currency-unavailable">
+            This website does not offer a currency switch yet. It needs its next release first; until then it stays in pounds.
+          </p>
+        )}
+      </section>
+
       <section className="space-y-4 rounded-xl border border-border bg-card p-4" aria-label="Display rate">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -97,8 +143,9 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
               <p className="text-sm tabular-nums text-muted-foreground">So $1 = £{poundsPerDollar(currentRate)}.</p>
             ) : null}
             <p className="text-sm text-muted-foreground">
-              Prices are kept in US dollars. The website shows and charges pounds: the dollar price divided by this rate,
-              rounded to the whole pound. Nothing updates the rate on its own.
+              {shop === "GBP"
+                ? "Prices are kept in US dollars. The website shows and charges pounds: the dollar price divided by this rate, rounded to the whole pound. Nothing updates the rate on its own."
+                : "Prices are kept in US dollars, and the shop sells in dollars now, so this rate changes no price. It applies again if you switch back to pounds. Nothing updates the rate on its own."}
             </p>
           </div>
           {isPerson && !editing ? <Button size="sm" variant="outline" onClick={startEditing}>Change rate</Button> : null}
@@ -110,7 +157,7 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
             {stale.level === "fresh" ? null : " Check it still matches the market before it prices a live order."}
           </p>
         ) : null}
-        {isPerson ? null : <PeopleOnlyNote>Only a person changes the rate, in GSAM.</PeopleOnlyNote>}
+        {isPerson ? null : <PeopleOnlyNote>Only a person changes the rate or the shop currency, in GSAM.</PeopleOnlyNote>}
         {editing ? (
           <form className="space-y-3" onSubmit={(event: FormEvent) => event.preventDefault()} noValidate>
             <div className="flex flex-wrap items-end gap-2">
@@ -125,8 +172,10 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
                 variant="default"
                 disabled={write.isPending || !changed}
                 testId="commerce-fx-save"
-                title="Reprice the whole catalogue?"
-                description={`£1 = $${current} becomes £1 = $${rate.trim()}. ${repriced} on the website at once. To undo, set the rate back.`}
+                title={shop === "GBP" ? "Reprice the whole catalogue?" : "Change the rate for pounds?"}
+                description={shop === "GBP"
+                  ? `£1 = $${current} becomes £1 = $${rate.trim()}. ${repriced} on the website at once. To undo, set the rate back.`
+                  : `£1 = $${current} becomes £1 = $${rate.trim()}. The shop sells in US dollars, so no price changes now; the new rate applies if you switch back to pounds.`}
                 confirmLabel="Save rate"
                 onConfirm={save}
               />
@@ -147,8 +196,9 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
       <section className="space-y-2" aria-label="Price preview" data-testid="commerce-fx-preview">
         <h2 className="text-sm font-semibold">What the website shows</h2>
         <p className="text-sm text-muted-foreground">
-          {changed ? `Now, and at $${rate.trim()} to the pound, for` : "Now, for"} the {rows.length} highest priced published products.
-          {catalogue.data ? ` The rate reprices ${plural(counts.usd, "dollar price")} on ${plural(counts.products, "product")}.` : ""}
+          {showNext ? `Now, and at $${rate.trim()} to the pound, for` : "Now, for"} the {rows.length} highest priced published products,
+          {` in ${SHOP_CURRENCY_NAMES[shop]}.`}
+          {catalogue.data && shop === "GBP" ? ` The rate reprices ${plural(counts.usd, "dollar price")} on ${plural(counts.products, "product")}.` : ""}
         </p>
         {otherCurrencies.length ? (
           <p className="text-sm text-muted-foreground" data-testid="commerce-fx-other">
@@ -166,7 +216,7 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
                   <th scope="col" className="px-4 py-2 font-medium">Product</th>
                   <th scope="col" className="hidden px-4 py-2 text-right font-medium sm:table-cell">Stored</th>
                   <th scope="col" className="px-4 py-2 text-right font-medium">Shown now</th>
-                  {changed ? <th scope="col" className="px-4 py-2 text-right font-medium">At the new rate</th> : null}
+                  {showNext ? <th scope="col" className="px-4 py-2 text-right font-medium">At the new rate</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -174,8 +224,8 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
                   <tr key={row.id}>
                     <td className="max-w-36 truncate px-4 py-2 sm:max-w-64" title={row.name}>{row.name}</td>
                     <td className="hidden px-4 py-2 text-right tabular-nums text-muted-foreground sm:table-cell">{formatMinor(row.usdMinor, "USD")}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{gbp(row.now)}</td>
-                    {changed ? <td className="px-4 py-2 text-right font-medium tabular-nums">{gbp(row.next)}</td> : null}
+                    <td className="px-4 py-2 text-right tabular-nums">{shopMoney(row.now, shop)}</td>
+                    {showNext ? <td className="px-4 py-2 text-right font-medium tabular-nums">{gbp(row.next)}</td> : null}
                   </tr>
                 ))}
               </tbody>
@@ -184,16 +234,21 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
         ) : null}
       </section>
 
-      <section className="space-y-2" aria-label="Rate history">
+      <section className="space-y-2" aria-label="Currency and rate history">
         <h2 className="text-sm font-semibold">History</h2>
         {history.length === 0 ? <p className="text-sm text-muted-foreground">No changes recorded yet.</p> : (
           <ul className="divide-y divide-border rounded-xl border border-border bg-card" data-testid="commerce-fx-history">
             {history.map((change, index) => (
               <li key={text(change.id) ?? index} className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
-                <span className="tabular-nums">
+                {text(change.old_currency) && text(change.new_currency) && text(change.old_currency) !== text(change.new_currency) ? (
+                  <span data-testid="commerce-fx-history-currency">
+                    <span className="text-muted-foreground">Shop currency</span> {NAME(change.old_currency)} <span aria-hidden="true">→</span>
+                    <span className="sr-only">to</span> <span className="font-medium">{NAME(change.new_currency)}</span>
+                  </span>
+                ) : <span className="tabular-nums">
                   {showRate(change.old_rate) ? `$${showRate(change.old_rate)}` : "None"} <span aria-hidden="true">→</span><span className="sr-only">to</span>{" "}
                   <span className="font-medium">${showRate(change.new_rate)}</span> <span className="text-muted-foreground">to the pound</span>
-                </span>
+                </span>}
                 <span className="text-xs text-muted-foreground">{when(change.changed_at)}</span>
                 {text(change.note) ? <span className="min-w-0 basis-full break-words text-xs text-muted-foreground sm:basis-auto">{text(change.note)}</span> : null}
               </li>

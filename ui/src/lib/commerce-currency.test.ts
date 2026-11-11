@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRate, poundsPerDollar, previewRows, priceCounts, rateStaleness, ruleHits, showRate, usdToGbpMinor } from "./commerce-currency";
+import { canSwitchCurrency, parseRate, poundsPerDollar, previewRows, priceCounts, rateStaleness, ruleHits, shopCurrencyOf, shopMinor, shopMoney, showRate, usdToGbpMinor } from "./commerce-currency";
 
 describe("commerce currency", () => {
   it("converts exactly as the website does: dollars divided by the rate, whole pounds", () => {
@@ -8,6 +8,30 @@ describe("commerce currency", () => {
     expect(usdToGbpMinor(8_000, 1)).toBe(8_000); // a rate of 1.00 shows stored numbers as pounds
     expect(usdToGbpMinor(null, 1.3)).toBeNull();
     expect(usdToGbpMinor(100, 0)).toBeNull();
+  });
+
+  it("reads the shop currency as the website does: only USD is dollars, anything else is pounds", () => {
+    for (const value of [undefined, null, "", "usd", "EUR", "GBP"]) expect(shopCurrencyOf(value)).toBe("GBP");
+    expect(shopCurrencyOf("USD")).toBe("USD");
+    expect(shopMinor(100_099, 1.32, "USD")).toBe(100_099); // as stored, no rate, no rounding
+    expect(shopMinor(100_000, 0, "USD")).toBe(100_000);
+    expect(shopMinor(100_000, 1.32, "GBP")).toBe(75_800);
+    expect(shopMinor(null, 1.32, "USD")).toBeNull();
+    expect(shopMoney(100_099, "USD")).toBe("US$1,000.99");
+    expect(shopMoney(75_800, "GBP")).toBe("£758");
+    expect(canSwitchCurrency({ shop_currency: "GBP" })).toBe(true);
+    expect(canSwitchCurrency({})).toBe(false);
+  });
+
+  it("previews and prices rules in dollars in a dollar shop", () => {
+    const offerings = [{ id: "o1", name: "A", status: "published", from_price_minor: "132000", from_price_currency: "USD", vendor_id: "v" }];
+    expect(previewRows(offerings, 1.32, null, 10, "USD")[0]).toMatchObject({ now: 132_000, next: null });
+    expect(previewRows(offerings, 1.32, null)[0]).toMatchObject({ now: 100_000 });
+    const percent = { scope_type: "all", adjustment_type: "percentage", adjustment_value_pct: "10" };
+    expect(ruleHits(percent, offerings, 1.32, "USD")[0]).toMatchObject({ base: 132_000, final: 118_800 });
+    const fixedPounds = { scope_type: "all", adjustment_type: "fixed", adjustment_value: "1000", currency: "GBP" };
+    expect(ruleHits(fixedPounds, offerings, 1.32, "USD")).toEqual([]);
+    expect(ruleHits(fixedPounds, offerings, 1.32)[0]).toMatchObject({ base: 100_000, final: 99_000 });
   });
 
   it("reads a rate as dollars for one pound", () => {

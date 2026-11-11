@@ -12,6 +12,28 @@ export const FX_STALE_DAYS = 30;
 
 const RATE = /^\d{1,6}(\.\d{1,6})?$/;
 
+// The shop currency (website migration 074): pounds (the default, today's behaviour) or the stored US dollars as
+// they are, with no rate. The site reads anything but "USD", a missing setting included, as pounds; so does GSAM.
+export type ShopCurrency = "GBP" | "USD";
+export const SHOP_CURRENCY_NAMES: Record<ShopCurrency, string> = { GBP: "Pounds (GBP)", USD: "US dollars (USD)" };
+export const shopCurrencyOf = (value: unknown): ShopCurrency => (text(value) === "USD" ? "USD" : "GBP");
+/** A site that does not report shop_currency yet (before 074 is deployed) cannot switch it. */
+export const canSwitchCurrency = (item: CommerceRow) => typeof item.shop_currency === "string";
+
+/** What the shop shows for a stored dollar price: the dollars as stored, or pounds at the rate (usdToGbpMinor). */
+export function shopMinor(usdMinor: number | null, rate: number, currency: ShopCurrency): number | null {
+  if (currency === "GBP") return usdToGbpMinor(usdMinor, rate);
+  return usdMinor === null || !Number.isFinite(usdMinor) ? null : usdMinor;
+}
+
+const MONEY = {
+  GBP: new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }),
+  USD: new Intl.NumberFormat("en-GB", { style: "currency", currency: "USD" }),
+};
+/** A shop price as the website shows it: whole pounds, or dollars and cents. */
+export const shopMoney = (minor: number | null, currency: ShopCurrency) =>
+  minor === null ? "Price on application" : MONEY[currency].format(minor / 100);
+
 /** The site's conversion: USD minor units to GBP minor units, whole pounds. Null for POA or a bad rate. */
 export function usdToGbpMinor(usdMinor: number | null, rate: number): number | null {
   if (usdMinor === null || !Number.isFinite(usdMinor)) return null;
@@ -58,8 +80,12 @@ const minorOf = (value: unknown) => {
 
 export interface PreviewRow { id: string; name: string; usdMinor: number; now: number | null; next: number | null }
 
-/** The highest priced published USD offerings, as the shop shows them now and at the new rate. */
-export function previewRows(offerings: readonly CommerceRow[], current: number, next: number | null, count = 10): PreviewRow[] {
+/**
+ * The highest priced published USD offerings, as the shop shows them now (in its currency) and at the new rate (in
+ * pounds; null when no new rate).
+ */
+export function previewRows(offerings: readonly CommerceRow[], current: number, next: number | null, count = 10,
+  currency: ShopCurrency = "GBP"): PreviewRow[] {
   return offerings
     .filter((row) => text(row.status) === "published" && text(row.from_price_currency) === "USD" && minorOf(row.from_price_minor) !== null)
     .map((row) => ({ row, usd: minorOf(row.from_price_minor)! }))
@@ -69,7 +95,7 @@ export function previewRows(offerings: readonly CommerceRow[], current: number, 
       id: text(row.id) ?? "",
       name: text(row.name) ?? "Untitled",
       usdMinor: usd,
-      now: usdToGbpMinor(usd, current),
+      now: shopMinor(usd, current, currency),
       next: next === null ? null : usdToGbpMinor(usd, next),
     }));
 }
@@ -98,10 +124,11 @@ export interface RuleHit { id: string; name: string; base: number; final: number
 /**
  * What one pricing rule does to the catalogue, as the shop prices it (the site's src/lib/pricing.mjs effectivePrice
  * and store-pricing.mjs): each published offering's from price in pounds at the display rate, then this rule's cut,
- * never below the rule's floor or zero. A fixed cut applies only in its own currency (the shop prices in GBP).
- * Ignores dates, the audience and other rules, so it reads "who this rule reaches", not today's winner.
+ * never below the rule's floor or zero. In a US dollar shop the from price is the stored dollars. A fixed cut applies
+ * only in the shop's currency. Ignores dates, the audience and other rules, so it reads "who this rule reaches", not
+ * today's winner.
  */
-export function ruleHits(rule: CommerceRow, offerings: readonly CommerceRow[], rate: number): RuleHit[] {
+export function ruleHits(rule: CommerceRow, offerings: readonly CommerceRow[], rate: number, shop: ShopCurrency = "GBP"): RuleHit[] {
   const targets = Array.isArray(rule.targets) ? (rule.targets as CommerceRow[]) : [];
   const ids = (column: string) => new Set(targets.map((t) => text(t[column])).filter((v): v is string => !!v));
   const scope = text(rule.scope_type);
@@ -123,10 +150,10 @@ export function ruleHits(rule: CommerceRow, offerings: readonly CommerceRow[], r
     if (text(o.status) !== "published" || !reaches(o)) continue;
     const stored = minorOf(o.from_price_minor);
     const currency = text(o.from_price_currency);
-    const base = currency === "USD" ? usdToGbpMinor(stored, rate) : currency === "GBP" ? stored : null;
+    const base = currency === "USD" ? shopMinor(stored, rate, shop) : currency === "GBP" && shop === "GBP" ? stored : null;
     if (base === null) continue;
     const cut = text(rule.adjustment_type) === "percentage" ? (pct > 0 ? Math.round((base * pct) / 100) : 0)
-      : text(rule.adjustment_type) === "fixed" && text(rule.currency) === "GBP" ? fixed : 0;
+      : text(rule.adjustment_type) === "fixed" && text(rule.currency) === shop ? fixed : 0;
     if (!(cut > 0)) continue;
     const final = Math.max(base - cut, Math.round(base * floorFraction), 0);
     if (final < base) hits.push({ id: text(o.id) ?? "", name: text(o.name) ?? "Untitled", base, final });
