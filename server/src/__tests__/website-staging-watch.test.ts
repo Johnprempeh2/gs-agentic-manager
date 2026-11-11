@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  STAGING_DEPLOYS_CAP,
+  STAGING_DEPLOYS_PER_PAGE,
   STAGING_WATCH_CALL_TIMEOUT_MS,
   STAGING_WATCH_FAILURES_BEFORE_ALERT,
   StagingWatchError,
+  pagedStagedCommit,
   stagingWatchSweep,
   stagingWatchTaskDescription,
   stagingWatchTick,
@@ -182,6 +185,37 @@ describe("website staging watch", () => {
       for (let i = 0; i < STAGING_WATCH_FAILURES_BEFORE_ALERT; i += 1) await expect(stagingWatchSweep(d, state)).rejects.toThrow();
       expect(d.createAlert).toHaveBeenCalledTimes(1);
       expect(d.createAlert).toHaveBeenCalledWith("Netlify", "Netlify: staging deploy list timed out after 0.01 s, tried 2 times");
+    });
+  });
+
+  describe("staging's deploy list, read in pages (GRE-5062)", () => {
+    const guarded = (sha: string) => ({ state: "ready", title: `gsam-source:staging:${sha}` });
+    const other = { state: "ready", title: "manual deploy" };
+    const full = (deploy: { state: string; title: string }) => Array.from({ length: STAGING_DEPLOYS_PER_PAGE }, () => deploy);
+
+    it("reads only page 1 when it holds the guarded commit", async () => {
+      const readPage = vi.fn(async () => [guarded("b".repeat(40)), ...full(other).slice(1)]);
+      expect(await pagedStagedCommit(readPage)).toBe("b".repeat(40));
+      expect(readPage).toHaveBeenCalledTimes(1);
+      expect(readPage).toHaveBeenCalledWith(1);
+    });
+
+    it("reads page 2 when page 1 holds no guarded deploy", async () => {
+      const readPage = vi.fn(async (page: number) => (page === 1 ? full(other) : [other, guarded("c".repeat(40))]));
+      expect(await pagedStagedCommit(readPage)).toBe("c".repeat(40));
+      expect(readPage.mock.calls.map(([page]) => page)).toEqual([1, 2]);
+    });
+
+    it("stops at the last 100 deploys and returns null", async () => {
+      const readPage = vi.fn(async () => full(other));
+      expect(await pagedStagedCommit(readPage)).toBeNull();
+      expect(readPage).toHaveBeenCalledTimes(STAGING_DEPLOYS_CAP / STAGING_DEPLOYS_PER_PAGE);
+    });
+
+    it("stops when the list ends before the cap", async () => {
+      const readPage = vi.fn(async (page: number) => (page === 1 ? full(other) : [other]));
+      expect(await pagedStagedCommit(readPage)).toBeNull();
+      expect(readPage).toHaveBeenCalledTimes(2);
     });
   });
 });
