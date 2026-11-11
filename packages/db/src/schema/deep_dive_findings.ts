@@ -26,6 +26,8 @@ export const deepDiveFindings = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     streamCaseId: uuid("stream_case_id").notNull().references(() => cases.id),
     gifDocumentId: uuid("gif_document_id").notNull().references(() => caseDocuments.id),
     statement: text("statement").notNull(),

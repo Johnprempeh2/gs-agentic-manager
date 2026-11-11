@@ -27,6 +27,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveInterviewsRoutes } from "../routes/deep-dive-interviews.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -96,6 +97,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -119,6 +121,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key: "operations",
       title: "Deep dive: operations",
       fields: fields as unknown as Record<string, unknown>,
@@ -130,11 +133,11 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
   }
 
   async function seedBoard(companyId: string) {
-    const [company] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Northwind Freight", unitType: "company" }).returning();
-    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Finance", unitType: "team", parentId: company!.id, position: 1 }).returning();
-    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Depot", unitType: "team", parentId: company!.id, position: 2 }).returning();
-    const [ama] = await db.insert(deepDivePeople).values({ companyId, name: "Ama Mensah", role: "Finance lead", unitId: finance!.id }).returning();
-    const [kofi] = await db.insert(deepDivePeople).values({ companyId, name: "Kofi Boateng", role: "Depot manager", unitId: depot!.id }).returning();
+    const [company] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Northwind Freight", unitType: "company" }).returning();
+    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Finance", unitType: "team", parentId: company!.id, position: 1 }).returning();
+    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Depot", unitType: "team", parentId: company!.id, position: 2 }).returning();
+    const [ama] = await db.insert(deepDivePeople).values({ companyId, recordCaseId: recordOf(companyId), name: "Ama Mensah", role: "Finance lead", unitId: finance!.id }).returning();
+    const [kofi] = await db.insert(deepDivePeople).values({ companyId, recordCaseId: recordOf(companyId), name: "Kofi Boateng", role: "Depot manager", unitId: depot!.id }).returning();
     return { finance: finance!, depot: depot!, ama: ama!, kofi: kofi! };
   }
 
@@ -143,7 +146,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     await seedStream(companyId);
     const board = await seedBoard(companyId);
     const created = await request(app(person))
-      .post(`/api/companies/${companyId}/deep-dive/interview-round`)
+      .post(`/api/companies/${companyId}/deep-dive/interview-round?${rq(companyId)}`)
       .send({ websiteOrganisationId: ORG, mode })
       .expect(201);
     const roundId = (created.body as DeepDiveInterviewRoundView).round!.id;
@@ -248,7 +251,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     await expect(db.insert(deepDiveInterviewInvites).values({ companyId: company.id, roundId, websiteOrganisationId: "org_other", websiteEmployeeId: "emp_x" }))
       .rejects.toMatchObject({ cause: { code: "23503" } });
 
-    const progress = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
+    const progress = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(200)).body as DeepDiveInterviewProgress;
     expect(progress.people.map((p) => [p.name, p.email, p.teamName, p.status])).toEqual([
       ["Ama Mensah", "ama@northwind.example", "Finance", "invited"],
       ["Efua Owusu", "efua@northwind.example", "Finance", "invited"],
@@ -264,7 +267,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     expect(await db.select().from(deepDiveInterviewInvites).where(eq(deepDiveInterviewInvites.roundId, roundId))).toHaveLength(3);
 
     // A team without a question set is refused before the website is called.
-    const [hr] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, name: "HR", unitType: "team" }).returning();
+    const [hr] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "HR", unitType: "team" }).returning();
     await request(app(person))
       .post(`/api/deep-dive/interview-rounds/${roundId}/invites`)
       .send({ people: [{ name: "Abena", email: "abena@northwind.example", unitId: hr!.id }] })
@@ -298,7 +301,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     bridge.fake.setStatus(roundId, ids.get("Esi Asante")!, "started");
     bridge.fake.setStatus(roundId, ids.get("Kofi Boateng")!, "declined");
 
-    const progress = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
+    const progress = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(200)).body as DeepDiveInterviewProgress;
     expect(progress.total).toBe(4);
     expect(progress.counts).toEqual({ invited: 1, started: 1, completed: 1, abandoned: 0, declined: 1 });
     expect(progress.teams).toEqual([
@@ -314,7 +317,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
 
     // An agent reads progress but does not email anyone.
     const agent = await seedAgentActor(company.id);
-    await request(app(agent)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200);
+    await request(app(agent)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(200);
     await request(app(agent)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "remind", websiteEmployeeIds: [ids.get("Esi Asante")] }).expect(403);
     await request(app(agent)).post(`/api/deep-dive/interview-rounds/${roundId}/invites`).send({ people: [{ name: "X", email: "x@northwind.example", unitId: board.depot.id }] }).expect(403);
 
@@ -327,7 +330,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
       .post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`)
       .send({ kind: "remind", websiteEmployeeIds: [ids.get("Esi Asante")] })
       .expect(200);
-    const after = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
+    const after = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(200)).body as DeepDiveInterviewProgress;
     expect(after.people.find((p) => p.name === "Yaw Darko")).toMatchObject({ sentCount: 2, remindedCount: 0 });
     expect(after.people.find((p) => p.name === "Esi Asante")).toMatchObject({ sentCount: 1, remindedCount: 1 });
     expect(after.people.find((p) => p.name === "Esi Asante")!.lastRemindedAt).not.toBeNull();
@@ -367,7 +370,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
 
     // Yaw opens the link and makes an account: the next read stores the user id.
     bridge.fake.join(roundId, yaw!.websiteEmployeeId, "usr_yaw01");
-    const read = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(200)).body as DeepDiveInterviewProgress;
+    const read = (await request(app(person)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(200)).body as DeepDiveInterviewProgress;
     expect(read.people[0]).toMatchObject({ websiteEmployeeId: yaw!.websiteEmployeeId, websiteUserId: "usr_yaw01" });
     const [row] = await db.select().from(deepDiveInterviewInvites).where(eq(deepDiveInterviewInvites.roundId, roundId));
     expect(row).toMatchObject({ websiteEmployeeId: yaw!.websiteEmployeeId, websiteUserId: "usr_yaw01" });
@@ -426,7 +429,7 @@ describeEmbeddedPostgres("Parallel Interview invites and progress (GRE-2665)", (
     bridge = createFakeInterviewBridge();
     const other = await seedCompany("DIX");
     const outsider = await seedAgentActor(other.id);
-    await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress`).expect(403);
+    await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/interview-round/progress?${rq(company.id)}`).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/open`).send(openBody).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/invites`).send({ people: [{ name: "X", email: "x@northwind.example" }] }).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${roundId}/invites/send`).send({ kind: "resend", websiteEmployeeIds: ["emp_x"] }).expect(403);

@@ -11,7 +11,7 @@ export const DEEP_DIVE_CASE_TYPES = {
   blueprint: "agent_team_blueprint",
 } as const;
 
-/** Key of the single record case per company. */
+/** Key of the first, company-wide record case (retired by GRE-4430: records now carry no fixed key). */
 export const DEEP_DIVE_RECORD_KEY = "record";
 
 /** Documents on the record case. */
@@ -142,4 +142,24 @@ export function deepDiveDepthError(raw: Record<string, unknown> | null | undefin
 /** The stub body for a missing GIF document: only a heading and the question. */
 export function deepDiveGifStubBody(gif: (typeof DEEP_DIVE_GIF)[number]): string {
   return `# ${gif.label}\n\n${gif.question}\n`;
+}
+
+const STREAM_KEY_SET = new Set<string>(DEEP_DIVE_STREAMS.map((s) => s.key));
+
+/**
+ * Which Investigation Stream a stream case is. Per-client Deep Dives (GRE-4430)
+ * key their stream cases `<recordId>:<stream>`, so the stream comes from
+ * `fields.stream`; the first, company-wide record used the bare stream key.
+ */
+export function deepDiveStreamKeyOf(row: { key: string | null; fields?: Record<string, unknown> | null }): DeepDiveStreamKey | null {
+  const fromFields = row.fields?.stream;
+  if (typeof fromFields === "string" && STREAM_KEY_SET.has(fromFields)) return fromFields as DeepDiveStreamKey;
+  if (row.key && STREAM_KEY_SET.has(row.key)) return row.key as DeepDiveStreamKey;
+  const suffix = row.key?.split(":").pop();
+  return suffix && STREAM_KEY_SET.has(suffix) ? (suffix as DeepDiveStreamKey) : null;
+}
+
+/** The case key of a stream inside one client's Deep Dive. */
+export function deepDiveStreamCaseKey(recordCaseId: string, stream: DeepDiveStreamKey): string {
+  return `${recordCaseId}:${stream}`;
 }

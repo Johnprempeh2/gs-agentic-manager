@@ -24,6 +24,7 @@ import {
   type UpdateDeepDiveSession,
   type UpdateDeepDiveSessionQuestion,
 } from "@greatstone/shared";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { deepDiveFindingsService, type DeepDiveFindingActor } from "./deep-dive-findings.js";
 
@@ -78,13 +79,19 @@ export function deepDiveSessionsService(db: Db) {
   }
 
   /** The stream and GIF cell a question will sit in, checked against the company. */
-  async function resolveCell(companyId: string, input: AddDeepDiveSessionQuestion) {
+  async function resolveCell(scope: DeepDiveScope, input: AddDeepDiveSessionQuestion) {
+    const companyId = scope.companyId;
     const stream = await db
       .select({ id: cases.id })
       .from(cases)
-      .where(and(eq(cases.id, input.streamCaseId), eq(cases.companyId, companyId), eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream)))
+      .where(and(
+        eq(cases.id, input.streamCaseId),
+        eq(cases.companyId, companyId),
+        eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream),
+        eq(cases.parentCaseId, scope.recordCaseId),
+      ))
       .then((rows) => rows[0] ?? null);
-    if (!stream) throw unprocessable("Investigation Stream not found in this company");
+    if (!stream) throw unprocessable("Investigation Stream not found in this Deep Dive");
     const gif = GIF_BY_KEY.get(input.gifKey)!;
     const cell = await db
       .select({ id: caseDocuments.id })
@@ -234,16 +241,17 @@ export function deepDiveSessionsService(db: Db) {
 
   return {
     companyOfSession: async (sessionId: string) => (await loadSession(sessionId)).companyId,
+    scopeOfSession: async (sessionId: string) => scopeOfRow(await loadSession(sessionId), "Session"),
     companyOfQuestion: async (questionId: string) => (await loadQuestion(questionId)).companyId,
     sessionOfQuestion: async (questionId: string) => (await loadQuestion(questionId)).sessionId,
 
     get: getOne,
 
-    list: async (companyId: string): Promise<DeepDiveSessionSummary[]> => {
+    list: async (scope: DeepDiveScope): Promise<DeepDiveSessionSummary[]> => {
       const rows = await db
         .select()
         .from(deepDiveSessions)
-        .where(eq(deepDiveSessions.companyId, companyId))
+        .where(inRecord(deepDiveSessions, scope))
         .orderBy(desc(deepDiveSessions.createdAt), desc(deepDiveSessions.id));
       if (rows.length === 0) return [];
       const questions = await db
@@ -253,12 +261,13 @@ export function deepDiveSessionsService(db: Db) {
       return rows.map((row) => summary(row, questions.filter((question) => question.sessionId === row.id)));
     },
 
-    plan: async (companyId: string, input: PlanDeepDiveSession, actor: DeepDiveSessionActor) => {
+    plan: async (scope: DeepDiveScope, input: PlanDeepDiveSession, actor: DeepDiveSessionActor) => {
+      const companyId = scope.companyId;
       const cells: Awaited<ReturnType<typeof resolveCell>>[] = [];
-      for (const question of input.questions ?? []) cells.push(await resolveCell(companyId, question));
+      for (const question of input.questions ?? []) cells.push(await resolveCell(scope, question));
       const id = await db.transaction(async (tx) => {
         const [row] = await tx.insert(deepDiveSessions).values({
-          companyId,
+          ...scope,
           title: input.title,
           plannedFor: input.plannedFor ? new Date(input.plannedFor) : null,
           createdByAgentId: actor.type === "agent" ? actor.agentId : null,
@@ -340,7 +349,7 @@ export function deepDiveSessionsService(db: Db) {
       if (position >= DEEP_DIVE_SESSION_MAX_QUESTIONS) {
         throw unprocessable(`A session holds at most ${DEEP_DIVE_SESSION_MAX_QUESTIONS} questions`);
       }
-      const cell = await resolveCell(row.companyId, input);
+      const cell = await resolveCell(scopeOfRow(row, "Session"), input);
       await db
         .insert(deepDiveSessionQuestions)
         .values({ companyId: row.companyId, sessionId, position, ...cell })
@@ -414,7 +423,7 @@ export function deepDiveSessionsService(db: Db) {
       const gifKey = cell ? GIF_KEY_BY_DOCUMENT_KEY.get(cell.key) : undefined;
       if (!gifKey) throw unprocessable("The question's GIF cell is gone");
       const finding = await findings.propose(
-        question.companyId,
+        scopeOfRow(await loadSession(question.sessionId), "Session"),
         {
           streamCaseId: question.streamCaseId,
           gifKey,

@@ -61,6 +61,7 @@ import { assertEntitled, requireEntitlement } from "../services/entitlements.js"
 import { documentAnnotationService, logActivity } from "../services/index.js";
 import { deepDiveFilesService, type DeepDiveFileActor } from "../services/deep-dive-files.js";
 import type { StorageService } from "../storage/types.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 type CaseRouteDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -1688,7 +1689,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     assertCompanyAccess(req, companyId);
     await assertCasesEnabled(db);
     await assertDeepDiveCaseTypesEntitled(db, [DEEP_DIVE_CASE_TYPES.record]);
-    res.json(await deepDiveFilesSvc.screen(companyId));
+    res.json(await deepDiveFilesSvc.screen(await resolveDeepDiveScope(db, companyId, req.query.recordId)));
   });
 
   router.post("/cases/:id/deep-dive-files", validate(linkDeepDiveFileSchema), async (req, res) => {

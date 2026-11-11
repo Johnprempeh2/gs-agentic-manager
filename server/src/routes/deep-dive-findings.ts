@@ -15,6 +15,7 @@ import { deepDiveFindingsService, type DeepDiveFindingActor } from "../services/
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Deep Dive findings (GRE-2367): Screen 4 of the GRE-2327 plan. Anyone with
@@ -64,14 +65,16 @@ export function deepDiveFindingsRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     const query = listDeepDiveFindingsQuerySchema.safeParse(req.query);
     if (!query.success) throw badRequest("Invalid findings query", query.error.issues);
-    res.json({ findings: await findings.list(companyId, query.data) });
+    const scope = await resolveDeepDiveScope(db, companyId, req.query.recordId);
+    res.json({ findings: await findings.list(scope, query.data) });
   });
 
   router.post("/companies/:companyId/deep-dive/findings", validate(proposeDeepDiveFindingSchema), async (req, res) => {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const finding = await findings.propose(companyId, req.body as ProposeDeepDiveFinding, findingActor(req));
+    const scope = await resolveDeepDiveScope(db, companyId, req.query.recordId);
+    const finding = await findings.propose(scope, req.body as ProposeDeepDiveFinding, findingActor(req));
     await log(req, companyId, "deep_dive_finding.proposed", finding.id, {
       streamCaseId: finding.streamCaseId,
       gifKey: finding.gifKey,

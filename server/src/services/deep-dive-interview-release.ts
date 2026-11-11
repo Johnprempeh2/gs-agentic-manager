@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { deepDiveInterviewRounds, deepDiveOrgUnits } from "@greatstone/db";
+import { inRecord, scopeOfRow } from "./deep-dive-scope.js";
 import {
   DEEP_DIVE_SYNTHESIS_RULES_VERSION,
   buildGsInterviewReleasedSynthesis,
@@ -67,7 +68,7 @@ export function deepDiveInterviewReleaseService(db: Db, bridge: InterviewBridge,
       throw unprocessable(`The synthesis is not reviewed yet: ${readiness.blockers.map((b) => b.message).join("; ")}`, { blockers: readiness.blockers });
     }
     const units = await db.select({ id: deepDiveOrgUnits.id, name: deepDiveOrgUnits.name }).from(deepDiveOrgUnits)
-      .where(eq(deepDiveOrgUnits.companyId, round.companyId));
+      .where(inRecord(deepDiveOrgUnits, scopeOfRow(round, "Interview round")));
     const body = buildGsInterviewReleasedSynthesis({
       synthesisId: randomUUID(),
       headline: input.headline,

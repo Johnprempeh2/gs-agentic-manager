@@ -112,6 +112,7 @@ import { deepDiveBoardsRoutes } from "./routes/deep-dive-boards.js";
 import { deepDiveOpportunitiesRoutes } from "./routes/deep-dive-opportunities.js";
 import { deepDiveTraceabilityRoutes } from "./routes/deep-dive-traceability.js";
 import { deepDiveOverviewRoutes } from "./routes/deep-dive-overview.js";
+import { deepDiveDraftsRoutes } from "./routes/deep-dive-drafts.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
@@ -916,6 +917,7 @@ export async function createApp(
   api.use(deepDiveOpportunitiesRoutes(db));
   api.use(deepDiveTraceabilityRoutes(db));
   api.use(deepDiveOverviewRoutes(db));
+  api.use(deepDiveDraftsRoutes(db));
   api.use(issueTreeControlRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));

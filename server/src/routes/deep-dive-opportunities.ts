@@ -17,6 +17,7 @@ import {
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Deep Dive opportunities and KPIs (GRE-2370): Screen 7 of the GRE-2327 plan.
@@ -42,7 +43,7 @@ export function deepDiveOpportunitiesRoutes(db: Db) {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    return companyId;
+    return resolveDeepDiveScope(db, companyId, req.query.recordId);
   }
 
   async function itemInScope(req: Request, kind: DeepDiveOpportunityKind, param: string) {
@@ -76,13 +77,15 @@ export function deepDiveOpportunitiesRoutes(db: Db) {
   }
 
   router.get("/companies/:companyId/deep-dive/opportunities", async (req, res) => {
-    const companyId = await companyInScope(req);
-    res.json(await opportunities.board(companyId));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    res.json(await opportunities.board(scope));
   });
 
   router.post("/companies/:companyId/deep-dive/opportunities", validate(createDeepDiveOpportunitySchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await opportunities.createOpportunity(companyId, req.body, opportunityActor(req));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await opportunities.createOpportunity(scope, req.body, opportunityActor(req));
     await log(req, companyId, "deep_dive_opportunity.opportunity_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });
@@ -102,8 +105,9 @@ export function deepDiveOpportunitiesRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/builds", validate(createDeepDiveBuildSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await opportunities.createBuild(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await opportunities.createBuild(scope, req.body);
     await log(req, companyId, "deep_dive_opportunity.build_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });
@@ -123,8 +127,9 @@ export function deepDiveOpportunitiesRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/kpis", validate(createDeepDiveKpiSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await opportunities.createKpi(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await opportunities.createKpi(scope, req.body);
     await log(req, companyId, "deep_dive_opportunity.kpi_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });

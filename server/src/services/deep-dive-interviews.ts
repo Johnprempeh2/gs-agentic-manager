@@ -15,7 +15,6 @@ import {
   DEEP_DIVE_GIF,
   DEEP_DIVE_INTERVIEW_DEFAULT_MINUTES,
   DEEP_DIVE_INTERVIEW_LABELS,
-  DEEP_DIVE_STREAMS,
   deepDiveGifStubBody,
   draftDeepDiveInterviewSet,
   readDeepDiveInterviewContextPack,
@@ -30,11 +29,12 @@ import {
   type DeepDiveInterviewRoundView,
   type DeepDiveInterviewSet,
   type DeepDiveInterviewTarget,
-  type DeepDiveStreamKey,
+  deepDiveStreamKeyOf,
   type DraftDeepDiveInterviewSet,
   type UpdateDeepDiveInterviewRound,
   type UpdateDeepDiveInterviewSet,
 } from "@greatstone/shared";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import type { DeepDiveFindingActor } from "./deep-dive-findings.js";
 
@@ -50,7 +50,6 @@ export type DeepDiveInterviewActor = DeepDiveFindingActor;
 type RoundRow = typeof deepDiveInterviewRounds.$inferSelect;
 type SetRow = typeof deepDiveInterviewSets.$inferSelect;
 
-const STREAM_KEYS = new Set<string>(DEEP_DIVE_STREAMS.map((stream) => stream.key));
 const STUB_BODIES = new Set(DEEP_DIVE_GIF.map((gif) => deepDiveGifStubBody(gif).trim()));
 const UNIT_TYPE_LABEL: Record<string, string> = { company: "Company", division: "Division", department: "Department", team: "Team" };
 
@@ -98,17 +97,22 @@ export function deepDiveInterviewsService(db: Db) {
   }
 
   /** Teams and people on the company's organisation board, as interview targets. */
-  async function targets(companyId: string) {
+  /** The client Deep Dive a round belongs to (GRE-4430). */
+  function roundScope(round: RoundRow): DeepDiveScope {
+    return scopeOfRow(round, "Interview round");
+  }
+
+  async function targets(scope: DeepDiveScope) {
     const [units, people] = await Promise.all([
       db
         .select({ id: deepDiveOrgUnits.id, name: deepDiveOrgUnits.name, unitType: deepDiveOrgUnits.unitType })
         .from(deepDiveOrgUnits)
-        .where(eq(deepDiveOrgUnits.companyId, companyId))
+        .where(inRecord(deepDiveOrgUnits, scope))
         .orderBy(asc(deepDiveOrgUnits.position), asc(deepDiveOrgUnits.name)),
       db
         .select({ id: deepDivePeople.id, name: deepDivePeople.name, role: deepDivePeople.role, side: deepDivePeople.side })
         .from(deepDivePeople)
-        .where(eq(deepDivePeople.companyId, companyId))
+        .where(inRecord(deepDivePeople, scope))
         .orderBy(asc(deepDivePeople.name)),
     ]);
     const unitTargets = new Map<string, DeepDiveInterviewTarget>(
@@ -127,12 +131,13 @@ export function deepDiveInterviewsService(db: Db) {
   }
 
   /** Every GIF cell of the company's streams, with what is already known about it. */
-  async function cells(companyId: string): Promise<DeepDiveInterviewCell[]> {
+  async function cells(scope: DeepDiveScope): Promise<DeepDiveInterviewCell[]> {
+    const companyId = scope.companyId;
     const streams = await db
       .select({ id: cases.id, key: cases.key, fields: cases.fields })
       .from(cases)
-      .where(and(eq(cases.companyId, companyId), eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream)));
-    const known = streams.filter((stream) => stream.key && STREAM_KEYS.has(stream.key));
+      .where(and(eq(cases.companyId, companyId), eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream), eq(cases.parentCaseId, scope.recordCaseId)));
+    const known = streams.filter((stream) => deepDiveStreamKeyOf(stream) !== null);
     if (known.length === 0) return [];
     const streamIds = known.map((stream) => stream.id);
     const [docs, findings] = await Promise.all([
@@ -153,7 +158,7 @@ export function deepDiveInterviewsService(db: Db) {
     ]);
     const out: DeepDiveInterviewCell[] = [];
     for (const stream of known) {
-      const streamKey = stream.key as DeepDiveStreamKey;
+      const streamKey = deepDiveStreamKeyOf(stream)!;
       const fields = readDeepDiveStreamFields(streamKey, stream.fields);
       for (const gif of DEEP_DIVE_GIF) {
         const doc = docs.find((d) => d.caseId === stream.id && d.key === gif.documentKey);
@@ -193,10 +198,11 @@ export function deepDiveInterviewsService(db: Db) {
     };
   }
 
-  async function view(companyId: string): Promise<DeepDiveInterviewRoundView> {
+  async function view(scope: DeepDiveScope): Promise<DeepDiveInterviewRoundView> {
+    const companyId = scope.companyId;
     const [round, { unitTargets, personTargets }] = await Promise.all([
-      db.select().from(deepDiveInterviewRounds).where(eq(deepDiveInterviewRounds.companyId, companyId)).then((rows) => rows[0] ?? null),
-      targets(companyId),
+      db.select().from(deepDiveInterviewRounds).where(inRecord(deepDiveInterviewRounds, scope)).then((rows) => rows[0] ?? null),
+      targets(scope),
     ]);
     const pool = round?.mode === "per_person" ? personTargets : unitTargets;
     if (!round) return { round: null, available: [...unitTargets.values(), ...personTargets.values()] };
@@ -224,16 +230,17 @@ export function deepDiveInterviewsService(db: Db) {
     return { round: out, available: [...pool.values()].filter((target) => !taken.has(target.id)) };
   }
 
-  async function create(companyId: string, input: CreateDeepDiveInterviewRound, actor: DeepDiveInterviewActor) {
+  async function create(scope: DeepDiveScope, input: CreateDeepDiveInterviewRound, actor: DeepDiveInterviewActor) {
+    // ponytail: one round per company (unique index from 0407), so a second client's round waits; relax that index when two run at once.
     await write(db.insert(deepDiveInterviewRounds).values({
-      companyId,
+      ...scope,
       websiteOrganisationId: input.websiteOrganisationId,
       mode: input.mode,
       targetMinutes: input.targetMinutes ?? DEEP_DIVE_INTERVIEW_DEFAULT_MINUTES,
       contextPack: input.contextPack ?? {},
       ...actorColumns(actor, "created"),
     }));
-    return view(companyId);
+    return view(scope);
   }
 
   async function update(roundId: string, input: UpdateDeepDiveInterviewRound) {
@@ -249,11 +256,11 @@ export function deepDiveInterviewsService(db: Db) {
       ...(input.contextPack ? { contextPack: input.contextPack } : {}),
       updatedAt: new Date(),
     }).where(eq(deepDiveInterviewRounds.id, roundId)));
-    return view(round.companyId);
+    return view(roundScope(round));
   }
 
   async function targetFor(round: RoundRow, input: DraftDeepDiveInterviewSet): Promise<DeepDiveInterviewTarget> {
-    const { unitTargets, personTargets } = await targets(round.companyId);
+    const { unitTargets, personTargets } = await targets(roundScope(round));
     if (round.mode === "per_team") {
       if (!input.unitId) throw unprocessable("This round runs per team: choose a team");
       const target = unitTargets.get(input.unitId);
@@ -271,7 +278,7 @@ export function deepDiveInterviewsService(db: Db) {
     const round = await loadRound(roundId);
     if (round.status !== "setup") throw notInSetup(round.status, "add a question set");
     const target = await targetFor(round, input);
-    const draft = draftDeepDiveInterviewSet({ cells: await cells(round.companyId), target, targetMinutes: round.targetMinutes });
+    const draft = draftDeepDiveInterviewSet({ cells: await cells(roundScope(round)), target, targetMinutes: round.targetMinutes });
     if (draft.questions.length === 0) {
       throw unprocessable("Every cell of the Deep Dive is Known, so there is nothing to ask. Add a question of your own after drafting, or mark a cell Indicated or Unknown.");
     }
@@ -285,7 +292,7 @@ export function deepDiveInterviewsService(db: Db) {
       leftOut: draft.leftOut,
       ...actorColumns(actor, "drafted"),
     }).returning());
-    return { set: row!, view: await view(round.companyId) };
+    return { set: row!, view: await view(roundScope(round)) };
   }
 
   async function setInSetup(setId: string, action: string) {
@@ -299,7 +306,7 @@ export function deepDiveInterviewsService(db: Db) {
   async function redraftSet(setId: string, actor: DeepDiveInterviewActor) {
     const { set, round } = await setInSetup(setId, "redraft its questions");
     const target = await targetFor(round, { unitId: set.unitId ?? undefined, personId: set.personId ?? undefined });
-    const draft = draftDeepDiveInterviewSet({ cells: await cells(round.companyId), target, targetMinutes: round.targetMinutes });
+    const draft = draftDeepDiveInterviewSet({ cells: await cells(roundScope(round)), target, targetMinutes: round.targetMinutes });
     if (draft.questions.length === 0) throw unprocessable("Every cell of the Deep Dive is Known, so there is nothing to ask");
     await write(db.update(deepDiveInterviewSets).set({
       questions: draft.questions,
@@ -311,7 +318,7 @@ export function deepDiveInterviewsService(db: Db) {
       ...actorColumns(actor, "drafted"),
       updatedAt: new Date(),
     }).where(eq(deepDiveInterviewSets.id, setId)));
-    return view(round.companyId);
+    return view(roundScope(round));
   }
 
   /** A person's (or an agent's) edit of the list. Any edit needs approving again. */
@@ -324,25 +331,25 @@ export function deepDiveInterviewsService(db: Db) {
       approvedByUserId: null,
       updatedAt: new Date(),
     }).where(eq(deepDiveInterviewSets.id, setId)));
-    return view(round.companyId);
+    return view(roundScope(round));
   }
 
   /** Only a person approves the questions that go out. */
   async function approveSet(setId: string, actor: DeepDiveInterviewActor) {
     if (actor.type !== "user") throw forbidden("Only a person approves interview questions");
     const { set, round } = await setInSetup(setId, "approve its questions");
-    if (set.status === "approved") return view(round.companyId);
+    if (set.status === "approved") return view(roundScope(round));
     if ((set.questions as unknown[]).length === 0) throw unprocessable("A question set needs at least one question");
     const at = new Date();
     await write(db.update(deepDiveInterviewSets).set({ status: "approved", approvedAt: at, approvedByUserId: actor.userId, updatedAt: at })
       .where(eq(deepDiveInterviewSets.id, setId)));
-    return view(round.companyId);
+    return view(roundScope(round));
   }
 
   async function removeSet(setId: string) {
     const { round } = await setInSetup(setId, "remove a question set");
     await write(db.delete(deepDiveInterviewSets).where(eq(deepDiveInterviewSets.id, setId)));
-    return view(round.companyId);
+    return view(roundScope(round));
   }
 
   async function companyOfRound(roundId: string) {
@@ -353,5 +360,5 @@ export function deepDiveInterviewsService(db: Db) {
     return (await loadSet(setId)).companyId;
   }
 
-  return { view, create, update, draftSet, redraftSet, updateSet, approveSet, removeSet, companyOfRound, companyOfSet };
+  return { view, create, update, draftSet, redraftSet, updateSet, approveSet, removeSet, companyOfRound, companyOfSet, roundScope, loadRound };
 }

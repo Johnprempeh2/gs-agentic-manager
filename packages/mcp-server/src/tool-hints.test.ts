@@ -16,6 +16,8 @@ const config = {
 const DESTRUCTIVE = ["paperclipApiRequest", "paperclipUnlinkIssueApproval"];
 const WRITES = [
   "connection_request",
+  "deep_dive_log_interview",
+  "deep_dive_propose_record",
   "paperclipControlIssueWorkspaceServices",
   "paperclipCreateApproval",
   "paperclipCreateIssue",

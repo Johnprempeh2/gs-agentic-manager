@@ -22,6 +22,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { caseRoutes } from "../routes/cases.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -98,6 +99,7 @@ describeEmbeddedPostgres("Deep Dive evidence and files: one file, many items (GR
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -143,6 +145,7 @@ describeEmbeddedPostgres("Deep Dive evidence and files: one file, many items (GR
     key: string;
     caseType?: string;
     visibility?: "internal" | "shared";
+    parentCaseId?: string;
   }) {
     const [row] = await db.insert(cases).values({
       companyId: input.companyId,
@@ -152,6 +155,7 @@ describeEmbeddedPostgres("Deep Dive evidence and files: one file, many items (GR
       key: input.key,
       title: `Deep dive: ${input.key}`,
       clientCaseId: input.clientCaseId,
+      parentCaseId: input.parentCaseId ?? null,
       ...(input.visibility ? { visibility: input.visibility } : {}),
     }).returning();
     return row!;
@@ -231,7 +235,7 @@ describeEmbeddedPostgres("Deep Dive evidence and files: one file, many items (GR
         key: "record",
         caseType: "deep_dive",
       });
-      const data = await seedItem({ companyId: company.id, clientCaseId: client.id, key: "data" });
+      const data = await seedItem({ companyId: company.id, clientCaseId: client.id, key: "data", parentCaseId: record.id });
       const file = await seedFile(company.id, client.id, "Board pack");
       const missing = await seedRequest(company.id, client, "Last year's accounts");
 
@@ -241,7 +245,7 @@ describeEmbeddedPostgres("Deep Dive evidence and files: one file, many items (GR
         .send({ documentRequestId: missing.id })
         .expect(201);
 
-      const screen = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/files`).expect(200);
+      const screen = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/files?recordId=${record.id}`).expect(200);
       expect(screen.body.client).toMatchObject({ id: client.id, title: "Client A" });
       expect(screen.body.evidence).toEqual([
         expect.objectContaining({ id: file.id, kind: "link", addedBy: expect.objectContaining({ type: "user" }) }),

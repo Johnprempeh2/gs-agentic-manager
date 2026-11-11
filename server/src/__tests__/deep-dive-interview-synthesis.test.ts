@@ -31,6 +31,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveInterviewsRoutes } from "../routes/deep-dive-interviews.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -103,6 +104,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -127,6 +129,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key: "operations",
       title: "Deep dive: operations",
       fields: fields as unknown as Record<string, unknown>,
@@ -135,10 +138,10 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
       const [doc] = await db.insert(documents).values({ companyId, title: gif.label, latestBody: `# ${gif.label}\n\n${gif.question}\n` }).returning();
       await db.insert(caseDocuments).values({ companyId, caseId: stream!.id, documentId: doc!.id, key: gif.documentKey });
     }
-    const [co] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Northwind Freight", unitType: "company" }).returning();
-    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Finance", unitType: "team", parentId: co!.id, position: 1 }).returning();
-    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Depot", unitType: "team", parentId: co!.id, position: 2 }).returning();
-    const created = await request(app(person)).post(`/api/companies/${companyId}/deep-dive/interview-round`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
+    const [co] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Northwind Freight", unitType: "company" }).returning();
+    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Finance", unitType: "team", parentId: co!.id, position: 1 }).returning();
+    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Depot", unitType: "team", parentId: co!.id, position: 2 }).returning();
+    const created = await request(app(person)).post(`/api/companies/${companyId}/deep-dive/interview-round?${rq(companyId)}`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
     const roundId = (created.body as DeepDiveInterviewRoundView).round!.id;
     for (const unitId of [finance!.id, depot!.id]) {
       const drafted = await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/sets`).send({ unitId }).expect(201);
@@ -369,7 +372,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
     const rows = await db.select().from(deepDiveInterviewProposals).where(eq(deepDiveInterviewProposals.roundId, round.roundId));
     const theme = rows.find((row) => row.kind === "pain")!;
     const refused = await request(app(person)).post(`/api/deep-dive/interview-proposals/${theme.id}/decision`).send({ decision: "accepted", streamCaseId: other.streamCaseId }).expect(422);
-    expect(refused.body.error).toContain("not found in this company");
+    expect(refused.body.error).toContain("not found in this Deep Dive");
     // emp_i1 is not on the website's list of people for this round.
     await request(app(person)).post(`/api/deep-dive/interview-proposals/${rows.find((row) => row.kind === "person")!.id}/decision`).send({ decision: "accepted" }).expect(409);
     // Rejecting the theme leaves its quote with nothing to be evidence for.
@@ -421,7 +424,7 @@ describeEmbeddedPostgres("Parallel Interview synthesis through a fake bridge (GR
     await request(app(outsider)).post(`/api/deep-dive/interview-rounds/${round.roundId}/synthesis/proposals`).send({ items: [{ themeKey: "x", statement: "y" }] }).expect(403);
 
     const fresh = await seedCompany("DSQ");
-    const created = await request(app(person)).post(`/api/companies/${fresh.id}/deep-dive/interview-round`).send({ websiteOrganisationId: "org_other", mode: "per_team" }).expect(201);
+    const created = await request(app(person)).post(`/api/companies/${fresh.id}/deep-dive/interview-round?${rq(fresh.id)}`).send({ websiteOrganisationId: "org_other", mode: "per_team" }).expect(201);
     const setupRound = (created.body as DeepDiveInterviewRoundView).round!.id;
     const waiting = await request(app(person)).get(`/api/deep-dive/interview-rounds/${setupRound}/synthesis/evidence`).expect(409);
     expect(waiting.body.error).toContain("has not opened");

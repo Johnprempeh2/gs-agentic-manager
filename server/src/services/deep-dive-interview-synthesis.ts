@@ -26,6 +26,7 @@ import {
   type SubmitDeepDiveSynthesis,
 } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 import type { DeepDiveInterviewActor } from "./deep-dive-interviews.js";
 import type { WebsiteBridgeActor } from "./website/data-bridge-client.js";
 import type { InterviewBridge, InterviewBridgeScope } from "./website/interview-bridge.js";
@@ -109,7 +110,7 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
     const units = await db
       .select({ id: deepDiveOrgUnits.id, parentId: deepDiveOrgUnits.parentId, name: deepDiveOrgUnits.name })
       .from(deepDiveOrgUnits)
-      .where(eq(deepDiveOrgUnits.companyId, round.companyId))
+      .where(inRecord(deepDiveOrgUnits, scopeOfRow(round, "Interview round")))
       .orderBy(asc(deepDiveOrgUnits.position), asc(deepDiveOrgUnits.name));
     return { details, evidence: buildDeepDiveSynthesisEvidence(round.id, details, units) };
   }
@@ -254,12 +255,18 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
   }
 
   /** The stream and GIF cell an accepted pain or finding goes in, in the proposal's company. */
-  async function findingCell(companyId: string, input: DecideDeepDiveInterviewProposal) {
+  async function findingCell(scope: DeepDiveScope, input: DecideDeepDiveInterviewProposal) {
+    const companyId = scope.companyId;
     if (!input.streamCaseId) throw unprocessable("Choose the Investigation Stream the finding goes in");
     const stream = await db.select({ id: cases.id }).from(cases)
-      .where(and(eq(cases.id, input.streamCaseId), eq(cases.companyId, companyId), eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream)))
+      .where(and(
+        eq(cases.id, input.streamCaseId),
+        eq(cases.companyId, companyId),
+        eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream),
+        eq(cases.parentCaseId, scope.recordCaseId),
+      ))
       .then((rows) => rows[0] ?? null);
-    if (!stream) throw unprocessable("Investigation Stream not found in this company");
+    if (!stream) throw unprocessable("Investigation Stream not found in this Deep Dive");
     const gif = DEEP_DIVE_GIF.find((entry) => entry.key === (input.gifKey ?? DEEP_DIVE_PROPOSAL_DEFAULT_GIF))!;
     const cell = await db.select({ id: caseDocuments.id }).from(caseDocuments)
       .where(and(eq(caseDocuments.companyId, companyId), eq(caseDocuments.caseId, stream.id), eq(caseDocuments.key, gif.documentKey)))
@@ -294,7 +301,9 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
         .where(eq(deepDiveInterviewProposals.id, row.parentId)).then((rows) => rows[0] ?? null);
       if (parent?.status === "rejected") throw conflict("Its theme was rejected, so the quote has nothing to be evidence for");
     }
-    const cell = accepting && (row.kind === "pain" || row.kind === "finding") ? await findingCell(row.companyId, input) : null;
+    const round = await db.select().from(deepDiveInterviewRounds).where(eq(deepDiveInterviewRounds.id, row.roundId)).then((rows) => rows[0]!);
+    const scope = scopeOfRow(round, "Interview round");
+    const cell = accepting && (row.kind === "pain" || row.kind === "finding") ? await findingCell(scope, input) : null;
     const name = accepting && row.kind === "person" ? await liveName(row, bridgeActor) : null;
 
     const at = new Date();
@@ -309,7 +318,7 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
       const link: Partial<Pick<ProposalRow, "findingId" | "personId" | "processId">> = {};
       if (cell) {
         const [finding] = await tx.insert(deepDiveFindings).values({
-          companyId: row.companyId,
+          ...scope,
           ...cell,
           statement: row.statement,
           proposedByAgentId: row.proposedByAgentId,
@@ -318,7 +327,7 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
         link.findingId = finding!.id;
       } else if (row.kind === "process") {
         const [process] = await tx.insert(deepDiveProcesses).values({
-          companyId: row.companyId,
+          ...scope,
           name: row.label.trim() || row.statement,
           unitId: row.unitId,
         }).returning({ id: deepDiveProcesses.id });
@@ -333,7 +342,7 @@ export function deepDiveInterviewSynthesisService(db: Db, bridge: InterviewBridg
           link.personId = earlier.personId;
         } else {
           const [person] = await tx.insert(deepDivePeople).values({
-            companyId: row.companyId,
+            ...scope,
             name: name!,
             role: row.label.trim(),
             unitId: row.unitId,

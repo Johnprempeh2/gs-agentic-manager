@@ -1,16 +1,15 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { cases } from "@greatstone/db";
 import {
   DEEP_DIVE_CASE_TYPES,
-  DEEP_DIVE_RECORD_KEY,
-  DEEP_DIVE_STREAMS,
   deepDiveOverview,
+  deepDiveStreamKeyOf,
   deepDiveUnplacedPeople,
   readDeepDiveStreamFields,
   type DeepDiveOverview,
-  type DeepDiveStreamKey,
 } from "@greatstone/shared";
+import { loadDeepDiveRecord, type DeepDiveScope } from "./deep-dive-scope.js";
 import { deepDiveBoardsService } from "./deep-dive-boards.js";
 import { deepDiveFindingsService } from "./deep-dive-findings.js";
 import { deepDiveSessionsService } from "./deep-dive-sessions.js";
@@ -22,8 +21,6 @@ import { pipelineCaseDocumentRequestsService } from "./pipeline-case-document-re
 // sessions, document requests, organisation board and traceability chain,
 // then deepDiveOverview in @greatstone/shared works out what is next.
 
-const STREAM_KEYS = new Set<string>(DEEP_DIVE_STREAMS.map((s) => s.key));
-
 export function deepDiveOverviewService(db: Db) {
   const findingsSvc = deepDiveFindingsService(db);
   const sessions = deepDiveSessionsService(db);
@@ -32,32 +29,34 @@ export function deepDiveOverviewService(db: Db) {
   const requests = pipelineCaseDocumentRequestsService(db);
 
   return {
-    async overview(companyId: string, now = new Date()): Promise<DeepDiveOverview> {
-      const [items, findings, sessionList, chain, org] = await Promise.all([
-        db.select({ id: cases.id, caseType: cases.caseType, key: cases.key, fields: cases.fields, clientCaseId: cases.clientCaseId })
+    async overview(scope: DeepDiveScope, now = new Date()): Promise<DeepDiveOverview> {
+      const companyId = scope.companyId;
+      const [record, items, findings, sessionList, chain, org] = await Promise.all([
+        loadDeepDiveRecord(db, companyId, scope.recordCaseId),
+        db.select({ id: cases.id, key: cases.key, fields: cases.fields })
           .from(cases)
           .where(and(
             eq(cases.companyId, companyId),
-            inArray(cases.caseType, [DEEP_DIVE_CASE_TYPES.record, DEEP_DIVE_CASE_TYPES.stream]),
+            eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream),
+            eq(cases.parentCaseId, scope.recordCaseId),
           )),
-        findingsSvc.list(companyId, {}),
-        sessions.list(companyId),
-        trace.chain(companyId),
-        boards.orgBoard(companyId),
+        findingsSvc.list(scope, {}),
+        sessions.list(scope),
+        trace.chain(scope),
+        boards.orgBoard(scope),
       ]);
 
-      const record = items.find((item) => item.caseType === DEEP_DIVE_CASE_TYPES.record && item.key === DEEP_DIVE_RECORD_KEY) ?? null;
       const documentRequests = record?.clientCaseId ? await requests.list(companyId, record.clientCaseId) : [];
 
       return deepDiveOverview(companyId, {
         now,
-        recordExists: !!record,
+        recordExists: true,
         northStarWords: chain.northStar?.words ?? "",
         clientChosen: !!record?.clientCaseId,
-        streams: items
-          .flatMap((item) => item.caseType === DEEP_DIVE_CASE_TYPES.stream && item.key && STREAM_KEYS.has(item.key)
-            ? [{ caseId: item.id, fields: readDeepDiveStreamFields(item.key as DeepDiveStreamKey, item.fields) }]
-            : []),
+        streams: items.flatMap((item) => {
+          const stream = deepDiveStreamKeyOf(item);
+          return stream ? [{ caseId: item.id, fields: readDeepDiveStreamFields(stream, item.fields) }] : [];
+        }),
         findings,
         sessions: sessionList,
         documentRequests: documentRequests.map((r) => ({ id: r.id, title: r.title, held: !!r.received })),

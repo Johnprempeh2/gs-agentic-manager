@@ -24,6 +24,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { caseRoutes } from "../routes/cases.js";
 import { deepDiveFindingsRoutes } from "../routes/deep-dive-findings.js";
@@ -110,6 +111,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -167,6 +169,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key,
       title: `Deep dive: ${key}`,
       clientCaseId,
@@ -186,7 +189,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
   }
 
   function propose(actor: Express.Request["actor"], companyId: string, body: Record<string, unknown>) {
-    return request(app(actor)).post(`/api/companies/${companyId}/deep-dive/findings`).send(body);
+    return request(app(actor)).post(`/api/companies/${companyId}/deep-dive/findings?${rq(companyId)}`).send(body);
   }
 
   function validate(findingId: string) {
@@ -270,7 +273,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
       }).expect(409);
 
       const list = await request(app(person))
-        .get(`/api/companies/${company.id}/deep-dive/findings?streamCaseId=${stream.id}`)
+        .get(`/api/companies/${company.id}/deep-dive/findings?streamCaseId=${stream.id}&${rq(company.id)}`)
         .expect(200);
       expect(list.body.findings.map((f: { status: string }) => f.status)).toEqual(["superseded", "validated"]);
 
@@ -366,7 +369,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
 
       // A raw insert cannot skip the proposal.
       const skipped = await refused(db.insert(deepDiveFindings).values({
-        companyId: company.id,
+        companyId: company.id, recordCaseId: recordOf(company.id),
         streamCaseId: stream.id,
         gifDocumentId: cells["evidence"]!,
         statement: "Born validated.",
@@ -427,7 +430,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
 
       // The database refuses a GIF cell of another stream and evidence of another client.
       const wrongCell = await refused(db.insert(deepDiveFindings).values({
-        companyId: company.id,
+        companyId: company.id, recordCaseId: recordOf(company.id),
         streamCaseId: stream.id,
         gifDocumentId: otherCells["evidence"]!,
         statement: "Wrong cell.",
@@ -443,7 +446,7 @@ describeEmbeddedPostgres("Deep Dive findings (GRE-2367)", () => {
 
       // The other company's people cannot read this company's findings.
       const outsider = { type: "agent", agentId: randomUUID(), companyId: other.id, source: "agent_key" } as Express.Request["actor"];
-      await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/findings`).expect(403);
+      await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/findings?${rq(company.id)}`).expect(403);
       await request(app(outsider)).get(`/api/deep-dive/findings/${ok.body.id}`).expect(403);
     });
 

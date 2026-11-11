@@ -24,6 +24,7 @@ import {
   type OpenDeepDiveInterviewRound,
   type SendDeepDiveInterviewInvites,
 } from "@greatstone/shared";
+import { inRecord, scopeOfRow } from "./deep-dive-scope.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import type { DeepDiveInterviewActor } from "./deep-dive-interviews.js";
 import { WebsiteBridgeError, type WebsiteBridgeActor } from "./website/data-bridge-client.js";
@@ -102,11 +103,11 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
       .orderBy(asc(deepDiveInterviewInvites.createdAt));
   }
 
-  function unitsOf(companyId: string) {
+  function unitsOf(round: RoundRow) {
     return db
       .select({ id: deepDiveOrgUnits.id, name: deepDiveOrgUnits.name, unitType: deepDiveOrgUnits.unitType, parentId: deepDiveOrgUnits.parentId })
       .from(deepDiveOrgUnits)
-      .where(eq(deepDiveOrgUnits.companyId, companyId))
+      .where(inRecord(deepDiveOrgUnits, scopeOfRow(round, "Interview round")))
       .orderBy(asc(deepDiveOrgUnits.position), asc(deepDiveOrgUnits.name));
   }
 
@@ -117,7 +118,7 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
    * id). There is no client name: the website uses the organisation's own.
    */
   async function payloadOf(round: RoundRow, sets: SetRow[], people: Record<string, string>): Promise<GsInterviewRoundPayload> {
-    const units = (await unitsOf(round.companyId)).filter((unit) => unit.unitType !== "company");
+    const units = (await unitsOf(round)).filter((unit) => unit.unitType !== "company");
     const sent = new Set(units.map((unit) => unit.id));
     const unitPack: Record<string, string> = {};
     if (round.mode === "per_team") {
@@ -192,7 +193,7 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     };
     if (!round || round.status === "setup") return base;
 
-    const [onSite, invites, units] = await Promise.all([bridge.people(scopeOf(round), actor), invitesOf(round), unitsOf(companyId)]);
+    const [onSite, invites, units] = await Promise.all([bridge.people(scopeOf(round), actor), invitesOf(round), unitsOf(round)]);
     await linkJoined(round, onSite, invites);
     const inviteByEmployee = new Map(invites.map((invite) => [invite.websiteEmployeeId, invite]));
     const unitName = new Map(units.map((unit) => [unit.id, unit.name]));
@@ -270,7 +271,7 @@ export function deepDiveInterviewInvitesService(db: Db, bridge: InterviewBridge)
     const board = boardIds.length === 0 ? [] : await db
       .select({ id: deepDivePeople.id, name: deepDivePeople.name, role: deepDivePeople.role, unitId: deepDivePeople.unitId })
       .from(deepDivePeople)
-      .where(and(eq(deepDivePeople.companyId, round.companyId), eq(deepDivePeople.side, "client"), inArray(deepDivePeople.id, boardIds)));
+      .where(and(inRecord(deepDivePeople, scopeOfRow(round, "Interview round")), eq(deepDivePeople.side, "client"), inArray(deepDivePeople.id, boardIds)));
     const boardById = new Map(board.map((person) => [person.id, person]));
     const setByUnit = new Map(sets.flatMap((set) => (set.unitId ? [[set.unitId, set] as const] : [])));
     const setByPerson = new Map(sets.flatMap((set) => (set.personId ? [[set.personId, set] as const] : [])));

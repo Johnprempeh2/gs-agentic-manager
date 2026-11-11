@@ -28,6 +28,7 @@ import type {
 } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import type { DeepDiveFindingActor } from "./deep-dive-findings.js";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 
 // Deep Dive opportunities and KPIs (GRE-2370): Screen 7 of the GRE-2327 plan.
 // Every write returns the whole board, so the page shows exactly what was
@@ -80,34 +81,48 @@ function sent<T extends Record<string, unknown>>(input: T): Partial<T> {
 export function deepDiveOpportunitiesService(db: Db) {
   type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-  async function companyOf(kind: DeepDiveOpportunityKind, id: string): Promise<string> {
-    const { table, label } = DEEP_DIVE_OPPORTUNITY_KINDS[kind];
+  async function scopeOf(kind: DeepDiveOpportunityKind, id: string): Promise<DeepDiveScope> {
+    const { label } = DEEP_DIVE_OPPORTUNITY_KINDS[kind];
+    const table = DEEP_DIVE_OPPORTUNITY_KINDS[kind].table as typeof deepDiveOpportunities;
     const row = await db
-      .select({ companyId: table.companyId })
+      .select({ companyId: table.companyId, recordCaseId: table.recordCaseId })
       .from(table)
       .where(eq(table.id, id))
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound(`${label} not found`);
-    return row.companyId;
+    return scopeOfRow(row, label);
   }
 
-  async function board(companyId: string): Promise<DeepDiveOpportunityBoard> {
-    const [opportunities, findingLinks, builds, kpis, processLinks, processes, people] = await Promise.all([
-      db.select().from(deepDiveOpportunities).where(eq(deepDiveOpportunities.companyId, companyId))
+  /** Links may only point inside this Deep Dive. */
+  async function assertInRecord(table: typeof deepDiveFindings | typeof deepDiveProcesses, ids: string[] | undefined, scope: DeepDiveScope) {
+    const wanted = [...new Set(ids ?? [])];
+    if (!wanted.length) return;
+    const found = await db.select({ id: table.id }).from(table).where(and(inRecord(table, scope), inArray(table.id, wanted)));
+    if (found.length !== wanted.length) throw unprocessable("That link points at something that is not in this Deep Dive");
+  }
+
+  async function board(scope: DeepDiveScope): Promise<DeepDiveOpportunityBoard> {
+    const companyId = scope.companyId;
+    const [opportunities, allFindingLinks, builds, kpis, allProcessLinks, processes, people] = await Promise.all([
+      db.select().from(deepDiveOpportunities).where(inRecord(deepDiveOpportunities, scope))
         .orderBy(asc(deepDiveOpportunities.createdAt)),
       db.select().from(deepDiveOpportunityFindings).where(eq(deepDiveOpportunityFindings.companyId, companyId))
         .orderBy(asc(deepDiveOpportunityFindings.createdAt)),
-      db.select().from(deepDiveBuilds).where(eq(deepDiveBuilds.companyId, companyId))
+      db.select().from(deepDiveBuilds).where(inRecord(deepDiveBuilds, scope))
         .orderBy(asc(deepDiveBuilds.createdAt)),
-      db.select().from(deepDiveKpis).where(eq(deepDiveKpis.companyId, companyId))
+      db.select().from(deepDiveKpis).where(inRecord(deepDiveKpis, scope))
         .orderBy(asc(deepDiveKpis.createdAt)),
       db.select().from(deepDiveKpiProcesses).where(eq(deepDiveKpiProcesses.companyId, companyId))
         .orderBy(asc(deepDiveKpiProcesses.createdAt)),
       db.select({ id: deepDiveProcesses.id, name: deepDiveProcesses.name }).from(deepDiveProcesses)
-        .where(eq(deepDiveProcesses.companyId, companyId)).orderBy(asc(deepDiveProcesses.name)),
+        .where(inRecord(deepDiveProcesses, scope)).orderBy(asc(deepDiveProcesses.name)),
       db.select({ id: deepDivePeople.id, name: deepDivePeople.name }).from(deepDivePeople)
-        .where(eq(deepDivePeople.companyId, companyId)).orderBy(asc(deepDivePeople.name)),
+        .where(inRecord(deepDivePeople, scope)).orderBy(asc(deepDivePeople.name)),
     ]);
+    const opportunityIds = new Set(opportunities.map((o) => o.id));
+    const kpiIds = new Set(kpis.map((k) => k.id));
+    const findingLinks = allFindingLinks.filter((l) => opportunityIds.has(l.opportunityId));
+    const processLinks = allProcessLinks.filter((l) => kpiIds.has(l.kpiId));
     const linkedFindingIds = [...new Set(findingLinks.map((l) => l.findingId))];
     const findings = await db
       .select({
@@ -119,7 +134,7 @@ export function deepDiveOpportunitiesService(db: Db) {
       .from(deepDiveFindings)
       .innerJoin(cases, eq(cases.id, deepDiveFindings.streamCaseId))
       .where(and(
-        eq(deepDiveFindings.companyId, companyId),
+        inRecord(deepDiveFindings, scope),
         linkedFindingIds.length
           ? or(eq(deepDiveFindings.status, "validated"), inArray(deepDiveFindings.id, linkedFindingIds))
           : eq(deepDiveFindings.status, "validated"),
@@ -214,85 +229,90 @@ export function deepDiveOpportunitiesService(db: Db) {
   }
 
   return {
-    companyOf,
+    scopeOf,
+    companyOf: async (kind: DeepDiveOpportunityKind, id: string) => (await scopeOf(kind, id)).companyId,
     board,
 
     // Opportunities ---------------------------------------------------------
 
-    createOpportunity: async (companyId: string, input: CreateDeepDiveOpportunity, actor: DeepDiveOpportunityActor) => {
+    createOpportunity: async (scope: DeepDiveScope, input: CreateDeepDiveOpportunity, actor: DeepDiveOpportunityActor) => {
       onlyPersonDecides(input, actor);
       const { findingIds, ...fields } = input;
+      await assertInRecord(deepDiveFindings, findingIds, scope);
       await write(db.transaction(async (tx) => {
         const [row] = await tx.insert(deepDiveOpportunities).values({
-          companyId,
+          ...scope,
           ...fields,
           createdByAgentId: actor.type === "agent" ? actor.agentId : null,
           createdByUserId: actor.type === "user" ? actor.userId : null,
         }).returning({ id: deepDiveOpportunities.id });
-        if (findingIds) await setFindings(tx, companyId, row!.id, findingIds);
+        if (findingIds) await setFindings(tx, scope.companyId, row!.id, findingIds);
       }));
-      return board(companyId);
+      return board(scope);
     },
 
     updateOpportunity: async (opportunityId: string, input: UpdateDeepDiveOpportunity, actor: DeepDiveOpportunityActor) => {
       onlyPersonDecides(input, actor);
-      const companyId = await companyOf("opportunity", opportunityId);
+      const scope = await scopeOf("opportunity", opportunityId);
       const { findingIds, ...fields } = input;
+      await assertInRecord(deepDiveFindings, findingIds, scope);
       await write(db.transaction(async (tx) => {
         await tx.update(deepDiveOpportunities).set({ ...sent(fields), updatedAt: new Date() })
           .where(eq(deepDiveOpportunities.id, opportunityId));
-        if (findingIds) await setFindings(tx, companyId, opportunityId, findingIds);
+        if (findingIds) await setFindings(tx, scope.companyId, opportunityId, findingIds);
       }));
-      return board(companyId);
+      return board(scope);
     },
 
     /** Its finding links go with it; its builds stay and serve no opportunity. */
     deleteOpportunity: async (opportunityId: string) => {
-      const companyId = await companyOf("opportunity", opportunityId);
+      const scope = await scopeOf("opportunity", opportunityId);
       await write(db.delete(deepDiveOpportunities).where(eq(deepDiveOpportunities.id, opportunityId)));
-      return board(companyId);
+      return board(scope);
     },
 
     // Builds ----------------------------------------------------------------
 
-    createBuild: async (companyId: string, input: CreateDeepDiveBuild) => {
-      await write(db.insert(deepDiveBuilds).values({ companyId, ...input }));
-      return board(companyId);
+    createBuild: async (scope: DeepDiveScope, input: CreateDeepDiveBuild) => {
+      await write(db.insert(deepDiveBuilds).values({ ...scope, ...input }));
+      return board(scope);
     },
 
     updateBuild: async (buildId: string, input: UpdateDeepDiveBuild, actor: DeepDiveOpportunityActor) => {
       onlyPersonDecides({ visibility: input.visibility }, actor);
-      const companyId = await companyOf("build", buildId);
+      const scope = await scopeOf("build", buildId);
       await write(db.update(deepDiveBuilds).set({ ...sent(input), updatedAt: new Date() }).where(eq(deepDiveBuilds.id, buildId)));
-      return board(companyId);
+      return board(scope);
     },
 
     deleteBuild: async (buildId: string) => {
-      const companyId = await companyOf("build", buildId);
+      const scope = await scopeOf("build", buildId);
       await write(db.delete(deepDiveBuilds).where(eq(deepDiveBuilds.id, buildId)));
-      return board(companyId);
+      return board(scope);
     },
 
     // KPIs ------------------------------------------------------------------
 
-    createKpi: async (companyId: string, input: CreateDeepDiveKpi) => {
+    createKpi: async (scope: DeepDiveScope, input: CreateDeepDiveKpi) => {
       const { processIds, baseline, target, ...fields } = input;
+      await assertInRecord(deepDiveProcesses, processIds, scope);
       await write(db.transaction(async (tx) => {
         const [row] = await tx.insert(deepDiveKpis).values({
-          companyId,
+          ...scope,
           ...fields,
           baseline: String(baseline),
           target: String(target),
         }).returning({ id: deepDiveKpis.id });
-        if (processIds) await setProcesses(tx, companyId, row!.id, processIds);
+        if (processIds) await setProcesses(tx, scope.companyId, row!.id, processIds);
       }));
-      return board(companyId);
+      return board(scope);
     },
 
     updateKpi: async (kpiId: string, input: UpdateDeepDiveKpi, actor: DeepDiveOpportunityActor) => {
       onlyPersonDecides({ visibility: input.visibility }, actor);
-      const companyId = await companyOf("kpi", kpiId);
+      const scope = await scopeOf("kpi", kpiId);
       const { processIds, baseline, target, ...fields } = input;
+      await assertInRecord(deepDiveProcesses, processIds, scope);
       await write(db.transaction(async (tx) => {
         await tx.update(deepDiveKpis).set({
           ...sent(fields),
@@ -300,15 +320,15 @@ export function deepDiveOpportunitiesService(db: Db) {
           ...(target !== undefined ? { target: String(target) } : {}),
           updatedAt: new Date(),
         }).where(eq(deepDiveKpis.id, kpiId));
-        if (processIds) await setProcesses(tx, companyId, kpiId, processIds);
+        if (processIds) await setProcesses(tx, scope.companyId, kpiId, processIds);
       }));
-      return board(companyId);
+      return board(scope);
     },
 
     deleteKpi: async (kpiId: string) => {
-      const companyId = await companyOf("kpi", kpiId);
+      const scope = await scopeOf("kpi", kpiId);
       await write(db.delete(deepDiveKpis).where(eq(deepDiveKpis.id, kpiId)));
-      return board(companyId);
+      return board(scope);
     },
   };
 }

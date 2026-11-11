@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { cases } from "./cases.js";
 import { companies } from "./companies.js";
 import { deepDiveBuilds, deepDiveKpis } from "./deep_dive_opportunities.js";
 
@@ -17,6 +18,8 @@ export const deepDiveCommercials = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     buildId: uuid("build_id").references(() => deepDiveBuilds.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     terms: text("terms").notNull().default(""),
@@ -38,6 +41,8 @@ export const deepDiveRoadmapItems = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     commercialId: uuid("commercial_id").references(() => deepDiveCommercials.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     phase: text("phase").notNull().default(""),

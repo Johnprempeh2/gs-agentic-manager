@@ -32,6 +32,7 @@ import { interviewBridgeFromEnv, type InterviewBridge } from "../services/websit
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Parallel Interview rounds (GRE-2611): the Deep Dive's first step. Anyone with
@@ -117,7 +118,7 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
 
   router.get("/companies/:companyId/deep-dive/interview-round", async (req, res) => {
     const companyId = await companyInScope(req);
-    res.json(await interviews.view(companyId));
+    res.json(await interviews.view(await resolveDeepDiveScope(db, companyId, req.query.recordId)));
   });
 
   router.post(
@@ -126,7 +127,7 @@ export function deepDiveInterviewsRoutes(db: Db, options: { interviewBridge?: In
     async (req, res) => {
       const companyId = await companyInScope(req);
       const input = req.body as CreateDeepDiveInterviewRound;
-      const view = await interviews.create(companyId, input, interviewActor(req));
+      const view = await interviews.create(await resolveDeepDiveScope(db, companyId, req.query.recordId), input, interviewActor(req));
       await log(req, companyId, "deep_dive_interview.round_created", view.round!.id, { mode: input.mode });
       res.status(201).json(view);
     },

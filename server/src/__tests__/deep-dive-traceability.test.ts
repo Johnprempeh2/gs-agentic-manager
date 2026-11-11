@@ -33,6 +33,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveBoardsRoutes } from "../routes/deep-dive-boards.js";
 import { deepDiveOpportunitiesRoutes } from "../routes/deep-dive-opportunities.js";
@@ -131,6 +132,7 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -149,16 +151,8 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
 
   /** The Deep Dive record with its North Star document. */
   async function seedNorthStar(companyId: string, body: string) {
-    const [record] = await db.insert(cases).values({
-      companyId,
-      caseNumber: Math.floor(Math.random() * 1_000_000),
-      identifier: `DD-${randomUUID()}`,
-      caseType: "deep_dive",
-      key: "record",
-      title: "Deep dive record",
-    }).returning();
     const [doc] = await db.insert(documents).values({ companyId, title: "North Star", latestBody: body }).returning();
-    await db.insert(caseDocuments).values({ companyId, caseId: record!.id, documentId: doc!.id, key: "north-star" });
+    await db.insert(caseDocuments).values({ companyId, caseId: recordOf(companyId), documentId: doc!.id, key: "north-star" });
   }
 
   /** One client file (a source) and one validated finding that rests on it, unless told otherwise. */
@@ -172,6 +166,7 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key: `stream-${randomUUID().slice(0, 6)}`,
       title: "Deep dive: Operations",
     }).returning();
@@ -180,7 +175,7 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
       await db.insert(caseDocuments).values({ companyId, caseId: stream!.id, documentId: doc!.id, key: gif.documentKey });
     }
     const findings = deepDiveFindingsService(db);
-    const finding = await findings.propose(companyId, {
+    const finding = await findings.propose({ companyId: companyId, recordCaseId: recordOf(companyId) }, {
       streamCaseId: stream!.id,
       gifKey: DEEP_DIVE_GIF[0]!.key,
       statement,
@@ -194,17 +189,17 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
   async function seedFullChain(companyId: string) {
     await seedNorthStar(companyId, "# North Star\n\nSame-day quotes for every customer. CEO, 3 Oct 2026.\n");
     const { findingId, sourceId } = await seedSourcedFinding(companyId, "Quotes take 8 days");
-    const opportunity = (await api().post(`/api/companies/${companyId}/deep-dive/opportunities`)
+    const opportunity = (await api().post(`/api/companies/${companyId}/deep-dive/opportunities?${rq(companyId)}`)
       .send({ name: "Faster quotes", desiredOutcome: "Same-day quotes", findingIds: [findingId] }).expect(201)).body.opportunities[0];
-    const design = (await api().post(`/api/companies/${companyId}/deep-dive/builds`)
+    const design = (await api().post(`/api/companies/${companyId}/deep-dive/builds?${rq(companyId)}`)
       .send({ name: "Quote builder", opportunityId: opportunity.id, state: "agreed" }).expect(201)).body.builds[0];
-    const owner = (await api().post(`/api/companies/${companyId}/deep-dive/people`).send({ name: "Ama" }).expect(201)).body.people[0].id;
-    const kpi = (await api().post(`/api/companies/${companyId}/deep-dive/kpis`).send({
+    const owner = (await api().post(`/api/companies/${companyId}/deep-dive/people?${rq(companyId)}`).send({ name: "Ama" }).expect(201)).body.people[0].id;
+    const kpi = (await api().post(`/api/companies/${companyId}/deep-dive/kpis?${rq(companyId)}`).send({
       name: "Days to quote", ownerPersonId: owner, baseline: 8, definition: "Mean days", baselinePeriod: "Q3 2026", target: 1,
     }).expect(201)).body.kpis[0];
-    const commercial = (await api().post(`/api/companies/${companyId}/deep-dive/commercials`)
+    const commercial = (await api().post(`/api/companies/${companyId}/deep-dive/commercials?${rq(companyId)}`)
       .send({ name: "Fixed fee build", buildId: design.id, terms: "Fixed fee, two payments" }).expect(201)).body.commercials[0];
-    const chain = (await api().post(`/api/companies/${companyId}/deep-dive/roadmap`)
+    const chain = (await api().post(`/api/companies/${companyId}/deep-dive/roadmap?${rq(companyId)}`)
       .send({ name: "Phase 1", phase: "Q1 2027", commercialId: commercial.id, kpiIds: [kpi.id] }).expect(201)).body;
     return { chain, findingId, sourceId, opportunity, design, commercial, roadmap: chain.roadmap[0], kpi };
   }
@@ -214,7 +209,7 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
       const company = await seedCompany("DTF");
       const seeded = await seedFullChain(company.id);
 
-      const chain = (await api().get(`/api/companies/${company.id}/deep-dive/traceability`).expect(200)).body;
+      const chain = (await api().get(`/api/companies/${company.id}/deep-dive/traceability?${rq(company.id)}`).expect(200)).body;
       expect(chain.broken).toEqual([]);
       expect(chain.northStar.words).toBe("Same-day quotes for every customer. CEO, 3 Oct 2026.");
       expect(chain.sources).toEqual([{ id: seeded.sourceId, title: "Quote log 2026" }]);
@@ -239,14 +234,14 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
     it("lists a missing North Star, a finding with no source and a KPI no roadmap item moves", async () => {
       const company = await seedCompany("DTM");
       const { findingId } = await seedSourcedFinding(company.id, "Prices retyped twice", false);
-      await api().post(`/api/companies/${company.id}/deep-dive/opportunities`)
+      await api().post(`/api/companies/${company.id}/deep-dive/opportunities?${rq(company.id)}`)
         .send({ name: "One price list", desiredOutcome: "Typed once", findingIds: [findingId] }).expect(201);
-      const owner = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Kofi" }).expect(201)).body.people[0].id;
-      await api().post(`/api/companies/${company.id}/deep-dive/kpis`).send({
+      const owner = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Kofi" }).expect(201)).body.people[0].id;
+      await api().post(`/api/companies/${company.id}/deep-dive/kpis?${rq(company.id)}`).send({
         name: "Errors per quote", ownerPersonId: owner, baseline: 3, definition: "Count", baselinePeriod: "Q3", target: 0, direction: "down",
       }).expect(201);
 
-      const chain = (await api().get(`/api/companies/${company.id}/deep-dive/traceability`).expect(200)).body;
+      const chain = (await api().get(`/api/companies/${company.id}/deep-dive/traceability?${rq(company.id)}`).expect(200)).body;
       expect(where(chain)).toEqual([
         "north_star->source",
         "finding->source",
@@ -271,15 +266,15 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
       const b = await seedCompany("DTC");
       const foreign = await seedFullChain(b.id);
 
-      await api().post(`/api/companies/${a.id}/deep-dive/commercials`).send({ name: "C", buildId: foreign.design.id }).expect(422);
-      await api().post(`/api/companies/${a.id}/deep-dive/roadmap`).send({ name: "R", commercialId: foreign.commercial.id }).expect(422);
-      await api().post(`/api/companies/${a.id}/deep-dive/roadmap`).send({ name: "R", kpiIds: [foreign.kpi.id] }).expect(422);
+      await api().post(`/api/companies/${a.id}/deep-dive/commercials?${rq(a.id)}`).send({ name: "C", buildId: foreign.design.id }).expect(422);
+      await api().post(`/api/companies/${a.id}/deep-dive/roadmap?${rq(a.id)}`).send({ name: "R", commercialId: foreign.commercial.id }).expect(422);
+      await api().post(`/api/companies/${a.id}/deep-dive/roadmap?${rq(a.id)}`).send({ name: "R", kpiIds: [foreign.kpi.id] }).expect(422);
       expect(await db.select().from(deepDiveRoadmapItems)).toHaveLength(1);
-      const err = await refused(db.insert(deepDiveCommercials).values({ companyId: a.id, name: "x", buildId: foreign.design.id }));
+      const err = await refused(db.insert(deepDiveCommercials).values({ companyId: a.id, recordCaseId: recordOf(a.id), name: "x", buildId: foreign.design.id }));
       expect(err.code).toBe("23514");
 
       const agent = await seedAgentActor(a.id);
-      await api(agent).get(`/api/companies/${b.id}/deep-dive/traceability`).expect(403);
+      await api(agent).get(`/api/companies/${b.id}/deep-dive/traceability?${rq(b.id)}`).expect(403);
       await api(agent).patch(`/api/deep-dive/commercials/${foreign.commercial.id}`).send({ name: "taken" }).expect(403);
       await api(agent).delete(`/api/deep-dive/roadmap/${foreign.roadmap.id}`).expect(403);
     });
@@ -287,15 +282,15 @@ describeEmbeddedPostgres("Deep Dive traceability (GRE-2371)", () => {
     it("makes every new item Internal; only a person shares one", async () => {
       const company = await seedCompany("DTS");
       const agent = await seedAgentActor(company.id);
-      const chain = (await api(agent).post(`/api/companies/${company.id}/deep-dive/commercials`).send({ name: "Retainer" }).expect(201)).body;
+      const chain = (await api(agent).post(`/api/companies/${company.id}/deep-dive/commercials?${rq(company.id)}`).send({ name: "Retainer" }).expect(201)).body;
       const commercial = chain.commercials[0];
       expect(commercial.visibility).toBe("internal");
-      await api(agent).post(`/api/companies/${company.id}/deep-dive/commercials`).send({ name: "x", visibility: "shared" }).expect(400);
+      await api(agent).post(`/api/companies/${company.id}/deep-dive/commercials?${rq(company.id)}`).send({ name: "x", visibility: "shared" }).expect(400);
       await api(agent).patch(`/api/deep-dive/commercials/${commercial.id}`).send({ visibility: "shared" }).expect(403);
       const shared = (await api().patch(`/api/deep-dive/commercials/${commercial.id}`).send({ visibility: "shared" }).expect(200)).body;
       expect(shared.commercials[0].visibility).toBe("shared");
 
-      const err = await refused(db.insert(deepDiveRoadmapItems).values({ companyId: company.id, name: "x", visibility: "shared" }));
+      const err = await refused(db.insert(deepDiveRoadmapItems).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "x", visibility: "shared" }));
       expect(err.message).toMatch(/Internal/);
     });
 

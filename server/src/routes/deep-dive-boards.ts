@@ -20,6 +20,7 @@ import { deepDiveBoardsService, type DeepDiveBoardActor, type DeepDiveBoardKind 
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Deep Dive boards (GRE-2369): Screens 5 and 6 of the GRE-2327 plan.
@@ -45,7 +46,7 @@ export function deepDiveBoardsRoutes(db: Db) {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    return companyId;
+    return resolveDeepDiveScope(db, companyId, req.query.recordId);
   }
 
   async function itemInScope(req: Request, kind: DeepDiveBoardKind, param: string) {
@@ -81,13 +82,15 @@ export function deepDiveBoardsRoutes(db: Db) {
   // Organisation board ------------------------------------------------------
 
   router.get("/companies/:companyId/deep-dive/organisation", async (req, res) => {
-    const companyId = await companyInScope(req);
-    res.json(await boards.orgBoard(companyId));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    res.json(await boards.orgBoard(scope));
   });
 
   router.post("/companies/:companyId/deep-dive/org-units", validate(createDeepDiveUnitSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await boards.createUnit(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await boards.createUnit(scope, req.body);
     await log(req, companyId, "deep_dive_board.unit_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });
@@ -107,8 +110,9 @@ export function deepDiveBoardsRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/people", validate(createDeepDivePersonSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await boards.createPerson(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await boards.createPerson(scope, req.body);
     await log(req, companyId, "deep_dive_board.person_added", companyId);
     reply(res, 201, board);
   });
@@ -151,24 +155,27 @@ export function deepDiveBoardsRoutes(db: Db) {
   // Process board -----------------------------------------------------------
 
   router.get("/companies/:companyId/deep-dive/process-board", async (req, res) => {
-    const companyId = await companyInScope(req);
-    res.json(await boards.processBoard(companyId));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    res.json(await boards.processBoard(scope));
   });
 
   router.put(
     "/companies/:companyId/deep-dive/process-board/layout",
     validate(saveDeepDiveProcessLayoutSchema),
     async (req, res) => {
-      const companyId = await companyInScope(req);
-      const board = await boards.saveLayout(companyId, req.body);
+      const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+      const board = await boards.saveLayout(scope, req.body);
       await log(req, companyId, "deep_dive_board.layout_saved", companyId, { cards: req.body.positions.length });
       reply(res, 200, board);
     },
   );
 
   router.post("/companies/:companyId/deep-dive/offerings", validate(createDeepDiveOfferingSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await boards.createOffering(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await boards.createOffering(scope, req.body);
     await log(req, companyId, "deep_dive_board.offering_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });
@@ -188,8 +195,9 @@ export function deepDiveBoardsRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/processes", validate(createDeepDiveProcessSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await boards.createProcess(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await boards.createProcess(scope, req.body);
     await log(req, companyId, "deep_dive_board.process_added", companyId, { name: req.body.name });
     reply(res, 201, board);
   });
@@ -209,8 +217,9 @@ export function deepDiveBoardsRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/handoffs", validate(recordDeepDiveHandoffSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const board = await boards.recordHandoff(companyId, req.body, boardActor(req));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const board = await boards.recordHandoff(scope, req.body, boardActor(req));
     await log(req, companyId, "deep_dive_board.handoff_recorded", companyId, {
       fromProcessId: req.body.fromProcessId,
       toProcessId: req.body.toProcessId,

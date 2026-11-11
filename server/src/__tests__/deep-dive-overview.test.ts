@@ -22,6 +22,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveOverviewRoutes } from "../routes/deep-dive-overview.js";
 import { deepDiveFindingsService } from "../services/deep-dive-findings.js";
@@ -90,6 +91,7 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -106,10 +108,10 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
 
   /** The record (no North Star, no client) and a blocked People stream with one Indicated cell. */
   async function seedRecordAndStream(companyId: string) {
-    await seedCase(companyId, { caseType: "deep_dive", key: "record" });
     const fields = defaultDeepDiveStreamFields("people");
     const stream = await seedCase(companyId, {
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key: "people",
       fields: { ...fields, status: "blocked", knowledge: { ...fields.knowledge, evidence: "indicated" } },
     });
@@ -120,11 +122,12 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
     return stream;
   }
 
-  it("asks only to start the record for a company with no Deep Dive", async () => {
+  it("reads one client's new Deep Dive, and needs the Deep Dive named", async () => {
     const company = await seedCompany("DOE");
-    const overview = (await api().get(`/api/companies/${company.id}/deep-dive/overview`).expect(200)).body;
+    await api().get(`/api/companies/${company.id}/deep-dive/overview`).expect(400);
+    const overview = (await api().get(`/api/companies/${company.id}/deep-dive/overview?${rq(company.id)}`).expect(200)).body;
 
-    expect(overview.next.map((s: { key: string }) => s.key)).toEqual(["start_record"]);
+    expect(overview.next.map((s: { key: string }) => s.key)).not.toContain("start_record");
     expect(overview.streams).toHaveLength(9);
     expect(overview.streams.every((s: { status: string; caseId: string | null }) => s.status === "not_started" && s.caseId === null)).toBe(true);
     expect(overview.cells).toEqual({ known: 0, indicated: 0, unknown: 45 });
@@ -134,17 +137,17 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
   it("reads streams, findings, sessions and people into what is next", async () => {
     const company = await seedCompany("DOR");
     const stream = await seedRecordAndStream(company.id);
-    const proposed = await deepDiveFindingsService(db).propose(company.id, {
+    const proposed = await deepDiveFindingsService(db).propose({ companyId: company.id, recordCaseId: recordOf(company.id) }, {
       streamCaseId: stream.id,
       gifKey: "current-state",
       statement: "Two people approve every quote",
     }, { type: "agent", agentId: null });
     const sessions = deepDiveSessionsService(db);
-    const due = await sessions.plan(company.id, { title: "HR walk-through", plannedFor: "2026-01-05T09:00:00Z" }, { type: "user", userId: "board-user" });
-    await sessions.plan(company.id, { title: "Later", plannedFor: "2099-01-05T09:00:00Z" }, { type: "user", userId: "board-user" });
-    await db.insert(deepDivePeople).values({ companyId: company.id, name: "Ama" });
+    const due = await sessions.plan({ companyId: company.id, recordCaseId: recordOf(company.id) }, { title: "HR walk-through", plannedFor: "2026-01-05T09:00:00Z" }, { type: "user", userId: "board-user" });
+    await sessions.plan({ companyId: company.id, recordCaseId: recordOf(company.id) }, { title: "Later", plannedFor: "2099-01-05T09:00:00Z" }, { type: "user", userId: "board-user" });
+    await db.insert(deepDivePeople).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "Ama" });
 
-    const overview = (await api().get(`/api/companies/${company.id}/deep-dive/overview`).expect(200)).body;
+    const overview = (await api().get(`/api/companies/${company.id}/deep-dive/overview?${rq(company.id)}`).expect(200)).body;
 
     expect(overview.next.map((s: { key: string }) => s.key)).toEqual([
       "decide_findings",
@@ -177,8 +180,10 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
     const theirs = await seedCompany("DOT");
     await seedRecordAndStream(theirs.id);
 
-    const overview = (await api().get(`/api/companies/${mine.id}/deep-dive/overview`).expect(200)).body;
-    expect(overview.next.map((s: { key: string }) => s.key)).toEqual(["start_record"]);
+    const overview = (await api().get(`/api/companies/${mine.id}/deep-dive/overview?${rq(mine.id)}`).expect(200)).body;
+    expect(overview.next.map((s: { key: string }) => s.key)).not.toContain("start_record");
+    // Another company's Deep Dive named under mine does not exist here.
+    await api().get(`/api/companies/${mine.id}/deep-dive/overview?recordId=${recordOf(theirs.id)}`).expect(404);
     expect(overview.streams.every((s: { caseId: string | null }) => s.caseId === null)).toBe(true);
 
     const [agent] = await db.insert(agents).values({
@@ -191,12 +196,12 @@ describeEmbeddedPostgres("Deep Dive overview (GRE-2372)", () => {
       permissions: {},
     }).returning();
     const outsider = { type: "agent", agentId: agent!.id, companyId: mine.id, source: "agent_key" } as Express.Request["actor"];
-    await api(outsider).get(`/api/companies/${theirs.id}/deep-dive/overview`).expect(403);
+    await api(outsider).get(`/api/companies/${theirs.id}/deep-dive/overview?${rq(theirs.id)}`).expect(403);
   });
 
   it("is off while the Deep Dive is off", async () => {
     const company = await seedCompany("DOF");
     await instanceSettingsService(db).updateExperimental({ enableDeepDive: false });
-    await api().get(`/api/companies/${company.id}/deep-dive/overview`).expect(403);
+    await api().get(`/api/companies/${company.id}/deep-dive/overview?${rq(company.id)}`).expect(403);
   });
 });

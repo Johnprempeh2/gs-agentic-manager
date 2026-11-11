@@ -23,6 +23,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveInterviewsRoutes } from "../routes/deep-dive-interviews.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -98,6 +99,7 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -127,6 +129,7 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key,
       title: `Deep dive: ${key}`,
       fields: fields as unknown as Record<string, unknown>,
@@ -142,16 +145,16 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
   }
 
   async function seedBoard(companyId: string) {
-    const [company] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Northwind Freight", unitType: "company" }).returning();
-    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, name: "Finance", unitType: "team", parentId: company!.id }).returning();
-    const [ama] = await db.insert(deepDivePeople).values({ companyId, name: "Ama Mensah", role: "Finance lead", unitId: finance!.id }).returning();
-    const [consultant] = await db.insert(deepDivePeople).values({ companyId, name: "Greatstone consultant", side: "greatstone" }).returning();
+    const [company] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Northwind Freight", unitType: "company" }).returning();
+    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId, recordCaseId: recordOf(companyId), name: "Finance", unitType: "team", parentId: company!.id }).returning();
+    const [ama] = await db.insert(deepDivePeople).values({ companyId, recordCaseId: recordOf(companyId), name: "Ama Mensah", role: "Finance lead", unitId: finance!.id }).returning();
+    const [consultant] = await db.insert(deepDivePeople).values({ companyId, recordCaseId: recordOf(companyId), name: "Greatstone consultant", side: "greatstone" }).returning();
     return { company: company!, finance: finance!, ama: ama!, consultant: consultant! };
   }
 
   function setUp(actor: Express.Request["actor"], companyId: string, body: Record<string, unknown>) {
     return request(app(actor))
-      .post(`/api/companies/${companyId}/deep-dive/interview-round`)
+      .post(`/api/companies/${companyId}/deep-dive/interview-round?${rq(companyId)}`)
       .send({ websiteOrganisationId: "org_7Hq2kLm9", ...body });
   }
 
@@ -178,7 +181,7 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
       bodies: { "current-state": "# Current state\n\nWhat exists today?\n\nOrders are keyed by hand into Sage." },
     });
     await db.insert(deepDiveFindings).values({
-      companyId: company.id,
+      companyId: company.id, recordCaseId: recordOf(company.id),
       streamCaseId: stream.id,
       gifDocumentId: cells["business-impact"]!,
       statement: "Month-end close takes nine days.",
@@ -270,7 +273,7 @@ describeEmbeddedPostgres("Parallel Interview rounds (GRE-2611)", () => {
     const setId = (drafted.body as DeepDiveInterviewRoundView).round!.sets[0]!.id;
 
     const outsider = await seedAgentActor(mine.id);
-    await request(app(outsider)).get(`/api/companies/${theirs.id}/deep-dive/interview-round`).expect(403);
+    await request(app(outsider)).get(`/api/companies/${theirs.id}/deep-dive/interview-round?${rq(theirs.id)}`).expect(403);
     await request(app(outsider)).patch(`/api/deep-dive/interview-rounds/${roundId}`).send({ targetMinutes: 30 }).expect(403);
     await request(app(outsider)).post(`/api/deep-dive/interview-sets/${setId}/redraft`).expect(403);
     await request(app(outsider)).delete(`/api/deep-dive/interview-sets/${setId}`).expect(403);
