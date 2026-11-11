@@ -32,12 +32,12 @@ export function websiteEntrySummary(content: unknown): WebsiteEntrySummary | nul
   return {
     name,
     slug: text(data.slug),
-    short_description: text(data.short_description) ?? text(data.role) ?? text(data.intro),
+    short_description: text(data.short_description) ?? text(data.role) ?? text(data.intro) ?? text(data.oneLiner) ?? text(data.blurb),
     description: description && description.length > DESCRIPTION_CUT ? description.slice(0, DESCRIPTION_CUT) : description,
     from_price_minor: typeof data.from_price_minor === "number" ? data.from_price_minor : null,
     from_price_currency: text(data.from_price_currency),
     vendor: text(record(data.vendor).name),
-    category: text(record(data.category).name),
+    category: text(record(data.category).name) ?? text(data.category),
     variants: (Array.isArray(data.variants) ? data.variants : []).map((variant) => ({ sku: text(record(variant).sku), name: text(record(variant).name) })),
   };
 }

@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
   sites: vi.fn(),
   features: vi.fn(),
-  bridge: { list: vi.fn(), get: vi.fn() },
+  bridge: { list: vi.fn(), get: vi.fn(), fileUrl: vi.fn() },
   organisations: vi.fn(),
   commerce: { list: vi.fn(), get: vi.fn(), write: vi.fn(), requestRefund: vi.fn(), putActivationSteps: vi.fn() },
   access: vi.fn(),
@@ -306,5 +306,85 @@ describe("Commerce settings screens", () => {
     submitForm(container.querySelector("#tier-new-slug")!);
     await flush();
     expect(lastWrite()[2]).toEqual({ method: "POST", parts: ["customer-tiers"], body: { name: "Silver", slug: "silver" } });
+  });
+
+  // ---- admin parity round 2 ----
+  const seatRequest = { id: "5e5e5e5e-0000-4000-8000-000000000001", customer_id: CLIENT_ID, full_name: "Nia Mensah", email: "nia@acme.example",
+    role: "member", note: "Finance lead", status: "pending", created_at: "2026-11-05T09:00:00Z" };
+  const decided = { ...seatRequest, id: "5e5e5e5e-0000-4000-8000-000000000002", full_name: "Kofi", email: "kofi@acme.example", status: "declined",
+    handled_at: "2026-11-06T09:00:00Z" };
+
+  it("shows a client's seat requests; an agent cannot decide, a person approves after a confirm", async () => {
+    mocks.bridge.get.mockResolvedValue({ item: client });
+    mocks.bridge.list.mockImplementation(bridgeRows({ "invite-requests": [decided, seatRequest] }));
+    render(`/commerce/customers/${CLIENT_ID}`);
+    await flush();
+    const section = byTestId("commerce-client-seat-requests")!;
+    expect(section.textContent).toContain("Seat requests (1 waiting)");
+    const rows = section.querySelectorAll("[data-testid=commerce-seat-request]");
+    expect([...rows].map((row) => row.textContent?.includes("Nia Mensah"))).toEqual([true, false]);
+    expect(rows[1]!.textContent).toContain("Declined");
+    expect(byTestId("commerce-seat-approve")).toBeNull();
+    expect(section.textContent).toContain("A person approves or declines a seat");
+    expect(mocks.bridge.list).toHaveBeenCalledWith(GREATSTONE, "site-1", "invite-requests", expect.objectContaining({ customer: CLIENT_ID }));
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    person();
+    mocks.commerce.write.mockResolvedValue({ item: { ...seatRequest, status: "provisioned" } });
+    render(`/commerce/customers/${CLIENT_ID}`);
+    await flush();
+    act(() => { (byTestId("commerce-seat-approve") as HTMLButtonElement).click(); });
+    expect(document.body.querySelector("[role=alertdialog]")?.textContent).toContain("nia@acme.example");
+    confirm("Approve and add");
+    await flush();
+    expect(lastWrite()[2]).toEqual({ method: "POST", parts: ["invite-requests", seatRequest.id, "decision"], body: { decision: "approve" } });
+  });
+
+  it("lists the seat requests waiting across clients on Clients, and hides the panel when none wait", async () => {
+    mocks.bridge.list.mockImplementation(bridgeRows({ customers: [client], "invite-requests": [seatRequest, decided] }));
+    render("/commerce/customers");
+    await flush();
+    const waiting = byTestId("commerce-seat-requests-waiting")!;
+    expect(waiting.textContent).toContain("1 seat request is waiting");
+    expect(waiting.textContent).toContain("Nia Mensah for Acme Ltd");
+    expect(waiting.querySelector("a")?.getAttribute("href")).toBe(`/commerce/customers/${CLIENT_ID}`);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.bridge.list.mockImplementation(bridgeRows({ customers: [client], "invite-requests": [decided] }));
+    render("/commerce/customers");
+    await flush();
+    expect(byTestId("commerce-seat-requests-waiting")).toBeNull();
+  });
+
+  it("offers the buyer's PO on an order that has one, and says plainly when the download fails", async () => {
+    mocks.bridge.fileUrl.mockReturnValue(`/api/x/orders/${ORDER_ID}/po-document`);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "The website has no such record." }), { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    mocks.bridge.get.mockResolvedValue({ item: { ...order, has_po_document: true } });
+    render(`/commerce/orders/${ORDER_ID}`);
+    await flush();
+    expect(mocks.bridge.fileUrl).toHaveBeenCalledWith(GREATSTONE, "site-1", "orders", ORDER_ID, "po-document");
+    act(() => { (byTestId("commerce-po-download") as HTMLButtonElement).click(); });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/x/orders/${ORDER_ID}/po-document`, expect.objectContaining({ credentials: "same-origin" }));
+    expect(container.querySelector("[role=alert]")?.textContent).toBe("The website has no such record.");
+    vi.unstubAllGlobals();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.bridge.get.mockResolvedValue({ item: order });
+    render(`/commerce/orders/${ORDER_ID}`);
+    await flush();
+    expect(byTestId("commerce-po-download")).toBeNull();
+  });
+
+  it("offers the agent package on a front door lead that has one, not on a service enquiry", async () => {
+    mocks.bridge.list.mockImplementation(bridgeRows({ enquiries: [{ ...enquiry, agentPackage: true }, { ...lead, agentPackage: true }] }));
+    render("/commerce/enquiries");
+    await flush();
+    expect(container.querySelectorAll("[data-testid=commerce-agent-package]")).toHaveLength(1);
+    expect(mocks.bridge.fileUrl).toHaveBeenCalledWith(GREATSTONE, "site-1", "enquiries", FD_ID, "agent-package");
   });
 });

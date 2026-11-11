@@ -4,6 +4,7 @@ import { websiteEntrySummary, type WebsiteEntry, type WebsiteProperty } from "@g
 import { WebsiteCollectionsTab } from "@/components/website/WebsiteCollections";
 import { queryKeys } from "@/lib/queryKeys";
 import publicCatalogue from "../../../server/src/services/website/public-import-v1.json?raw";
+import websiteServices from "../fixtures/website-services.json";
 
 // The Collections tab's product list, with the public website's own catalogue as it was captured (names, descriptions
 // and prices are the site's, gaps included), keyed and summarised the way the server sends it. No client names.
@@ -20,11 +21,18 @@ const products = (JSON.parse(publicCatalogue) as { products: { id: string }[] })
     }) as unknown as WebsiteEntry,
 );
 
+// The website's 78 services as they were in its code (src/data/service-catalog.mjs), imported as approved entries.
+const services = websiteServices.services.map((item, index) => ({
+  id: `service-${index}`, entryKey: item.slug, collection: "service", status: "approved", latestRevisionNumber: 1,
+  updatedAt: "2026-11-11T09:00:00Z", summary: websiteEntrySummary(item),
+}) as unknown as WebsiteEntry);
+
 function Collections() {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(queryKeys.website.sites("co-1"), [{ id: "site-1", propertyId: "property-1", archivedAt: null }]);
   client.setQueryData(queryKeys.access.currentBoardAccess, { source: "local_implicit" });
   client.setQueryData(["website-entries", "co-1", "site-1", "product"], products);
+  client.setQueryData(["website-entries", "co-1", "site-1", "service"], services);
   return (
     <QueryClientProvider client={client}>
       <WebsiteCollectionsTab companyId="co-1" property={{ id: "property-1" } as WebsiteProperty} />

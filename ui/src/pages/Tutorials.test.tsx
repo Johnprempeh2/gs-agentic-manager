@@ -48,6 +48,9 @@ vi.mock("@/api/pipelines", () => ({
 vi.mock("@/api/website", () => ({
   websiteModuleApi: { sites: async () => [{ id: "site-1" }], pages: async () => data.pages },
 }));
+vi.mock("@/api/website-data-bridge", () => ({ websiteDataBridgeApi: {
+  list: async (_c: string, _s: string, resource: string) => ({ items: resource === "customers" ? [{ id: "client-1" }] : [], nextCursor: null }),
+} }));
 vi.mock("@/hooks/useReleases", () => ({ useCanRelease: () => ({ canRelease: access.canRelease, isLoading: false }) }));
 vi.mock("@/hooks/useCommerceSite", () => ({ useCommerceSite: () => ({ commerce: data.shop ? {} : null, isLoading: false }) }));
 vi.mock("@/api/issues", () => ({ issuesApi: { list: async () => [{ id: "i1", identifier: "GRE-7" }] } }));
@@ -217,12 +220,21 @@ describe("Tutorials", () => {
     await act(async () => startButton("commerce-sales").click());
     await flush();
     expect(pathname).toBe("/commerce/quotes");
-    for (const [id, path] of [["commerce-catalogue-setup", "/commerce/vendors"], ["commerce-clients", "/commerce/customers"]]) {
+    for (const [id, path] of [["commerce-catalogue-setup", "/commerce/vendors"], ["commerce-clients", "/commerce/customers"],
+      ["commerce-client-detail", "/commerce/customers/client-1"]]) {
       await render();
       await act(async () => startButton(id).click());
       await flush();
       expect(pathname).toBe(path);
     }
+  });
+
+  it("Start on the order tour says so when the website has no orders", async () => {
+    data.shop = true;
+    await render();
+    await act(async () => startButton("commerce-record-detail").click());
+    await flush();
+    expect(row("commerce-record-detail")!.textContent).toContain("There are no orders on the website yet");
   });
 
   it("Start on the task tour opens the newest task, and says so when there are no agents", async () => {

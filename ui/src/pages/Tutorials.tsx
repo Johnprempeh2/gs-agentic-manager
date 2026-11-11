@@ -8,6 +8,7 @@ import { pipelinesApi } from "@/api/pipelines";
 import { teamChatsApi } from "@/api/teamChats";
 import { toolsApi } from "@/api/tools";
 import { websiteModuleApi } from "@/api/website";
+import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -34,7 +35,7 @@ export const AREAS: Array<{ label: string; note: string; ids: string[] }> = [
   { label: "Work", note: "Tasks, projects and goals.", ids: ["dashboard", "tasks", "task-detail", "projects", "goals", "memory", "strategy-board", "status", "workflows", "cases", "artifacts", "links"] },
   { label: "Team", note: "The agents, what they finished, and chats.", ids: ["agents", "agent-detail", "scorecard", "weekly-report", "team-chat", "conference-room"] },
   { label: "Clients", note: "The organisations we work with and what was made for them.", ids: ["organisations", "pipelines-list", "pipeline-board", "client-case", "deliverables", "images", "deep-dive"] },
-  { label: "Website and Commerce", note: "The website's pages and what it sells.", ids: ["website-home", "website-preview", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-style", "website-documents", "website-people", "website-releases", "commerce-catalogue", "commerce-catalogue-setup", "commerce-sales", "commerce-clients", "website"] },
+  { label: "Website and Commerce", note: "The website's pages and what it sells.", ids: ["website-home", "website-preview", "website-sitemap", "website-pages", "website-editor", "website-progress", "website-collections", "website-style", "website-documents", "website-people", "website-releases", "commerce-catalogue", "commerce-catalogue-setup", "commerce-sales", "commerce-record-detail", "commerce-clients", "commerce-client-detail", "website"] },
   { label: "Set-up", note: "Work that repeats, and the tools GSAM is connected to.", ids: ["routines", "integrations", "connectors", "skills", "github-share-with-agents", "settings", "gsam-releases"] },
 ];
 
@@ -58,6 +59,15 @@ async function resolveStart(tour: TourDefinition, companyId: string): Promise<St
     return page
       ? { path: `/website/sites/${site!.id}/pages/${page.id}/design` }
       : { nothing: "There are no built pages yet. Build one from the sitemap first." };
+  }
+  if (tour.id === "commerce-client-detail" || tour.id === "commerce-record-detail") {
+    // One client, or one order: the first the website lists.
+    const resource = tour.id === "commerce-client-detail" ? "customers" : "orders";
+    const [site] = await websiteModuleApi.sites(companyId);
+    const first = site ? (await websiteDataBridgeApi.list(companyId, site.id, resource, { limit: 1 })).items[0] : undefined;
+    const id = typeof first?.id === "string" ? first.id : null;
+    return id ? { path: `/commerce/${resource}/${encodeURIComponent(id)}` }
+      : { nothing: resource === "customers" ? "There are no client companies on the website yet." : "There are no orders on the website yet." };
   }
   if (tour.route) return { path: tour.route.path };
   const websiteTab = (Object.keys(WEBSITE_TAB_TOURS) as WebsiteTab[]).find((tab) => WEBSITE_TAB_TOURS[tab] === tour);

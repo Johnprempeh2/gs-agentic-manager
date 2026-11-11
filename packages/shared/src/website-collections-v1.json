@@ -90,6 +90,21 @@
       },
       "if": { "properties": { "type": { "const": "select" } } }, "then": { "required": ["options"] }
     },
+    "services": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category", "name", "slug", "oneLiner", "format", "featured", "outcome", "idealClient", "bullets"],
+      "properties": {
+        "category": { "$ref": "#/$defs/name" }, "name": { "$ref": "#/$defs/name" }, "slug": { "$ref": "#/$defs/slug" },
+        "oneLiner": { "$ref": "#/$defs/text" }, "format": { "$ref": "#/$defs/text" },
+        "featured": { "type": "boolean" }, "isNew": { "type": "boolean" },
+        "outcome": { "$ref": "#/$defs/text" }, "idealClient": { "$ref": "#/$defs/text" },
+        "bullets": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["text"], "properties": { "text": { "$ref": "#/$defs/text" } } } }
+      }
+    },
+    "service-categories": {
+      "type": "object", "additionalProperties": false, "required": ["name", "blurb"],
+      "properties": { "name": { "$ref": "#/$defs/name" }, "blurb": { "$ref": "#/$defs/text" } }
+    },
     "redirects": {
       "type": "object", "additionalProperties": false, "required": ["id", "from", "to", "status"],
       "properties": {

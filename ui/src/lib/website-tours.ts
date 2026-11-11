@@ -233,8 +233,8 @@ export const WEBSITE_PROGRESS_TOUR: TourDefinition = {
 export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
   id: "website-collections",
   title: "Website collections",
-  description: "The lists behind the site, such as products, team and redirects, and how a change goes live.",
-  version: 2,
+  description: "The lists behind the site, such as products, services, team and redirects, and how a change goes live.",
+  version: 3,
   flag: "enableWebsiteView",
   autoStart: false,
   label: "the collections",
@@ -242,7 +242,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
     {
       target: "website-collection-picker",
       title: "Pick a collection",
-      body: "Products, categories, team, redirects, forms and media each have their own list. Choose one here.",
+      body: "Products, categories, team, redirects, forms, services, service categories and media each have their own list. Choose one here. The services are the ones the website lists under its services catalogue.",
     },
     {
       target: "website-collection-entries",
@@ -526,12 +526,80 @@ export const COMMERCE_CLIENTS_TOUR: TourDefinition = {
     {
       target: "commerce-enquiries",
       title: "Enquiries and leads",
-      body: "Service enquiries and leads from the website, open ones first. Show narrows them by status. Set a status as you work each one.",
+      body: "Service enquiries and leads from the website, open ones first. Show narrows them by status. Set a status as you work each one. A front door lead with a team offers its agent package as a .zip.",
     },
     {
       target: "commerce-receipts",
       title: "Portal receipts",
       body: "Each time a client accepts a portal document, the website emails them a receipt. A person can send one again if it did not arrive.",
+    },
+  ],
+};
+
+/** Commerce, one client company (admin parity round 2): seat requests beside the details, timeline and licences. In CORE_TOURS. */
+export const COMMERCE_CLIENT_TOUR: TourDefinition = {
+  id: "commerce-client-detail",
+  title: "A client company",
+  description: "One client's details and people, the seats their company admin asked for, and their licences.",
+  version: 1,
+  flag: "enableWebsiteView",
+  route: { match: /^\/commerce\/customers\/[^/]+\/?$/, path: "/commerce/customers" },
+  autoStart: false,
+  label: "this client",
+  steps: [
+    {
+      target: "Details",
+      title: "Details",
+      body: "The client as the website holds it. Edit client changes the name, domain, notes and currency. Only a person sets the customer tier, because it sets their prices.",
+    },
+    {
+      target: "People",
+      title: "People",
+      body: "Everyone who can sign in to this client's portal on the website.",
+    },
+    {
+      target: "commerce-client-seat-requests",
+      title: "Seat requests",
+      body: "When the client's company admin asks for a new person on the website, the request waits here. A person approves it, which adds them to the portal, or declines it. Clients lists every request still waiting.",
+    },
+    {
+      target: "commerce-client-licences",
+      title: "Licences",
+      body: "The licences the client holds, with the key masked. A person issues a new one here.",
+    },
+  ],
+};
+
+/** Commerce, one quote, order or invoice (admin parity round 2): the buyer's PO file beside the details. In CORE_TOURS. */
+export const COMMERCE_RECORD_TOUR: TourDefinition = {
+  id: "commerce-record-detail",
+  title: "A quote, order or invoice",
+  description: "What one sale holds: its details, the buyer's purchase order file, its items and who bought it.",
+  version: 1,
+  flag: "enableWebsiteView",
+  route: { match: /^\/commerce\/(quotes|orders|invoices)\/[^/]+\/?$/, path: "/commerce/quotes" },
+  autoStart: false,
+  label: "this record",
+  steps: [
+    {
+      target: "Details",
+      title: "Details",
+      body: "The state, totals, PO reference and dates, as the website holds them.",
+    },
+    {
+      target: "commerce-po-download",
+      title: "The buyer's purchase order",
+      body: "When the buyer uploaded a PO with their quote, Download PO fetches it from the website for you. It is never a public link, and each download is recorded.",
+    },
+    {
+      target: "Items",
+      title: "Items",
+      body: "What was quoted or bought, line by line.",
+    },
+    {
+      target: "Customer",
+      title: "Who bought it",
+      body: "The client company, with links to the client and to all their records of this kind.",
     },
   ],
 };
@@ -552,4 +620,6 @@ export const WEBSITE_MODULE_TOURS = [
   COMMERCE_CATALOGUE_SETUP_TOUR,
   COMMERCE_SALES_TOUR,
   COMMERCE_CLIENTS_TOUR,
+  COMMERCE_CLIENT_TOUR,
+  COMMERCE_RECORD_TOUR,
 ];

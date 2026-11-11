@@ -46,6 +46,8 @@ const COLLECTIONS = [
   { key: "redirect", label: "Redirects", singular: "redirect" },
   { key: "form", label: "Forms", singular: "form" },
   { key: "vendor", label: "Vendors", singular: "vendor" },
+  { key: "service", label: "Services", singular: "service" },
+  { key: "service-category", label: "Service categories", singular: "service category" },
 ] as const;
 /** GRE-4785: redirects and media have their own screens; the rest use the schema form. */
 const MEDIA_VIEW = "media";
@@ -249,7 +251,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
   const shown = (entries.data ?? []).filter((entry) => entryMatches(entry, search));
   return <WebsiteContentLiveContext.Provider value={onLive}><div className="space-y-5" data-testid="website-collections">
-    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go to staging when you Publish, and live when you Deploy.</p></div>
+    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms, services and media. Approved changes go to staging when you Publish, and live when you Deploy.</p></div>
     {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Brings in the vendors, categories, products, public team cards and forms last captured from the website. Entries a person has edited are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
     <label className="block max-w-sm space-y-1 text-sm" data-tour="website-collection-picker"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); setSearch(""); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
     {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} singular={selected.singular} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
