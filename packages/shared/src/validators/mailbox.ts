@@ -4,12 +4,15 @@ import { z } from "zod";
 // agents assigned to it can search, read and save messages to their task.
 // Nothing here sends, moves, flags or deletes mail.
 
-const hostname = z
-  .string()
-  .trim()
-  .min(1)
-  .max(253)
-  .regex(/^[a-zA-Z0-9.-]+$/, "Enter a host name such as imap.example.com");
+// People paste "http://imap.example.com/" from a provider's help page; keep only the host.
+const hostname = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, "") : value),
+  z
+    .string()
+    .min(1)
+    .max(253)
+    .regex(/^[a-zA-Z0-9.-]+$/, "Enter the server name only, such as imap.example.com"),
+);
 
 export const mailboxConnectSchema = z
   .object({
