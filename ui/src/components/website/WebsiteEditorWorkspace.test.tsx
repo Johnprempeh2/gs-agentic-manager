@@ -23,6 +23,8 @@ const api = vi.hoisted(() => ({
   pageComments: vi.fn(),
   createEntry: vi.fn(),
   submitPage: vi.fn(),
+  approvePage: vi.fn(),
+  access: vi.fn(),
   images: vi.fn(),
 }));
 const issues = vi.hoisted(() => ({ listComments: vi.fn(), addComment: vi.fn(), update: vi.fn(), uploadAttachment: vi.fn() }));
@@ -46,7 +48,7 @@ vi.mock("@/lib/router", async () => {
 });
 
 import { Route, Routes, useLocation } from "react-router-dom";
-import { WebsiteFullScreenEditor, WebsitePagesTab } from "./WebsiteEditorWorkspace";
+import { reviewButton, WebsiteFullScreenEditor, WebsitePagesTab } from "./WebsiteEditorWorkspace";
 
 const EDITOR = "https://editor.example.com";
 const property = { id: "prop-1", companyId: "co-1", name: "Example", siteUrl: "https://example.com/" } as WebsiteProperty;
@@ -109,6 +111,7 @@ beforeEach(() => {
   api.revisions.mockResolvedValue(revisions);
   api.media.mockResolvedValue(load.media);
   api.pageComments.mockResolvedValue([]);
+  api.access.mockResolvedValue({ view: true, edit: true, publish: false });
   issues.listComments.mockResolvedValue([]);
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, blob: async () => new Blob(["png"], { type: "image/png" }) })));
   vi.stubGlobal("confirm", vi.fn(() => true));
@@ -1179,6 +1182,39 @@ describe("full-screen editor (GRE-2296)", () => {
     expect(text()).not.toContain("Request publish");
   });
 
+  it("a person with Publish rights gets Save and approve: the save lands first, then the new version is approved", async () => {
+    api.access.mockResolvedValue({ view: true, edit: true, publish: true });
+    api.savePageContent.mockResolvedValueOnce({ state: "saved", revisionId: "rev-3", revisionNumber: 3 });
+    api.approvePage.mockResolvedValue({ ...page, status: "approved" });
+    await render();
+    const editor = await connect(fullAck);
+    const reviewAction = () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-request-publish"]')!;
+    expect(reviewAction().textContent).toBe("Approve");
+    await editor.reply("dirty", { dirty: true });
+    expect(reviewAction().textContent).toBe("Save and approve");
+    await act(async () => reviewAction().click());
+    await flush();
+    expect(editor.sent("editor-command").map((m) => m.payload.command)).toContain("save");
+    expect(api.approvePage).not.toHaveBeenCalled();
+    await editor.save("req-1");
+    expect(api.submitPage).not.toHaveBeenCalled();
+    expect(api.approvePage).toHaveBeenCalledWith("co-1", "site-1", "page-1");
+    expect(text()).toContain("Approved. Publish puts it on staging, and Deploy puts it live.");
+  });
+
+  it("Save and approve approves nothing when the save conflicts", async () => {
+    api.access.mockResolvedValue({ view: true, edit: true, publish: true });
+    api.savePageContent.mockResolvedValueOnce({ state: "conflict", currentRevisionId: "rev-9", currentData: { theirs: true } });
+    await render();
+    const editor = await connect(fullAck);
+    await editor.reply("dirty", { dirty: true });
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="website-request-publish"]')!.click());
+    await flush();
+    await editor.save("req-1");
+    expect(api.approvePage).not.toHaveBeenCalled();
+    expect(text()).toContain("The save did not go through, so nothing was approved.");
+  });
+
   describe("editor host version check (GRE-2357)", () => {
     const canvas = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-canvas"]');
     const outOfDate = () => document.body.querySelector<HTMLElement>('[data-testid="website-editor-out-of-date"]');
@@ -1486,5 +1522,15 @@ describe("WebsitePagesTab (GRE-2296)", () => {
   it("the old in-page editor links open the full-screen editor", async () => {
     await renderTab("/website?tab=editor&motion=016");
     expect(where()).toBe("/website/edit?property=prop-1&motion=016");
+  });
+});
+
+describe("reviewButton", () => {
+  it("gives an approver Save and approve (Approve with nothing unsaved), and everyone else Send for review", () => {
+    expect(reviewButton(true, true, "draft")).toMatchObject({ label: "Save and approve", disabled: false, approve: true });
+    expect(reviewButton(true, false, "review")).toMatchObject({ label: "Approve", disabled: false });
+    expect(reviewButton(true, false, "approved")).toMatchObject({ label: "Approve", disabled: true });
+    expect(reviewButton(false, true, "draft")).toMatchObject({ label: "Send for review", approve: false });
+    expect(reviewButton(false, false, "review")).toMatchObject({ label: "In review", disabled: true });
   });
 });

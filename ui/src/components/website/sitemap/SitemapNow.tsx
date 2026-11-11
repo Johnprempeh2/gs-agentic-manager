@@ -1,18 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { ExternalLink, PenLine } from "lucide-react";
 import { websitePreviewAddresses, type WebsiteHomeSummary, type WebsitePage, type WebsiteSite, type WebsiteSitemapTree } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { cn, formatDateTime } from "@/lib/utils";
-import {
-  BUILT_PAGE_STATES,
-  builtPageRows,
-  builtPageState,
-  countOf,
-  isBuiltPage,
-  sitemapMismatches,
-  type BuiltPageState,
-  type SitemapMismatch,
-} from "./model";
+import { WEBSITE_STATUS_TONE, WebsiteContentLiveContext, websiteStatusWord, type WebsiteStatusWord } from "@/lib/website-status";
+import { builtPageRows, countOf, isBuiltPage, sitemapMismatches, type SitemapMismatch } from "./model";
 import { MENU_LABELS, Pill } from "./SitemapViews";
 
 // "Site now": the pages that exist, from the site's real page rows and never
@@ -21,7 +13,7 @@ import { MENU_LABELS, Pill } from "./SitemapViews";
 
 const INDENT = ["", "pl-6", "pl-12", "pl-18", "pl-24"];
 
-const STATE_ORDER: BuiltPageState[] = ["live", "changed", "review", "approved", "draft"];
+const STATE_ORDER: WebsiteStatusWord[] = ["Live", "On staging", "Approved", "In review", "Draft"];
 
 export function dismissedKey(siteId: string) {
   return `gsam.sitemap.dismissed.${siteId}`;
@@ -88,6 +80,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
   onEditPage?: (pageId: string) => void;
 }) {
   const rows = useMemo(() => builtPageRows(pages), [pages]);
+  const onLive = useContext(WebsiteContentLiveContext);
   const frameCheck = pageFraming(site, framing);
   const mismatches = useMemo(() => sitemapMismatches(pages, approvedTree), [pages, approvedTree]);
   const suggested = useMemo(
@@ -121,7 +114,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
     }
   };
 
-  const stateCounts = STATE_ORDER.map((state) => ({ state, count: rows.filter((row) => builtPageState(row.page) === state).length })).filter((entry) => entry.count > 0);
+  const stateCounts = STATE_ORDER.map((state) => ({ state, count: rows.filter((row) => websiteStatusWord(row.page.status, onLive) === state).length })).filter((entry) => entry.count > 0);
   const hidden = suggested.filter((page) => dismissed.includes(page.id));
   const shown = showDismissed ? suggested : suggested.filter((page) => !dismissed.includes(page.id));
   const titleBySlug = new Map(pages.map((page) => [page.slug, page.title]));
@@ -139,7 +132,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
           <p className="text-sm text-muted-foreground" data-testid="sitemap-now-summary">
             {rows.length === 0 ? "No page is built yet." : (
               <>
-                {countOf(rows.length, "page")} {rows.length === 1 ? "is" : "are"} built: {stateCounts.map((entry) => `${entry.count} ${BUILT_PAGE_STATES[entry.state].label.toLowerCase()}`).join(", ")}.
+                {countOf(rows.length, "page")} {rows.length === 1 ? "is" : "are"} built: {stateCounts.map((entry) => `${entry.count} ${entry.state === "On staging" ? "on staging" : entry.state.toLowerCase()}`).join(", ")}.
               </>
             )}
             {rows.length > 0 && !site.liveReleaseId ? " No release has gone live from GSAM for this site yet, so no page reads as live here." : ""}
@@ -149,7 +142,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
         {rows.length > 0 ? (
           <ul className="divide-y divide-border rounded-xl border border-border" aria-label="Built pages">
             {rows.map(({ page, depth }) => {
-              const state = BUILT_PAGE_STATES[builtPageState(page)];
+              const word = websiteStatusWord(page.status, onLive);
               const viewUrl = pageViewUrl(site, page.slug);
               return (
                 <li key={page.id} data-testid="sitemap-now-page" className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2", INDENT[Math.min(depth, INDENT.length - 1)])}>
@@ -159,7 +152,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
                     <p className="break-all font-mono text-xs text-muted-foreground">{page.slug}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Pill className={state.tone}>{state.label}</Pill>
+                    <Pill className={WEBSITE_STATUS_TONE[word]}>{word}</Pill>
                     {page.seo.noindex ? <Pill className="bg-status-neutral-soft text-status-neutral-foreground">Hidden from search</Pill> : null}
                     <span>{page.menu === "none" ? "Not in a menu" : `${MENU_LABELS[page.menu]} menu`}</span>
                     <span>Changed {formatDateTime(page.updatedAt)}</span>

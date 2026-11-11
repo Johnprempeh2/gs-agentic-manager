@@ -10,6 +10,7 @@ import {
   WEBSITE_PORTAL_DOCUMENT_API_ROUTES,
   WEBSITE_PORTAL_DOCUMENT_MAX_BODY_BYTES,
   createWebsiteDataBridgeKeySchema,
+  isWebsiteDataFile,
   websiteCommerceItemQuerySchema,
   websiteCommerceListQuerySchema,
   websiteDataListQuerySchema,
@@ -216,6 +217,31 @@ export function websiteDataBridgeRoutes(db: Db, options: WebsiteDataBridgeOption
       return;
     }
     res.json(await bridge.get(site, resource, itemId, actorOf(req)));
+  });
+
+  // A file for one record (admin parity round 2): a buyer's PO or a lead's agent package, fetched over the signed bridge
+  // and sent to this signed-in caller only. Never cached, never a public link; each download is in the activity log.
+  router.get(WEBSITE_DATA_BRIDGE_API_ROUTES.file, async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const resource = resourceOf(req);
+    const itemId = req.params.itemId as string;
+    const kind = req.params.file as string;
+    if (!isWebsiteDataFile(resource, kind) || !ITEM_ID_RE.test(itemId)) {
+      res.status(404).json({ error: "The website has no such file.", code: "website_bridge_not_found" });
+      return;
+    }
+    queryOf(NO_QUERY, req);
+    const file = await bridge.file(site, resource, itemId, kind, actorOf(req));
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: site.companyId, actorType: actor.actorType, actorId: actor.actorId, action: "website.file_downloaded",
+      entityType: "website_site", entityId: site.id, agentId: actor.agentId, runId: actor.runId,
+      details: { resource, rowId: itemId, file: kind, bytes: file.bytes.length },
+    });
+    res.set({ "content-type": file.contentType, "content-disposition": `attachment; filename="${file.fileName}"`,
+      "cache-control": "no-store", "x-content-type-options": "nosniff" });
+    res.send(file.bytes);
   });
 
   // Commerce reads (GRE-2354 2c(a)): the catalogue, pricing, FX, imports and the payment report, on the same read

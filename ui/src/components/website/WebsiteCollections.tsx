@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   websiteCollectionDefinition,
@@ -21,6 +21,8 @@ import { useWebsiteSite } from "./WebsiteSiteConnection";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { WebsiteRedirects } from "./WebsiteRedirects";
 import { WebsiteMediaLibrary } from "./WebsiteMediaLibrary";
+import { queryKeys } from "../../lib/queryKeys";
+import { useWebsiteContentLive, WebsiteContentLiveContext, websiteStatusWord } from "../../lib/website-status";
 
 type FieldSchema = {
   $ref?: string;
@@ -44,6 +46,8 @@ const COLLECTIONS = [
   { key: "redirect", label: "Redirects", singular: "redirect" },
   { key: "form", label: "Forms", singular: "form" },
   { key: "vendor", label: "Vendors", singular: "vendor" },
+  { key: "service", label: "Services", singular: "service" },
+  { key: "service-category", label: "Service categories", singular: "service category" },
 ] as const;
 /** GRE-4785: redirects and media have their own screens; the rest use the schema form. */
 const MEDIA_VIEW = "media";
@@ -67,13 +71,11 @@ function blank(schema: FieldSchema): Value {
   return "";
 }
 
-/** Entry status labels (copy 1, status labels). */
-export const ENTRY_STATUS_LABEL: Record<WebsiteEntryStatus, string> = {
-  draft: "Draft",
-  review: "In review",
-  approved: "Approved",
-  published: "Live",
-};
+/** An entry's status in words, inside the Collections tab (which knows whether published content is live yet). */
+export function useEntryStatusWord() {
+  const onLive = useContext(WebsiteContentLiveContext);
+  return (status: WebsiteEntryStatus) => websiteStatusWord(status, onLive);
+}
 
 function humanise(key: string) {
   return key.replaceAll("_", " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (char) => char.toUpperCase());
@@ -149,7 +151,10 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
   const definition = websiteCollectionDefinition(collection)!;
   const detail = useQuery({ queryKey: ["website-entry", companyId, siteId, entryId], queryFn: () => websiteModuleApi.entry(companyId, siteId, entryId!), enabled: !!entryId });
   const revisions = useQuery({ queryKey: ["website-entry-revisions", companyId, siteId, entryId], queryFn: () => websiteModuleApi.entryRevisions(companyId, siteId, entryId!), enabled: !!entryId });
-  const { canManage } = useCanManageWebsite(companyId);
+  // Approving needs website:publish for this site; the server refuses agents whatever they hold.
+  const access = useQuery({ queryKey: queryKeys.website.access(companyId, siteId), queryFn: () => websiteModuleApi.access(companyId, siteId), retry: false });
+  const canApprove = access.data?.publish ?? false;
+  const statusWord = useEntryStatusWord();
   const [entryKey, setEntryKey] = useState("");
   const [fields, setFields] = useState<Value>(() => blank(definition.definition as FieldSchema));
   const [message, setMessage] = useState("");
@@ -163,15 +168,28 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
     void queryClient.invalidateQueries({ queryKey: ["website-entries", companyId, siteId] });
     void queryClient.invalidateQueries({ queryKey: ["website-entry-revisions", companyId, siteId] });
   };
+  /** Saves the draft and answers the entry's id; throws when the save did not land, so nothing after it runs. */
+  const saveDraft = async () => {
+    if (!entryId) return (await websiteModuleApi.createEntry(companyId, siteId, { collection, entryKey: entryKey.trim(), content: fields })).id;
+    const result = await websiteModuleApi.saveEntry(companyId, siteId, entryId, { baseRevisionId: detail.data!.latestRevisionId!, content: fields });
+    if (result.state !== "saved") throw new Error(result.message);
+    if (entryKey.trim() !== detail.data?.entryKey) await websiteModuleApi.updateEntry(companyId, siteId, entryId, { entryKey: entryKey.trim() });
+    return entryId;
+  };
   const save = useMutation({
-    mutationFn: async () => {
-      if (!entryId) return websiteModuleApi.createEntry(companyId, siteId, { collection, entryKey: entryKey.trim(), content: fields });
-      const result = await websiteModuleApi.saveEntry(companyId, siteId, entryId, { baseRevisionId: detail.data!.latestRevisionId!, content: fields });
-      if (result.state !== "saved") throw new Error(result.message);
-      if (entryKey.trim() !== detail.data?.entryKey) await websiteModuleApi.updateEntry(companyId, siteId, entryId, { entryKey: entryKey.trim() });
-      return result;
-    },
+    mutationFn: saveDraft,
     onSuccess: () => { setMessage("Draft saved. Once it is approved, Publish puts it on staging and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+  });
+  // Save and approve (people with Publish rights): save, then send for review and approve in the same click.
+  // The server approves only what is in review, so the client submits first.
+  const saveAndApprove = useMutation({
+    mutationFn: async (withSave: boolean) => {
+      const id = withSave ? await saveDraft() : entryId!;
+      if (withSave || detail.data?.status === "draft") await websiteModuleApi.submitEntry(companyId, siteId, id);
+      return websiteModuleApi.approveEntry(companyId, siteId, id);
+    },
+    onSuccess: () => { setMessage("Approved. Publish puts this change on staging, and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+    onError: () => { refresh(); if (entryId) void detail.refetch(); },
   });
   const changeStatus = useMutation({
     mutationFn: async (action: "review" | "approve" | "archive") => {
@@ -195,19 +213,21 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
     } catch (error) { setMessage(errorStateMessage(error)); }
   };
   return <section className="space-y-5" data-testid="website-entry-editor">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? websiteEntrySummary(entry.content)?.name ?? entry.entryKey : `New ${singular}`}</h3><p className="text-sm text-muted-foreground">{ENTRY_STATUS_LABEL[entry?.status ?? "draft"]}. Approved changes go to staging when you Publish, and live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-lg font-semibold">{entry ? websiteEntrySummary(entry.content)?.name ?? entry.entryKey : `New ${singular}`}</h3><p className="text-sm text-muted-foreground">{statusWord(entry?.status ?? "draft")}. Approved changes go to staging when you Publish, and live when you Deploy.</p></div><Button variant="ghost" onClick={onClose}>Back to list</Button></div>
     <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <label className="block space-y-1 text-sm"><span className="font-medium">Entry key</span><Input value={entryKey} onChange={(event) => setEntryKey(event.target.value)} required maxLength={200} /></label>
       <SchemaField schema={definition.definition as FieldSchema} value={fields} label="Fields" path="website-entry-fields" onChange={setFields} />
-      <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" className="ml-auto" disabled={save.isPending || !entryKey.trim()}>{save.isPending ? "Saving" : "Save draft"}</Button></div>
+      <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" variant={canApprove ? "outline" : "default"} className="ml-auto" disabled={save.isPending || saveAndApprove.isPending || !entryKey.trim()}>{save.isPending ? "Saving" : "Save draft"}</Button>
+        {canApprove && (dirty || !entry) ? <Button type="button" onClick={() => saveAndApprove.mutate(true)} disabled={save.isPending || saveAndApprove.isPending || !entryKey.trim()}>{saveAndApprove.isPending ? "Saving and approving" : "Save and approve"}</Button> : null}</div>
     </form>
     {entry ? <div className="flex flex-wrap gap-2">
-      {entry.status === "draft" ? <Button variant="outline" onClick={() => changeStatus.mutate("review")} disabled={changeStatus.isPending || save.isPending || dirty}>Send for review</Button> : null}
-      {entry.status === "review" && canManage ? <Button variant="outline" onClick={() => changeStatus.mutate("approve")} disabled={changeStatus.isPending || dirty}>Approve</Button> : null}
+      {entry.status === "draft" && !canApprove ? <Button variant="outline" onClick={() => changeStatus.mutate("review")} disabled={changeStatus.isPending || save.isPending || dirty}>Send for review</Button> : null}
+      {(entry.status === "draft" || entry.status === "review") && canApprove && !dirty ? <Button variant="outline" onClick={() => saveAndApprove.mutate(false)} disabled={changeStatus.isPending || saveAndApprove.isPending}>Approve</Button> : null}
       <Button variant="ghost" onClick={() => { if (window.confirm(`Archive this ${singular}? It leaves the live site after the next Publish and Deploy. History stays.`)) changeStatus.mutate("archive"); }} disabled={changeStatus.isPending}>Archive</Button>
     </div> : null}
     {message ? <p role="status" className="text-sm text-status-success">{message}</p> : null}
     {save.error || changeStatus.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(save.error ?? changeStatus.error)}</p> : null}
+    {saveAndApprove.error ? <p role="alert" className="text-sm text-status-danger">Not approved: {errorStateMessage(saveAndApprove.error)}</p> : null}
     {entry ? <section className="space-y-2"><h4 className="text-sm font-semibold">History</h4>{revisions.error ? <ErrorState error={revisions.error} onRetry={() => void revisions.refetch()} /> : revisions.data?.map((revision) => <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground" key={revision.id}><span>Version {revision.revisionNumber}, {formatDateTime(revision.createdAt)}{revision.changeSummary ? `: ${revision.changeSummary}` : ""}</span>{revision.id !== entry.latestRevisionId ? <Button type="button" size="xs" variant="ghost" onClick={() => void restore(revision.id)}>Restore</Button> : null}</div>)}</section> : null}
   </section>;
 }
@@ -216,6 +236,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   const queryClient = useQueryClient();
   const { site, isLoading, error } = useWebsiteSite(companyId, property.id);
   const { canManage } = useCanManageWebsite(companyId);
+  const onLive = useWebsiteContentLive(companyId, site);
   const [collection, setCollection] = useState<string>("product");
   const [entryId, setEntryId] = useState<string | null | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -229,8 +250,8 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
   const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
   const shown = (entries.data ?? []).filter((entry) => entryMatches(entry, search));
-  return <div className="space-y-5" data-testid="website-collections">
-    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms and media. Approved changes go to staging when you Publish, and live when you Deploy.</p></div>
+  return <WebsiteContentLiveContext.Provider value={onLive}><div className="space-y-5" data-testid="website-collections">
+    <div><h2 className="text-lg font-semibold">Collections</h2><p className="text-sm text-muted-foreground">Products, categories, team, redirects, forms, services and media. Approved changes go to staging when you Publish, and live when you Deploy.</p></div>
     {canManage ? <div className="space-y-2"><Button variant="outline" onClick={() => importDrafts.mutate()} disabled={importDrafts.isPending}>{importDrafts.isPending ? "Importing drafts" : "Import public content as drafts"}</Button><p className="text-xs text-muted-foreground">Brings in the vendors, categories, products, public team cards and forms last captured from the website. Entries a person has edited are kept.</p>{importDrafts.data ? <p role="status" className="text-sm text-status-success">Imported {importDrafts.data.imported} drafts. Kept {importDrafts.data.skipped} existing entries.</p> : null}{importDrafts.error ? <p role="alert" className="text-sm text-status-danger">{errorStateMessage(importDrafts.error)}</p> : null}</div> : null}
     <label className="block max-w-sm space-y-1 text-sm" data-tour="website-collection-picker"><span className="font-medium">Collection</span><NativeSelect value={collection} onChange={(event) => { setCollection(event.target.value); setEntryId(undefined); setSearch(""); }}>{COLLECTIONS.filter((item) => websiteCollectionManifest.collections[item.key]).map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}<option value={MEDIA_VIEW}>Media</option></NativeSelect></label>
     {collection === "redirect" ? <WebsiteRedirects companyId={companyId} siteId={site.id} /> : collection === MEDIA_VIEW ? <WebsiteMediaLibrary companyId={companyId} siteId={site.id} /> : entryId !== undefined ? <EntryEditor key={`${collection}:${entryId ?? "new"}`} companyId={companyId} siteId={site.id} collection={collection} singular={selected.singular} entryId={entryId} onClose={() => setEntryId(undefined)} /> :
@@ -245,7 +266,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
               const reading = entryReading(entry);
               return <li key={entry.id} className="flex items-center justify-between gap-3 py-3 text-sm">
                 <div className="min-w-0 flex-1">
-                  <p className="flex min-w-0 items-baseline gap-2"><span className="min-w-0 truncate font-medium">{reading.title}</span><span className="shrink-0 text-muted-foreground">{ENTRY_STATUS_LABEL[entry.status]}</span></p>
+                  <p className="flex min-w-0 items-baseline gap-2"><span className="min-w-0 truncate font-medium">{reading.title}</span><span className="shrink-0 text-muted-foreground">{websiteStatusWord(entry.status, onLive)}</span></p>
                   {reading.line ? <p className="truncate text-muted-foreground">{reading.line}</p> : null}
                   <p className="break-words text-xs text-muted-foreground">
                     {reading.meta ? `${reading.meta} · ` : null}Version {entry.latestRevisionNumber}, {formatDateTime(entry.updatedAt)}
@@ -258,5 +279,5 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
           </> :
           <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, Publish puts it on staging and Deploy puts it live.`}</p></div>}
       </section>}
-  </div>;
+  </div></WebsiteContentLiveContext.Provider>;
 }

@@ -8,6 +8,8 @@
     "product": { "releaseKey": "offerings", "fieldsVersion": 1, "ref": "#/$defs/offerings", "source": "publicCatalogue.offerings" },
     "public-person": { "releaseKey": "public-people", "fieldsVersion": 1, "ref": "#/$defs/public-people", "source": "publicPeople" },
     "form": { "releaseKey": "forms", "fieldsVersion": 1, "ref": "#/$defs/forms", "source": "publicForms" },
+    "service": { "releaseKey": "services", "fieldsVersion": 1, "ref": "#/$defs/services", "source": "publicServices" },
+    "service-category": { "releaseKey": "service-categories", "fieldsVersion": 1, "ref": "#/$defs/service-categories", "source": "publicServices" },
     "redirect": { "releaseKey": "redirects", "fieldsVersion": 1, "ref": "#/$defs/redirects", "source": "release.redirects" }
   },
   "privateCollections": ["team"]

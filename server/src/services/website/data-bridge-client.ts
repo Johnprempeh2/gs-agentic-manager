@@ -165,6 +165,15 @@ type WriteMethod = "POST" | "PATCH" | "DELETE";
 type BridgeMethod = "GET" | "PUT" | WriteMethod;
 
 const ATTEMPT_TIMEOUT_MS = 10_000;
+/** The site takes a PO of at most 10 MB (request-quote); a little room above it. */
+const MAX_FILE_BYTES = 12 * 1024 * 1024;
+
+export type WebsiteBridgeFile = { bytes: Buffer; contentType: "application/zip" | "application/octet-stream"; fileName: string };
+/** Letters, digits, dot, dash and underscore only, never a leading dot: safe in a content-disposition header. */
+export function safeFileName(name: string | undefined) {
+  const safe = String(name ?? "").replace(/[^\w.-]+/g, "_").replace(/^\.+/, "").slice(-120);
+  return safe || "download";
+}
 const CALL_DEADLINE_MS = 25_000;
 const BACKOFF_MS = [300, 1_000];
 const MAX_RETRY_AFTER_MS = 5_000;
@@ -328,6 +337,34 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
   }
 
   /**
+   * A file the site streams (admin parity round 2): a buyer's PO or a lead's agent package. A signed read, one try (a
+   * person clicks again); the bytes are capped, and the name comes from the site's content-disposition, made safe.
+   */
+  async function file(path: string, actor: WebsiteBridgeActor): Promise<WebsiteBridgeFile> {
+    const url = new URL(`/api/admin/v1/${path.replace(/^\/+/, "")}`, base);
+    const headers = signBridgeRequest({ method: "GET", url, kid: options.credential.kid, privateKey: options.credential.privateKey,
+      actor, nowSeconds: Math.floor(now() / 1000) });
+    let res: Response;
+    try {
+      res = await fetchImpl(url, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(CALL_DEADLINE_MS) });
+    } catch (error) {
+      const name = (error as { name?: string })?.name;
+      throw new WebsiteBridgeError(name === "TimeoutError" || name === "AbortError" ? "timeout" : "unreachable");
+    }
+    if (!res.ok) {
+      const errBody = errorBody.safeParse(await res.json().catch(() => null));
+      throw new WebsiteBridgeError(codeFor(res.status, errBody.success ? errBody.data.error.code : undefined), res.status,
+        errBody.success ? errBody.data.error.code : `HTTP ${res.status}`);
+    }
+    if (Number(res.headers.get("content-length")) > MAX_FILE_BYTES) throw new WebsiteBridgeError("bad_response", res.status, "file too large");
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length > MAX_FILE_BYTES) throw new WebsiteBridgeError("bad_response", res.status, "file too large");
+    const named = /filename="([^"]*)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+    return { bytes, contentType: res.headers.get("content-type") === "application/zip" ? "application/zip" : "application/octet-stream",
+      fileName: safeFileName(named) };
+  }
+
+  /**
    * One call: at most two retries, only after a network error, a timeout or a 502/503/504. 4xx is never retried.
    * A PUT is retried too: it replaces the whole resource, so sending it twice is the same as once. A write keeps
    * one idempotency key for all its tries (each with a new nonce), so the site writes it at most once.
@@ -378,6 +415,8 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     importJob: (id: string, page: { cursor?: string; limit?: number }, actor: WebsiteBridgeActor) =>
       get(`/api/admin/v1/imports/${encodeURIComponent(id)}`, { cursor: page.cursor, limit: limitOf(page.limit) }, actor, bridgeImportItemSchema),
     fx: (actor: WebsiteBridgeActor) => get("/api/admin/v1/fx", {}, actor, bridgeItemSchema),
+    /** A file the site streams: `quotes/<id>/po-document`, `orders/<id>/po-document` or `enquiries/fd-<id>/agent-package`. */
+    file,
     payments: async (range: { from?: string; to?: string }, actor: WebsiteBridgeActor) => {
       const site = await get("/api/admin/v1/payments", { from: range.from, to: range.to }, actor, bridgePaymentReportSchema);
       return { report: { from: range.from ?? null, to: range.to ?? null, ...site } };

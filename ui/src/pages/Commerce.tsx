@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Building2, ExternalLink, ShoppingBag, X } from "lucide-react";
 import { organisationsApi } from "@/api/organisations";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
+import { DownloadFileButton } from "@/components/commerce/CommerceWriteParts";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -388,6 +389,18 @@ export function CommerceRecordView({ companyId, siteId, resource, recordId, doma
           <p className="mt-4 whitespace-pre-wrap border-t border-border pt-4 text-sm">{text(record.message)}</p>
         ) : null}
       </section>
+
+      {(resource === "quotes" || resource === "orders") && record.has_po_document === true ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4" aria-label="Purchase order file"
+          data-tour="commerce-po-document">
+          <div className="min-w-0 space-y-0.5">
+            <h2 className="text-sm font-semibold">Purchase order file</h2>
+            <p className="text-xs text-muted-foreground">The buyer uploaded it with {resource === "orders" ? "the quote for this order" : "this quote"}. It comes to you only, never as a public link.</p>
+          </div>
+          <DownloadFileButton url={websiteDataBridgeApi.fileUrl(companyId, siteId, resource, recordId, "po-document")}
+            label="Download PO" ariaLabel={`Download the purchase order file for ${title}`} testId="commerce-po-download" />
+        </section>
+      ) : null}
 
       <LineItems record={record} />
 

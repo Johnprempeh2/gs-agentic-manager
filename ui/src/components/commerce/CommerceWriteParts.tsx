@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { AlertTriangle, KeyRound, Lock, RefreshCw } from "lucide-react";
+import { AlertTriangle, Download, KeyRound, Lock, RefreshCw } from "lucide-react";
 import type { CommerceRow } from "@/api/website-commerce";
 import {
   AlertDialog,
@@ -289,5 +289,47 @@ export function CommerceRowForm({ idPrefix, fields, base, initial, refOptions, s
         {onCancel ? <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button> : null}
       </div>
     </form>
+  );
+}
+
+/** What a failed download says: the server's plain message when it sent one. */
+async function downloadFailure(res: Response) {
+  const body = await res.json().catch(() => null) as { error?: unknown } | null;
+  return typeof body?.error === "string" && body.error ? body.error : "The download did not work. Try again.";
+}
+
+/**
+ * Downloads one record's file through GSAM (admin parity round 2): GSAM fetches it over the signed bridge and sends
+ * it to this signed-in person only. There is no public link to copy, and a failure is said here in plain words.
+ */
+export function DownloadFileButton({ url, label, ariaLabel, testId }: { url: string; label: string; ariaLabel?: string; testId?: string }) {
+  const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const download = async () => {
+    setState({ busy: true, error: null });
+    try {
+      const res = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+      if (!res.ok) { setState({ busy: false, error: await downloadFailure(res) }); return; }
+      const name = /filename="([^"]*)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] || "download";
+      const href = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 30_000);
+      setState({ busy: false, error: null });
+    } catch {
+      setState({ busy: false, error: "GSAM could not reach the website. Try again." });
+    }
+  };
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <Button type="button" size="sm" variant="outline" onClick={() => void download()} disabled={state.busy} aria-label={ariaLabel} data-testid={testId}>
+        <Download aria-hidden="true" />
+        {state.busy ? "Downloading" : label}
+      </Button>
+      {state.error ? <span role="alert" className="text-xs text-destructive">{state.error}</span> : null}
+    </span>
   );
 }

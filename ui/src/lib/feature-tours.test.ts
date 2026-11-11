@@ -109,13 +109,15 @@ describe("website and commerce tours", () => {
     expect(coreTourForPath("/commerce/offerings")?.id).toBe("commerce-catalogue");
     expect(coreTourForPath("/commerce/quotes")?.id).toBe("commerce-sales");
     expect(coreTourForPath("/commerce/invoices")?.id).toBe("commerce-sales");
-    expect(coreTourForPath("/commerce/quotes/q1")).toBeNull();
+    expect(coreTourForPath("/commerce/quotes/q1")?.id).toBe("commerce-record-detail");
+    expect(coreTourForPath("/commerce/orders/o1")?.id).toBe("commerce-record-detail");
+    expect(coreTourForPath("/commerce/licences/l1")).toBeNull();
     expect(coreTourForPath("/commerce/vendors")?.id).toBe("commerce-catalogue-setup");
     expect(coreTourForPath("/commerce/imports")?.id).toBe("commerce-catalogue-setup");
     expect(coreTourForPath("/commerce/imports/job-1")).toBeNull();
     expect(coreTourForPath("/commerce/customers")?.id).toBe("commerce-clients");
     expect(coreTourForPath("/commerce/enquiries")?.id).toBe("commerce-clients");
-    expect(coreTourForPath("/commerce/customers/c1")).toBeNull();
+    expect(coreTourForPath("/commerce/customers/c1")?.id).toBe("commerce-client-detail");
     expect(coreTourForPath("/website/sites/s1/pages/p1/design")).toBeNull();
   });
 

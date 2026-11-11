@@ -20,7 +20,6 @@ import {
   type Tree,
   countOf,
   builtPageRows,
-  builtPageState,
   isBuiltPage,
   sitemapMismatches,
 } from "./model";
@@ -158,14 +157,6 @@ describe("the site as it is", () => {
     expect(isBuiltPage(page("a", "/a"))).toBe(true);
     expect(isBuiltPage(page("a", "/a", { status: "planned" }))).toBe(false);
     expect(isBuiltPage(page("a", "/a", { archivedAt: "2026-11-01T00:00:00Z" }))).toBe(false);
-  });
-
-  it("says where a built page stands", () => {
-    expect(builtPageState(page("a", "/a", { status: "published" }))).toBe("live");
-    expect(builtPageState(page("a", "/a"))).toBe("approved");
-    expect(builtPageState(page("a", "/a", { status: "review" }))).toBe("review");
-    expect(builtPageState(page("a", "/a", { status: "draft", publishedRevisionId: "r1" }))).toBe("changed");
-    expect(builtPageState(page("a", "/a", { status: "draft" }))).toBe("draft");
   });
 
   it("lays built pages out under their built parents and leaves planned pages out", () => {

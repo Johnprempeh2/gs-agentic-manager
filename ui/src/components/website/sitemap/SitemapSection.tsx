@@ -27,6 +27,7 @@ import { SitemapBoardView } from "./SitemapBoard";
 import { countOf, nodeStatus, pagesLookup } from "./model";
 import { SitemapCompareView } from "./SitemapCompare";
 import { SitemapNow, type SitemapFraming } from "./SitemapNow";
+import { useWebsiteContentLive, WebsiteContentLiveContext } from "@/lib/website-status";
 import { SitemapTreeView } from "./SitemapTree";
 import { Pill, SitemapJourneysView, SitemapListView, SitemapMenusView } from "./SitemapViews";
 
@@ -333,8 +334,10 @@ export function SitemapSection({ companyId, site, options, pages, framing, canAp
   const busy = save.isPending || copy.isPending || mix.isPending || approve.isPending || archive.isPending;
 
   const canApproveThis = canApprove && option.status !== "archived" && (option.status !== "approved" || option.changedSinceApproval);
+  const onLive = useWebsiteContentLive(companyId, site);
 
   return (
+    <WebsiteContentLiveContext.Provider value={onLive}>
     <div className="space-y-4" data-testid="website-sitemap-section">
       {/* The view bar leads: "Site now" is the site as it is, every other view edits a plan. */}
       <Tabs value={view} onValueChange={(value) => setView(value as SitemapView)}>
@@ -466,6 +469,7 @@ export function SitemapSection({ companyId, site, options, pages, framing, canAp
         {view === "xml" ? <SitemapXmlView companyId={companyId} site={site} /> : null}
       </div>
     </div>
+    </WebsiteContentLiveContext.Provider>
   );
 }
 

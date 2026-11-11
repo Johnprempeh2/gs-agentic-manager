@@ -123,7 +123,7 @@ describe("SitemapSection", () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     const tab = [...container.querySelectorAll<HTMLElement>("[role=tab]")].find((entry) => entry.textContent === "Site now")!;
     expect(tab.getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector("[data-testid=sitemap-now-summary]")!.textContent).toContain("1 page is built: 1 approved, not published.");
+    expect(container.querySelector("[data-testid=sitemap-now-summary]")!.textContent).toContain("1 page is built: 1 approved.");
     expect([...container.querySelectorAll("[data-testid=sitemap-now-page]")].map((row) => row.querySelector("p")!.textContent)).toEqual(["Home"]);
     // The approved option has Consultancy with no page row, and Tools is promised to the header without being built.
     const attention = container.querySelector("[data-testid=sitemap-now-attention]")!.textContent;

@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Building2, Copy, Inbox, Pencil, Plus, ReceiptText, Trash2, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, Copy, Inbox, Pencil, Plus, ReceiptText, Trash2, UserPlus, Users } from "lucide-react";
 import { organisationsApi } from "@/api/organisations";
 import { websiteCommerceApi, type CommerceRow } from "@/api/website-commerce";
 import { websiteDataBridgeApi } from "@/api/website-data-bridge";
@@ -29,7 +29,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { lastEngagementByClient, recencyLine, recencyOf, RECENCY, ENGAGEMENT_TEMPLATES, type RecencyKey } from "@/lib/commerce-recency";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
-import { CommerceRowForm, CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
+import { CommerceRowForm, CommerceWriteError, ConfirmButton, DownloadFileButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
 // Clients, their timeline and licences, enquiries and leads, portal receipts and customer tiers (GRE-4784, on the
 // GRE-4782 routes): the website admin's commerce settings, in GSAM. Anyone with Commerce rights edits records and
@@ -55,7 +55,8 @@ function day(value: unknown, withTime = false) {
 }
 
 /** One bridge list, paged. */
-function useBridgeList(companyId: string, siteId: string, resource: "customers" | "enquiries" | "portal-acceptances" | "licences" | "engagements" | "orders",
+function useBridgeList(companyId: string, siteId: string,
+  resource: "customers" | "enquiries" | "portal-acceptances" | "licences" | "engagements" | "orders" | "invite-requests",
   customer?: string) {
   return useInfiniteQuery({
     queryKey: queryKeys.website.data(companyId, siteId, resource, "list", customer ?? ""),
@@ -174,6 +175,7 @@ export function ClientList({ companyId, siteId }: { companyId: string; siteId: s
           <CommerceWriteError error={create.error} />
         </div>
       ) : null}
+      <WaitingSeatRequests companyId={companyId} siteId={siteId} clients={all} />
       {latest.data && all.length ? (
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter clients by their latest timeline item" data-testid="commerce-client-recency">
           <Button size="sm" variant={wanted ? "ghost" : "secondary"} aria-pressed={!wanted} onClick={() => setParam("recency", null)}>
@@ -313,6 +315,7 @@ export function ClientRecord({ companyId, siteId, clientId }: { companyId: strin
         </section>
       ) : null}
 
+      <ClientSeatRequests companyId={companyId} siteId={siteId} clientId={clientId} clientName={text(client.name) ?? "this client"} />
       <ClientTimeline companyId={companyId} siteId={siteId} clientId={clientId} />
       <ClientLicences companyId={companyId} siteId={siteId} clientId={clientId} />
 
@@ -332,6 +335,101 @@ export function ClientRecord({ companyId, siteId, clientId }: { companyId: strin
         ))}
       </nav>
     </div>
+  );
+}
+
+// ---- seat requests (admin parity round 2) ----
+// A client's company admin asks for a new seat on the website. A person approves (the website adds them to the
+// client's portal, as People does) or declines; the website refuses anyone else.
+
+const roleWord = (role: unknown) => (text(role) === "admin" ? "Company admin" : "Member");
+const isPending = (row: CommerceRow) => text(row.status) === "pending";
+
+/** The pending seat requests across every client, on Clients, so none waits unseen. Hidden when there are none. */
+function WaitingSeatRequests({ companyId, siteId, clients }: { companyId: string; siteId: string; clients: CommerceRow[] }) {
+  const requests = useBridgeList(companyId, siteId, "invite-requests");
+  const waiting = byDateDesc((requests.data?.pages.flatMap((page) => page.items) ?? []).filter(isPending), "created_at");
+  if (!waiting.length) return null;
+  const nameOf = (id: unknown) => text(clients.find((client) => text(client.id) === text(id))?.name) ?? "A client";
+  return (
+    <section className={SECTION} aria-label="Seat requests waiting" data-testid="commerce-seat-requests-waiting" data-tour="commerce-seat-requests-waiting">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <UserPlus className="size-4 text-muted-foreground" aria-hidden="true" />
+        {waiting.length === 1 ? "1 seat request is waiting" : `${waiting.length} seat requests are waiting`}
+      </h2>
+      <ul className="divide-y divide-border rounded-lg border border-border">
+        {waiting.map((row) => (
+          <li key={text(row.id)}>
+            <Link to={`/commerce/customers/${encodeURIComponent(text(row.customer_id) ?? "")}`} className={ROW_LINK}>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{text(row.full_name) ?? text(row.email)} for {nameOf(row.customer_id)}</span>
+                <span className="block truncate text-xs text-muted-foreground">{[roleWord(row.role), day(row.created_at)].filter(Boolean).join(" · ")}</span>
+              </span>
+              <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <LoadMore query={requests} />
+    </section>
+  );
+}
+
+function SeatRequestRow({ companyId, siteId, row, clientName }: { companyId: string; siteId: string; row: CommerceRow; clientName: string }) {
+  const isPerson = useCommercePerson();
+  const decide = useCommerceWrite(companyId, siteId);
+  const id = text(row.id) ?? "";
+  const who = text(row.full_name) ?? text(row.email) ?? "This person";
+  const decided = !isPending(row);
+  return (
+    <li className="space-y-2 px-4 py-3" data-testid="commerce-seat-request">
+      <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
+        <span className="min-w-0 flex-1 basis-56">
+          <span className="block break-words text-sm font-medium">{who}</span>
+          {text(row.full_name) ? <span className="block break-all text-xs text-muted-foreground">{text(row.email)}</span> : null}
+          <span className="block text-xs text-muted-foreground">{[roleWord(row.role), `Asked ${day(row.created_at) ?? ""}`.trim(),
+            decided && day(row.handled_at) ? `Decided ${day(row.handled_at)}` : null].filter(Boolean).join(" · ")}</span>
+        </span>
+        {decided ? <StatusPill status={text(row.status) === "provisioned" ? "approved" : row.status} /> : isPerson ? (
+          <span className="flex shrink-0 flex-wrap items-center gap-2">
+            <ConfirmButton label="Approve" variant="default" title={`Give ${who} a seat?`} testId="commerce-seat-approve"
+              description={`The website adds ${text(row.email) ?? who} to ${clientName}'s portal as a ${roleWord(row.role).toLowerCase()}. They sign in with that email address.`}
+              confirmLabel="Approve and add" disabled={decide.isPending}
+              onConfirm={() => decide.mutate({ method: "POST", parts: ["invite-requests", id, "decision"], body: { decision: "approve" } })} />
+            <ConfirmButton label="Decline" title={`Decline the request for ${who}?`} testId="commerce-seat-decline"
+              description="Nobody is added. The request stays in the list as declined." confirmLabel="Decline request" disabled={decide.isPending}
+              onConfirm={() => decide.mutate({ method: "POST", parts: ["invite-requests", id, "decision"], body: { decision: "decline" } })} />
+          </span>
+        ) : null}
+      </div>
+      {text(row.note) ? <p className="whitespace-pre-wrap text-sm text-muted-foreground">{text(row.note)}</p> : null}
+      <CommerceWriteError error={decide.error} />
+    </li>
+  );
+}
+
+/** A client's seat requests: waiting first, then the decided ones. Hidden when the client has made none. */
+function ClientSeatRequests({ companyId, siteId, clientId, clientName }: { companyId: string; siteId: string; clientId: string; clientName: string }) {
+  const isPerson = useCommercePerson();
+  const requests = useBridgeList(companyId, siteId, "invite-requests", clientId);
+  const all = byDateDesc(requests.data?.pages.flatMap((page) => page.items) ?? [], "created_at");
+  const rows = [...all.filter(isPending), ...all.filter((row) => !isPending(row))];
+  // A website from before seat requests answers not found: say so quietly rather than fill the page with an error.
+  if (requests.error) return <p className="text-xs text-muted-foreground" data-testid="commerce-seat-requests-unavailable">Seat requests could not be read from the website. They show here once the website has the latest update.</p>;
+  if (!rows.length) return null;
+  const waiting = all.filter(isPending).length;
+  return (
+    <section className={SECTION} aria-label="Seat requests" data-testid="commerce-client-seat-requests" data-tour="commerce-seat-requests">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 className="text-sm font-semibold">Seat requests{waiting ? ` (${waiting} waiting)` : ""}</h2>
+        {isPerson ? null : <PeopleOnlyNote>A person approves or declines a seat, in GSAM.</PeopleOnlyNote>}
+      </div>
+      <p className="text-xs text-muted-foreground">{clientName}'s company admin asked for these people to have access to the client portal.</p>
+      <ul className="divide-y divide-border rounded-lg border border-border">
+        {rows.map((row) => <SeatRequestRow key={text(row.id)} companyId={companyId} siteId={siteId} row={row} clientName={clientName} />)}
+      </ul>
+      <LoadMore query={requests} />
+    </section>
   );
 }
 
@@ -672,6 +770,12 @@ function EnquiryRow({ companyId, siteId, row }: { companyId: string; siteId: str
         </span>
       </div>
       {text(row.message) ? <p className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{text(row.message)}</p> : null}
+      {isFrontDoorLead(id) && row.agentPackage === true ? (
+        <div data-tour="commerce-agent-package">
+          <DownloadFileButton url={websiteDataBridgeApi.fileUrl(companyId, siteId, "enquiries", id, "agent-package")}
+            label="Download agent package (.zip)" ariaLabel={`Download the agent package for ${name}`} testId="commerce-agent-package" />
+        </div>
+      ) : null}
       <CommerceWriteError error={write.error} />
     </li>
   );

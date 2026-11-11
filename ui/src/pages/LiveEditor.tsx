@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
-import { ArrowLeft, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { historyKey, LiveDesignChat, useEditHistory, useLiveDesign } from "../components/LiveDesignChat";
 import { useDecisionCardContext } from "../components/website/WebsiteHub";
+import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websiteStatusWord } from "../lib/website-status";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
 
 // Impeccable asks "Apply 2 edits?" with confirm(), so the live page may open modals.
@@ -88,16 +89,35 @@ export function WebsitePageLiveEditor() {
   const companyId = selectedCompanyId ?? "";
   const live = useLiveDesign(() => websiteModuleApi.liveStart(companyId, siteId, pageId), `${siteId}:${pageId}`, !!companyId);
   const current = live.view?.attachmentId ?? null;
-  const { data: page } = useQuery({
+  const { data: page, refetch: refetchPage } = useQuery({
     queryKey: ["website-live-page", companyId, siteId, pageId, current],
     queryFn: () => websiteModuleApi.page(companyId, siteId, pageId),
     enabled: !!companyId,
   });
+  // Save and approve and Approve: people with Publish rights on this site only (the server refuses agents too).
+  const { data: access } = useQuery({
+    queryKey: queryKeys.website.access(companyId, siteId),
+    queryFn: () => websiteModuleApi.access(companyId, siteId),
+    enabled: !!companyId,
+    retry: false,
+  });
+  const queryClient = useQueryClient();
+  const approve = useCallback(async () => {
+    await websiteModuleApi.approvePage(companyId, siteId, pageId);
+    void queryClient.invalidateQueries({ queryKey: ["website-live-pages", companyId, siteId] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, siteId) });
+    await refetchPage();
+  }, [companyId, siteId, pageId, queryClient, refetchPage]);
+  const canApprove = !!access?.publish;
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   const { data: sites } = useQuery({
     queryKey: ["website-live-sites", companyId],
     queryFn: () => websiteModuleApi.sites(companyId),
     enabled: !!companyId,
   });
+  const onLive = useWebsiteContentLive(companyId, sites?.find((s) => s.id === siteId));
+  const statusWord = page ? websiteStatusWord(page.status, onLive) : null;
   // A page still in the old block format shows as it is on the site (the address the frame already uses for its assets), read-only.
   const site = sites?.find((s) => s.id === siteId);
   const siteBase = site?.devPreviewUrl ?? site?.livePreviewUrl ?? null;
@@ -135,8 +155,34 @@ export function WebsitePageLiveEditor() {
       subtitle={`Live design · ${page?.slug ?? ""}${revisions?.[0] ? ` · version ${revisions[0].revisionNumber}` : ""}`}
       backTo="/website"
       backLabel="Back to the website"
+      onApprove={canApprove ? approve : undefined}
       switcher={
-        builtPages.length > 1 ? (
+        <>
+          {statusWord ? (
+            <span className={cn("inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", WEBSITE_STATUS_TONE[statusWord])} data-testid="live-page-status">
+              {statusWord}
+            </span>
+          ) : null}
+          {/* Nothing waiting to save: an approver approves the saved version here (with edits waiting, Save and approve does both). */}
+          {canApprove && page && (page.status === "draft" || page.status === "review") && !live.view?.stagedCount && live.view?.status !== "applying" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={approving}
+              title={approveError ?? "Approve the saved version. Publish then puts it on staging."}
+              onClick={() => {
+                setApproving(true);
+                setApproveError(null);
+                approve().catch((err: unknown) => setApproveError(err instanceof Error ? `Not approved: ${err.message}` : "Not approved")).finally(() => setApproving(false));
+              }}
+            >
+              <Check />
+              Approve
+            </Button>
+          ) : null}
+          {approveError ? <span role="alert" className="max-w-48 truncate text-xs text-destructive" title={approveError}>{approveError}</span> : null}
+          {builtPages.length > 1 ? (
           <NativeSelect
             aria-label="Page"
             value={pageId}
@@ -151,7 +197,8 @@ export function WebsitePageLiveEditor() {
               <option key={p.id} value={p.id}>{p.title} ({p.slug})</option>
             ))}
           </NativeSelect>
-        ) : null
+          ) : null}
+        </>
       }
       versions={revisions?.map((r) => ({
         id: r.id,
@@ -202,6 +249,7 @@ function LiveEditorShell({
   switcher,
   engine,
   readOnly,
+  onApprove,
 }: {
   live: ReturnType<typeof useLiveDesign>;
   title: string;
@@ -213,6 +261,8 @@ function LiveEditorShell({
   onRestore: (restoreId: string) => void;
   /** Moves to another page of the same site. */
   switcher?: ReactNode;
+  /** A person with Publish rights on a website page: Save and approve in the unsaved edits bar. */
+  onApprove?: () => Promise<unknown>;
   /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
   /** An old block format page: the real page from the site, read-only, with an optional rebuild. */
   readOnly?: { url: string; onRebuild?: () => void };
@@ -637,7 +687,7 @@ function LiveEditorShell({
           <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => {
             setViewing(null);
             setPreview({ url, label });
-          }} onEditsChanged={reloadFrame} />
+          }} onEditsChanged={reloadFrame} onApprove={onApprove} />
         </aside>
       </div>
     </div>

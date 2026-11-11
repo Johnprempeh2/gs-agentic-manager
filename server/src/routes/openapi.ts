@@ -17194,6 +17194,14 @@ registerCurrentRoute({
   responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
 });
 
+registerCurrentRoute({
+  method: "get",
+  path: `${siteParams}/data/{resource}/{itemId}/{file}`,
+  tags: ["website"],
+  summary: "Download one record's file through the signed admin bridge (website:view): quotes/{id}/po-document or orders/{id}/po-document (the buyer's PO), enquiries/fd-{uuid}/agent-package (the lead's agent package .zip). Sent to the caller only, never cached",
+  responses: { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } },
+});
+
 // ─── Website commerce reads (GRE-2354 2c(a)) ──────────────────────────────────
 
 const commerceReadResponses = { ...websiteModuleResponses, 409: r.conflict, 422: r.unprocessable, 502: { description: "The website's data bridge refused the read or did not answer; the message says which" } };
