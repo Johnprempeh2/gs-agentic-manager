@@ -31,6 +31,7 @@ import { rowVersionOf, type CommerceFieldDef } from "@/lib/commerce-write";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { CommerceRulePreview } from "./CommerceRulePreview";
 import { CommerceRowForm, CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
 
 // The catalogue (GRE-3972 slice 1): vendors, categories, offerings with their editions, specs and media, pricing
@@ -517,6 +518,7 @@ export function CatalogueRecord({ companyId, siteId, resource, recordId, domain 
       {(CHILDREN[resource] ?? []).map((spec) => (
         <ChildSection key={spec.sub} companyId={companyId} siteId={siteId} resource={resource} parent={row} spec={spec} refOptions={refOptions} />
       ))}
+      {resource === "pricing-rules" ? <CommerceRulePreview companyId={companyId} siteId={siteId} rule={row} /> : null}
     </div>
   );
 }

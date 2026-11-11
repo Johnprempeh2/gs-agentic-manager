@@ -483,7 +483,7 @@ export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
     {
       target: ["commerce-catalogue-list", "commerce-tiers"],
       title: "The list",
-      body: "Select a row to open it, or add one with the New button. Vendors, categories and pricing rules start as drafts, and only published ones show on the website. Customer tiers save straight away.",
+      body: "Select a row to open it, or add one with the New button. Vendors, categories and pricing rules start as drafts, and only published ones show on the website. Customer tiers save straight away. A pricing rule shows what it does to real prices, so check a draft before publishing it.",
     },
     {
       target: "Display rate",
