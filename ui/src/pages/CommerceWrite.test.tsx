@@ -208,6 +208,54 @@ describe("Commerce write screens", () => {
     expect(byTestId("commerce-people-only-note")?.textContent).toContain("Only a person changes the rate");
   });
 
+  it("switches the shop currency only after a confirm, and lists the switch in the history", async () => {
+    person();
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.320000", shop_currency: "GBP", row_version: 4, history: [
+      { id: "h2", old_rate: "1.320000", new_rate: "1.320000", old_currency: "USD", new_currency: "GBP", changed_at: "2026-11-10T00:00:00Z" },
+      { id: "h1", old_rate: "1.300000", new_rate: "1.320000", old_currency: "GBP", new_currency: "GBP", changed_at: "2026-11-01T00:00:00Z" }] } });
+    const switched = { usd_to_gbp_display_rate: "1.320000", shop_currency: "USD", row_version: 5, history: [] };
+    mocks.commerce.write.mockResolvedValue({ item: switched });
+    mocks.commerce.list.mockImplementation(async (_c: string, _s: string, resource: string) => resource === "offerings"
+      ? { items: [{ id: "o1", name: "Aspose.Total", status: "published", from_price_minor: "100099", from_price_currency: "USD",
+          variants: [{ base_price_minor: "100099", currency: "USD" }] }], nextCursor: null }
+      : { items: [], nextCursor: null });
+    render("/commerce/currency");
+    await flush();
+    expect(byTestId("commerce-shop-currency-value")?.textContent).toBe("Pounds (GBP)");
+    expect(byTestId("commerce-fx-preview")?.textContent).toContain("£758");
+    expect(byTestId("commerce-fx-history-currency")?.textContent).toMatch(/^Shop currency US dollars \(USD\) →\s*to Pounds \(GBP\)$/);
+    expect(byTestId("commerce-fx-history")?.textContent).toContain("$1.30");
+    act(() => byTestId("commerce-shop-currency-switch")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(mocks.commerce.write).not.toHaveBeenCalled();
+    const dialog = document.body.querySelector("[role=alertdialog]")!;
+    expect(dialog.textContent).toContain("The website will show and charge prices in US dollars (USD)");
+    mocks.commerce.fx.mockResolvedValue({ item: switched });
+    act(() => { [...dialog.querySelectorAll("button")].find((b) => b.textContent === "Switch to US dollars (USD)")!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    await flush();
+    expect(mocks.commerce.write.mock.calls[0]![2]).toEqual({ method: "PATCH", parts: ["fx"], body: { shopCurrency: "USD", expectedRowVersion: 4 } });
+    expect(byTestId("commerce-shop-currency-value")?.textContent).toBe("US dollars (USD)");
+    // in dollars the shop sells the stored prices, cents and all
+    expect(byTestId("commerce-fx-preview")?.textContent).toContain("US$1,000.99");
+  });
+
+  it("offers no switch to an agent", async () => {
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.300000", shop_currency: "GBP", row_version: 4, history: [] } });
+    render("/commerce/currency");
+    await flush();
+    expect(byTestId("commerce-shop-currency-switch")).toBeNull();
+    expect(byTestId("commerce-people-only-note")?.textContent).toContain("Only a person changes the rate or the shop currency");
+  });
+
+  it("offers no switch on a site that does not report its currency yet, and says it stays in pounds", async () => {
+    person();
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.300000", row_version: 4, history: [] } });
+    render("/commerce/currency");
+    await flush();
+    expect(byTestId("commerce-shop-currency-value")?.textContent).toBe("Pounds (GBP)");
+    expect(byTestId("commerce-shop-currency-switch")).toBeNull();
+    expect(byTestId("commerce-shop-currency-unavailable")?.textContent).toContain("stays in pounds");
+  });
+
   it("shows how stale the rate is and previews real prices at the new rate before a person saves", async () => {
     person();
     mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.320000", row_version: 4, updated_at: "2026-01-01T00:00:00Z", history: [

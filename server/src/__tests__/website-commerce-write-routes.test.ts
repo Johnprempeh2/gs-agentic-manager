@@ -279,6 +279,25 @@ describeEmbeddedPostgres("website commerce write and refund routes", () => {
     expect(changed.map((e) => (e.details as { operation: string }).operation)).toContain("offerings.publish");
   });
 
+  it("lets only a person switch the shop currency: an agent and a board API key are refused before any call", async () => {
+    const { base, companyId } = await seedSite();
+    await makeKey(base, "write");
+    answer = (_method, p, body) => ({ status: 200, body: { item: { id: ROW, path: p, ...(body as object) } } });
+    const { actor } = await seedAgent(companyId, ["website:view", "website:commerce"]);
+    const refused = await request(app(actor)).patch(`${base}/commerce/fx`).send({ shopCurrency: "USD", expectedRowVersion: 1 }).expect(403);
+    expect(refused.body).toMatchObject({ code: "website_commerce_people_only", details: { operation: "fx.edit" } });
+    const { actor: script } = await seedUser(companyId, "owner", "board_key");
+    await request(app(script)).patch(`${base}/commerce/fx`).send({ shopCurrency: "USD", expectedRowVersion: 1 }).expect(403);
+    expect(seen).toHaveLength(0);
+    const { actor: owner, userId } = await seedUser(companyId, "owner");
+    const switched = await request(app(owner)).patch(`${base}/commerce/fx`).send({ shopCurrency: "USD", expectedRowVersion: 1 }).expect(200);
+    expect(switched.body.item).toMatchObject({ shopCurrency: "USD" });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ method: "PATCH", path: "fx", verified: true });
+    expect(JSON.parse(seen[0]!.body)).toEqual({ shopCurrency: "USD", expectedRowVersion: 1 });
+    expect(seen[0]!.headers["x-gs-bridge-actor"]).toBe(`user:${userId}`);
+  });
+
   it("needs website:commerce: an agent with view and edit, and an operator, are refused; an admin is allowed", async () => {
     const { base, companyId } = await seedSite();
     await makeKey(base, "write");
