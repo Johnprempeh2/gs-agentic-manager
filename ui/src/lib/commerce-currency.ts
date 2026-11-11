@@ -92,3 +92,44 @@ export function priceCounts(offerings: readonly CommerceRow[]): { usd: number; o
   }
   return { usd, other, products: products.size };
 }
+
+export interface RuleHit { id: string; name: string; base: number; final: number }
+
+/**
+ * What one pricing rule does to the catalogue, as the shop prices it (the site's src/lib/pricing.mjs effectivePrice
+ * and store-pricing.mjs): each published offering's from price in pounds at the display rate, then this rule's cut,
+ * never below the rule's floor or zero. A fixed cut applies only in its own currency (the shop prices in GBP).
+ * Ignores dates, the audience and other rules, so it reads "who this rule reaches", not today's winner.
+ */
+export function ruleHits(rule: CommerceRow, offerings: readonly CommerceRow[], rate: number): RuleHit[] {
+  const targets = Array.isArray(rule.targets) ? (rule.targets as CommerceRow[]) : [];
+  const ids = (column: string) => new Set(targets.map((t) => text(t[column])).filter((v): v is string => !!v));
+  const scope = text(rule.scope_type);
+  const vendors = ids("vendor_id"), categories = ids("category_id"), offeringIds = ids("offering_id");
+  const onlyType = text(rule.applies_to_offering_type);
+  const pct = Number(text(rule.adjustment_value_pct) ?? 0);
+  const fixed = minorOf(rule.adjustment_value) ?? 0;
+  const floorFraction = Number(text(rule.floor_fraction) ?? 0) || 0;
+  const reaches = (o: CommerceRow) => {
+    if (onlyType && text(o.type) !== onlyType) return false;
+    if (scope === "all" || scope === "tier") return true;
+    if (scope === "vendor") return vendors.has(text(o.vendor_id) ?? "");
+    if (scope === "category") return categories.has(text(o.category_id) ?? "");
+    if (scope === "offering") return offeringIds.has(text(o.id) ?? "");
+    return false;
+  };
+  const hits: RuleHit[] = [];
+  for (const o of offerings) {
+    if (text(o.status) !== "published" || !reaches(o)) continue;
+    const stored = minorOf(o.from_price_minor);
+    const currency = text(o.from_price_currency);
+    const base = currency === "USD" ? usdToGbpMinor(stored, rate) : currency === "GBP" ? stored : null;
+    if (base === null) continue;
+    const cut = text(rule.adjustment_type) === "percentage" ? (pct > 0 ? Math.round((base * pct) / 100) : 0)
+      : text(rule.adjustment_type) === "fixed" && text(rule.currency) === "GBP" ? fixed : 0;
+    if (!(cut > 0)) continue;
+    const final = Math.max(base - cut, Math.round(base * floorFraction), 0);
+    if (final < base) hits.push({ id: text(o.id) ?? "", name: text(o.name) ?? "Untitled", base, final });
+  }
+  return hits.sort((a, b) => b.base - b.final - (a.base - a.final));
+}

@@ -68,7 +68,14 @@ const offerings = catalogue.products.map((product) => ({
 }));
 const OFFERING = offerings.find((offering) => (offering as PublicRow).slug === "aspose-words-for-java")?.id ?? offerings[0]!.id;
 
+const ASPOSE = catalogue.vendors.find((vendor) => vendor.slug === "aspose")?.id ?? catalogue.vendors[0]!.id;
+const RULE = "0f0f0f0f-0000-4000-8000-0000000000aa";
+const rules = [{ id: RULE, name: "Aspose autumn offer", status: "draft", active: true, scope_type: "vendor", adjustment_type: "percentage",
+  adjustment_value_pct: "15", audience: "public", floor_fraction: "0", label: "Offer price", priority: 100, row_version: 1,
+  targets: [{ id: "t1", rule_id: RULE, vendor_id: ASPOSE }] }];
+
 const DATA: Record<string, Record<string, unknown>[]> = {
+  "pricing-rules": rules,
   customers: clients, engagements, licences, orders, enquiries, "portal-acceptances": receipts,
   quotes: [], invoices: [], "customer-tiers": tiers,
   vendors: catalogue.vendors.map(published), categories: catalogue.categories.map(published), offerings,
@@ -159,5 +166,6 @@ export const CatalogueOffering: Story = { render: () => <CommerceAt path={`/comm
 export const Currency: Story = { render: () => <CommerceAt path="/commerce/currency" /> };
 export const CurrencyAsAgent: Story = { render: () => <CommerceAt path="/commerce/currency" person={false} /> };
 export const PriceBookImport: Story = { render: () => <CommerceAt path="/commerce/imports" /> };
+export const PricingRulePreview: Story = { render: () => <CommerceAt path={`/commerce/pricing-rules/${RULE}`} /> };
 export const CatalogueVendors: Story = { render: () => <CommerceAt path="/commerce/vendors" /> };
 export const ClientPageAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };

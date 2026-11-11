@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRate, poundsPerDollar, previewRows, priceCounts, rateStaleness, showRate, usdToGbpMinor } from "./commerce-currency";
+import { parseRate, poundsPerDollar, previewRows, priceCounts, rateStaleness, ruleHits, showRate, usdToGbpMinor } from "./commerce-currency";
 
 describe("commerce currency", () => {
   it("converts exactly as the website does: dollars divided by the rate, whole pounds", () => {
@@ -41,5 +41,27 @@ describe("commerce currency", () => {
     expect(preview[0]).toMatchObject({ now: 75_800, next: 80_000 });
     expect(previewRows(rows, 1.32, null)[0]!.next).toBeNull();
     expect(priceCounts(rows)).toEqual({ usd: 2, other: { GBP: 1 }, products: 2 });
+  });
+});
+
+describe("pricing rule reach", () => {
+  const offerings = [
+    { id: "a", name: "Aspose", type: "product", vendor_id: "v1", category_id: "c1", status: "published", from_price_minor: "132000", from_price_currency: "USD" },
+    { id: "b", name: "Other", type: "product", vendor_id: "v2", category_id: "c1", status: "published", from_price_minor: "13200", from_price_currency: "USD" },
+    { id: "c", name: "Draft", type: "product", vendor_id: "v1", status: "draft", from_price_minor: "13200", from_price_currency: "USD" },
+    { id: "d", name: "POA", type: "service", vendor_id: "v1", status: "published", from_price_minor: null, from_price_currency: null },
+  ];
+
+  it("converts first, then cuts, as the shop does", () => {
+    const rule = { scope_type: "vendor", targets: [{ vendor_id: "v1" }], adjustment_type: "percentage", adjustment_value_pct: "10" };
+    expect(ruleHits(rule, offerings, 1.32)).toEqual([{ id: "a", name: "Aspose", base: 100_000, final: 90_000 }]);
+  });
+
+  it("keeps the floor, refuses a dollar fixed cut on pound prices, and honours the offering type", () => {
+    const all = { scope_type: "all", adjustment_type: "percentage", adjustment_value_pct: "90", floor_fraction: "0.5" };
+    expect(ruleHits(all, offerings, 1.32).map((h) => h.final)).toEqual([50_000, 5_000]);
+    expect(ruleHits({ scope_type: "all", adjustment_type: "fixed", adjustment_value: "5000", currency: "USD" }, offerings, 1.32)).toEqual([]);
+    expect(ruleHits({ scope_type: "all", adjustment_type: "fixed", adjustment_value: "5000", currency: "GBP" }, offerings, 1.32)).toHaveLength(2);
+    expect(ruleHits({ ...all, applies_to_offering_type: "service" }, offerings, 1.32)).toEqual([]);
   });
 });

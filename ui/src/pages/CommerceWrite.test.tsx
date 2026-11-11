@@ -232,6 +232,25 @@ describe("Commerce write screens", () => {
     expect(document.body.querySelector("[role=alertdialog]")?.textContent).toContain("1 dollar price on 1 product changes on the website");
   });
 
+  it("shows what a pricing rule does to real prices, in pounds at the display rate", async () => {
+    mocks.commerce.get.mockResolvedValue({ item: { id: "r1", name: "Aspose sale", status: "draft", scope_type: "vendor", adjustment_type: "percentage",
+      adjustment_value_pct: "10", audience: "tier", targets: [{ id: "t1", vendor_id: VENDOR_ID }], row_version: 1 } });
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.320000", row_version: 4, history: [] } });
+    mocks.commerce.list.mockImplementation(async (_c: string, _s: string, resource: string) => ({ nextCursor: null,
+      items: resource === "offerings" ? [
+        { id: "o1", name: "Aspose.Total", type: "product", vendor_id: VENDOR_ID, status: "published", from_price_minor: "132000", from_price_currency: "USD" },
+        { id: "o2", name: "JetBrains", type: "product", vendor_id: "other", status: "published", from_price_minor: "132000", from_price_currency: "USD" },
+      ] : resource === "vendors" ? [vendor] : [] }));
+    render("/commerce/pricing-rules/r1");
+    await flush();
+    const preview = byTestId("commerce-rule-preview")!;
+    expect(preview.textContent).toContain("It lowers the from price of 1 published product, in pounds at $1.32 to the pound. Only clients in its tier see it.");
+    expect(preview.textContent).toContain("Aspose.Total");
+    expect(preview.textContent).toContain("£1,000");
+    expect(preview.textContent).toContain("£900");
+    expect(preview.textContent).not.toContain("JetBrains");
+  });
+
   it("shows the server's people-only refusal when it comes back", async () => {
     person();
     mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.300000", row_version: 4, history: [] } });
