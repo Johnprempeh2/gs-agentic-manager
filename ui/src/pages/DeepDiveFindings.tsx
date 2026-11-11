@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lightbulb } from "lucide-react";
 import {
   DEEP_DIVE_CASE_TYPES,
+  deepDiveStreamKeyOf,
   DEEP_DIVE_FINDING_LABELS,
   DEEP_DIVE_GIF,
   DEEP_DIVE_LABELS,
@@ -19,6 +20,7 @@ import { deepDiveFindingsApi, deepDiveFindingsQueryKeys } from "@/api/deepDiveFi
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref, listDeepDiveCases, deepDiveCasesQueryKey } from "@/lib/deep-dive-scope";
 import { queryKeys } from "@/lib/queryKeys";
 import { formatShortDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,7 +58,7 @@ export interface StreamOption {
 /** The streams that exist, in Book V order. */
 export function findingStreams(rows: readonly CaseSummary[]): StreamOption[] {
   return DEEP_DIVE_STREAMS.flatMap((stream) => {
-    const row = rows.find((entry) => entry.caseType === DEEP_DIVE_CASE_TYPES.stream && entry.key === stream.key);
+    const row = rows.find((entry) => entry.caseType === DEEP_DIVE_CASE_TYPES.stream && deepDiveStreamKeyOf(entry) === stream.key);
     return row ? [{ key: stream.key, label: stream.label, row }] : [];
   });
 }
@@ -90,6 +92,7 @@ function ProposeForm({
   onChange: (draft: Draft) => void;
   onDone: () => Promise<void>;
 }) {
+  const scope = useDeepDiveScope();
   const stream = streams.find((entry) => entry.row.id === draft.streamCaseId) ?? null;
   const clientCaseId = stream?.row.clientCaseId ?? null;
   const evidenceQuery = useQuery({
@@ -101,7 +104,7 @@ function ProposeForm({
 
   const proposeMutation = useMutation({
     mutationFn: () =>
-      deepDiveFindingsApi.propose(companyId, {
+      deepDiveFindingsApi.propose(scope, {
         streamCaseId: draft.streamCaseId,
         gifKey: draft.gifKey,
         statement: draft.statement.trim(),
@@ -305,23 +308,25 @@ function FindingRow({
 }
 
 export function DeepDiveFindings() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const companyId = selectedCompanyId ?? "";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Findings" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Findings" }]);
   }, [setBreadcrumbs]);
 
   const casesQuery = useQuery({
-    queryKey: [...queryKeys.cases.list(companyId), "deep-dive"],
-    queryFn: () => casesApi.list(companyId, { types: [DEEP_DIVE_CASE_TYPES.record, DEEP_DIVE_CASE_TYPES.stream], limit: 200 }),
+    queryKey: deepDiveCasesQueryKey(scope),
+    queryFn: () => listDeepDiveCases(scope),
     enabled: !!selectedCompanyId,
   });
   const findingsQuery = useQuery({
-    queryKey: deepDiveFindingsQueryKeys.list(companyId),
-    queryFn: () => deepDiveFindingsApi.list(companyId),
+    queryKey: deepDiveFindingsQueryKeys.list(scope),
+    queryFn: () => deepDiveFindingsApi.list(scope),
     enabled: !!selectedCompanyId,
   });
   const streams = useMemo(() => findingStreams(casesQuery.data ?? []), [casesQuery.data]);
@@ -329,7 +334,7 @@ export function DeepDiveFindings() {
   const currentDraft = draft ?? (streams[0] ? emptyDraft(streams[0].row.id) : null);
 
   async function refresh() {
-    await queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(companyId) });
+    await queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(scope) });
   }
 
   const decideMutation = useMutation({
@@ -369,8 +374,8 @@ export function DeepDiveFindings() {
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Findings</h1>
-          <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">
-            Back to the Deep Dive
+          <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">
+            Overview
           </Link>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">

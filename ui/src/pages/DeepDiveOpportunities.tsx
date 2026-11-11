@@ -30,6 +30,7 @@ import { deepDiveOpportunitiesApi, deepDiveOpportunitiesQueryKeys } from "@/api/
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref } from "@/lib/deep-dive-scope";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -197,6 +198,8 @@ function BuildRow({ build, board, run }: { build: DeepDiveBuild; board: DeepDive
 }
 
 function OpportunityCard({ opportunity, board, run }: { opportunity: DeepDiveOpportunity; board: DeepDiveOpportunityBoard; run: Run }) {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const builds = deepDiveBuildsFor(board.builds, opportunity.id);
   const [buildName, setBuildName] = useState("");
   // Validated findings can be linked; a finding linked earlier and since superseded stays listed.
@@ -211,7 +214,7 @@ function OpportunityCard({ opportunity, board, run }: { opportunity: DeepDiveOpp
   function addBuild(event: FormEvent) {
     event.preventDefault();
     if (!buildName.trim()) return;
-    run(() => deepDiveOpportunitiesApi.addBuild(board.companyId, { name: buildName.trim(), opportunityId: opportunity.id }));
+    run(() => deepDiveOpportunitiesApi.addBuild(scope, { name: buildName.trim(), opportunityId: opportunity.id }));
     setBuildName("");
   }
 
@@ -245,7 +248,7 @@ function OpportunityCard({ opportunity, board, run }: { opportunity: DeepDiveOpp
             legend={`Findings that point at ${opportunity.name} (${opportunity.findingIds.length})`}
             options={findingOptions}
             selected={opportunity.findingIds}
-            empty={<>No validated findings yet. <Link to="/deep-dive/findings" className="underline">Validate findings</Link> first.</>}
+            empty={<>No validated findings yet. <Link to={dd("/findings")} className="underline">Validate findings</Link> first.</>}
             onChange={(findingIds) => run(() => deepDiveOpportunitiesApi.updateOpportunity(opportunity.id, { findingIds }))}
           />
           <section className="space-y-1.5" aria-label={`Builds for ${opportunity.name}`}>
@@ -267,6 +270,7 @@ function OpportunityCard({ opportunity, board, run }: { opportunity: DeepDiveOpp
 }
 
 function KpiCard({ kpi, board, run }: { kpi: DeepDiveKpi; board: DeepDiveOpportunityBoard; run: Run }) {
+  const dd = useDeepDiveHref();
   const { change, fitsDirection } = deepDiveKpiChange(kpi);
   const unit = kpi.unit ? ` ${kpi.unit}` : "";
   return (
@@ -305,7 +309,7 @@ function KpiCard({ kpi, board, run }: { kpi: DeepDiveKpi; board: DeepDiveOpportu
           legend={`Processes that move ${kpi.name} (${kpi.processIds.length})`}
           options={board.processes.map((process) => ({ id: process.id, label: process.name }))}
           selected={kpi.processIds}
-          empty={<>No processes yet. <Link to="/deep-dive/processes" className="underline">Add them on the process board</Link>.</>}
+          empty={<>No processes yet. <Link to={dd("/processes")} className="underline">Add them on the process board</Link>.</>}
           onChange={(processIds) => run(() => deepDiveOpportunitiesApi.updateKpi(kpi.id, { processIds }))}
         />
       </Card>
@@ -314,6 +318,8 @@ function KpiCard({ kpi, board, run }: { kpi: DeepDiveKpi; board: DeepDiveOpportu
 }
 
 function AddOpportunity({ board, run, pending }: { board: DeepDiveOpportunityBoard; run: Run; pending: boolean }) {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const [name, setName] = useState("");
   const [outcome, setOutcome] = useState("");
   const [statement, setStatement] = useState("");
@@ -324,7 +330,7 @@ function AddOpportunity({ board, run, pending }: { board: DeepDiveOpportunityBoa
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!ready) return;
-    run(() => deepDiveOpportunitiesApi.addOpportunity(board.companyId, {
+    run(() => deepDiveOpportunitiesApi.addOpportunity(scope, {
       name: name.trim(),
       desiredOutcome: outcome.trim(),
       statement: statement.trim(),
@@ -352,7 +358,7 @@ function AddOpportunity({ board, run, pending }: { board: DeepDiveOpportunityBoa
           legend="Validated findings that point here"
           options={board.findings.filter((finding) => finding.status === "validated").map((finding) => ({ id: finding.id, label: finding.statement, note: finding.streamTitle }))}
           selected={findingIds}
-          empty={<>No validated findings yet. <Link to="/deep-dive/findings" className="underline">Validate findings</Link> first.</>}
+          empty={<>No validated findings yet. <Link to={dd("/findings")} className="underline">Validate findings</Link> first.</>}
           onChange={setFindingIds}
         />
         <Button type="submit" size="sm" disabled={!ready || pending}>Add opportunity</Button>
@@ -362,6 +368,8 @@ function AddOpportunity({ board, run, pending }: { board: DeepDiveOpportunityBoa
 }
 
 function AddKpi({ board, run, pending }: { board: DeepDiveOpportunityBoard; run: Run; pending: boolean }) {
+  const ddScope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");
   const [scope, setScope] = useState<DeepDiveKpiScope>("company");
@@ -381,7 +389,7 @@ function AddKpi({ board, run, pending }: { board: DeepDiveOpportunityBoard; run:
       <Card className="gap-1 px-4 py-3">
         <h2 className="text-sm font-semibold">Add a KPI</h2>
         <p className="text-sm text-muted-foreground">
-          A KPI needs an owner. <Link to="/deep-dive/organisation" className="underline">Add people on the organisation board</Link> first.
+          A KPI needs an owner. <Link to={dd("/organisation")} className="underline">Add people on the organisation board</Link> first.
         </p>
       </Card>
     );
@@ -390,7 +398,7 @@ function AddKpi({ board, run, pending }: { board: DeepDiveOpportunityBoard; run:
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!ready) return;
-    run(() => deepDiveOpportunitiesApi.addKpi(board.companyId, {
+    run(() => deepDiveOpportunitiesApi.addKpi(ddScope, {
       name: name.trim(),
       ownerPersonId: owner,
       scope,
@@ -436,7 +444,7 @@ function AddKpi({ board, run, pending }: { board: DeepDiveOpportunityBoard; run:
           legend="Processes that move it"
           options={board.processes.map((process) => ({ id: process.id, label: process.name }))}
           selected={processIds}
-          empty={<>No processes yet. <Link to="/deep-dive/processes" className="underline">Add them on the process board</Link>.</>}
+          empty={<>No processes yet. <Link to={dd("/processes")} className="underline">Add them on the process board</Link>.</>}
           onChange={setProcessIds}
         />
         <Button type="submit" size="sm" disabled={!ready || pending}>Add KPI</Button>
@@ -446,23 +454,25 @@ function AddKpi({ board, run, pending }: { board: DeepDiveOpportunityBoard; run:
 }
 
 export function DeepDiveOpportunities() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const companyId = selectedCompanyId ?? "";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Opportunities and KPIs" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Opportunities and KPIs" }]);
   }, [setBreadcrumbs]);
 
   const boardQuery = useQuery({
-    queryKey: deepDiveOpportunitiesQueryKeys.board(companyId),
-    queryFn: () => deepDiveOpportunitiesApi.get(companyId),
+    queryKey: deepDiveOpportunitiesQueryKeys.board(scope),
+    queryFn: () => deepDiveOpportunitiesApi.get(scope),
     enabled: !!selectedCompanyId,
   });
   const writeMutation = useMutation({
     mutationFn: (write: () => Promise<DeepDiveOpportunityBoard>) => write(),
-    onSuccess: (board) => queryClient.setQueryData(deepDiveOpportunitiesQueryKeys.board(companyId), board),
+    onSuccess: (board) => queryClient.setQueryData(deepDiveOpportunitiesQueryKeys.board(scope), board),
   });
   const run: Run = (write) => writeMutation.mutate(write);
 
@@ -490,9 +500,9 @@ export function DeepDiveOpportunities() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Opportunities and KPIs</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
-            <Link to="/deep-dive/processes" className="text-xs font-medium underline-offset-4 hover:underline">Process board</Link>
-            <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">Back to the Deep Dive</Link>
+            <Link to={dd("/findings")} className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
+            <Link to={dd("/processes")} className="text-xs font-medium underline-offset-4 hover:underline">Process board</Link>
+            <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">Overview</Link>
           </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">

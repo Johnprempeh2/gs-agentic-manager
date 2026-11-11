@@ -18,6 +18,23 @@ const COMPANY_ID = "company-1";
 
 const mockApi = vi.hoisted(() => ({ get: vi.fn() }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveOverview", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveOverview")>()),
   deepDiveOverviewApi: mockApi,
@@ -130,13 +147,13 @@ describe("Deep Dive overview", () => {
     await waitFor(() => expect(container.textContent).toContain("What is next"));
     const steps = [...byLabel(container, "What is next").querySelectorAll("li a")].map((a) => [a.textContent, a.getAttribute("href")]);
     expect(steps).toEqual([
-      ["Decide 1 proposed finding", "/deep-dive/findings"],
-      ["Validate 1 indicated cell", "/deep-dive"],
-      ["Chase 1 document asked of the client", "/deep-dive/files"],
+      ["Decide 1 proposed finding", "/deep-dive/record-1/findings"],
+      ["Validate 1 indicated cell", "/deep-dive/record-1"],
+      ["Chase 1 document asked of the client", "/deep-dive/record-1/documents"],
     ]);
     expect(byLabel(container, "Needs a person").textContent).toContain("Decide 1 proposed finding");
     expect(byLabel(container, "Needs a person").textContent).not.toContain("Chase");
-    expect(mockApi.get).toHaveBeenCalledWith(COMPANY_ID);
+    expect(mockApi.get).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }));
   });
 
   it("shows progress by stream, the next session and the open findings", async () => {
@@ -151,7 +168,7 @@ describe("Deep Dive overview", () => {
     expect(byLabel(container, "Leadership: 4 Known, 1 Indicated, 0 Unknown")).toBeTruthy();
     expect(container.querySelector('[data-stream="operations"]')!.textContent).toContain("1 proposed");
 
-    const session = container.querySelector('a[href="/deep-dive/sessions/s1"]');
+    const session = container.querySelector('a[href="/deep-dive/record-1/sessions/s1"]');
     expect(session?.textContent).toBe("Operations walk-through");
     expect(container.textContent).toContain("0 of 6 questions answered");
 

@@ -14,6 +14,7 @@ import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOv
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref , deepDivePortalHref } from "@/lib/deep-dive-scope";
 import { cn, formatDateTime } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
@@ -42,10 +43,11 @@ function formatWhen(iso: string | null): string {
 }
 
 function StepRow({ step, lead = false }: { step: DeepDiveNextStep; lead?: boolean }) {
+  const { recordCaseId } = useDeepDiveScope();
   return (
     <li className={cn("rounded-md border px-3 py-2", lead ? "border-primary/50 bg-accent/40" : "border-border")}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <Link to={step.href} className={cn("break-words font-medium underline-offset-4 hover:underline", lead ? "text-base" : "text-sm")}>
+        <Link to={deepDivePortalHref(recordCaseId, step.href)} className={cn("break-words font-medium underline-offset-4 hover:underline", lead ? "text-base" : "text-sm")}>
           {step.title}
         </Link>
         {step.needsPerson ? <span className="text-xs font-medium text-muted-foreground">Needs a person</span> : null}
@@ -65,18 +67,19 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 function NextSession({ overview }: { overview: Overview }) {
+  const dd = useDeepDiveHref();
   const session = overview.nextSession;
   if (!session) {
     return (
       <p className="text-sm text-muted-foreground">
-        No session is planned. <Link to="/deep-dive/sessions" className="underline">Plan a session</Link>.
+        No session is planned. <Link to={dd("/sessions")} className="underline">Plan a session</Link>.
       </p>
     );
   }
   return (
     <Card className="gap-1 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <Link to={`/deep-dive/sessions/${session.id}`} className="break-words text-sm font-medium underline-offset-4 hover:underline">
+        <Link to={dd(`/sessions/${session.id}`)} className="break-words text-sm font-medium underline-offset-4 hover:underline">
           {session.title}
         </Link>
         <StatusBadge status={session.status === "live" ? "running" : "planned"} label={DEEP_DIVE_SESSION_LABELS[session.status]} />
@@ -91,17 +94,19 @@ function NextSession({ overview }: { overview: Overview }) {
 }
 
 export function DeepDiveOverview() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const companyId = selectedCompanyId ?? "";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Overview" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Overview" }]);
   }, [setBreadcrumbs]);
 
   const query = useQuery({
-    queryKey: deepDiveOverviewQueryKeys.overview(companyId),
-    queryFn: () => deepDiveOverviewApi.get(companyId),
+    queryKey: deepDiveOverviewQueryKeys.overview(scope),
+    queryFn: () => deepDiveOverviewApi.get(scope),
     enabled: !!selectedCompanyId,
   });
 
@@ -125,9 +130,8 @@ export function DeepDiveOverview() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Deep Dive overview</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">Investigation Streams</Link>
-            <Link to="/deep-dive/sessions" className="text-xs font-medium underline-offset-4 hover:underline">Sessions</Link>
-            <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
+            <Link to={dd("/sessions")} className="text-xs font-medium underline-offset-4 hover:underline">Sessions</Link>
+            <Link to={dd("/findings")} className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
           </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -215,7 +219,7 @@ export function DeepDiveOverview() {
         <p className="text-xs text-muted-foreground">
           {overview.findingCounts.validated} validated · {overview.findingCounts.rejected} rejected ·{" "}
           {overview.findingCounts.superseded} superseded.{" "}
-          <Link to="/deep-dive/findings" className="underline">All findings</Link>
+          <Link to={dd("/findings")} className="underline">All findings</Link>
         </p>
       </Section>
     </div>

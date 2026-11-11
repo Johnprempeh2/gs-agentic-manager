@@ -9,6 +9,7 @@ import {
   deepDiveInterviewReadiness,
   type CrmFile,
   type DeepDiveInterviewRound,
+  type DeepDiveScope,
   type DeepDiveProposalKind,
   type DeepDiveProposalStatus,
   type CrmTimelineEntry,
@@ -17,6 +18,7 @@ import {
 import { casesApi } from "@/api/cases";
 import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDiveInterviews";
 import { deepDiveOverviewApi, deepDiveOverviewQueryKeys } from "@/api/deepDiveOverview";
+import { deepDiveRecordsApi, deepDiveRecordsQueryKeys } from "@/api/deepDiveRecords";
 import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSessions";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pipelinesApi, type PipelineCaseDetail, type PipelineStage } from "@/api/pipelines";
@@ -29,6 +31,7 @@ import { ClientPublications, EngagementTimelineView } from "@/components/ClientP
 import { ErrorState } from "@/components/ErrorState";
 import { OrganisationCommerce } from "@/components/OrganisationCommerce";
 import { PipelineCaseEvidence } from "@/components/PipelineCaseFiles";
+import { DeepDiveTile } from "@/components/DeepDiveTile";
 import { ClientVisibilityBadge } from "@/components/SharedWithClientBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +46,7 @@ import {
   type ClientShared,
 } from "@/lib/organisation-hub";
 import { INTERVIEW_INVITE_TONE, interviewCountsText } from "@/lib/deep-dive-interviews";
+import { deepDivePath, deepDivePortalHref } from "@/lib/deep-dive-scope";
 import { formatPipelineItemEvent } from "@/lib/pipeline-item-detail";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
@@ -158,21 +162,26 @@ function useDeepDiveEnabled() {
   return settings.data?.enableDeepDive === true && settings.data?.enableCases === true;
 }
 
-/** The company's Deep Dive, when it is about one of this organisation's engagements. */
+/**
+ * This client's Deep Dives (GRE-4430), newest first. The current one is the
+ * newest still active; the client profile reads and links to that one.
+ */
 function useClientDeepDive(companyId: string, caseIds: string[]) {
   const enabled = useDeepDiveEnabled();
-  const files = useQuery({
-    queryKey: queryKeys.cases.deepDiveFiles(companyId),
-    queryFn: () => casesApi.deepDiveFiles(companyId),
+  const list = useQuery({
+    queryKey: deepDiveRecordsQueryKeys.list(companyId),
+    queryFn: () => deepDiveRecordsApi.list(companyId),
     enabled: enabled && Boolean(companyId),
   });
-  const forThisClient = Boolean(files.data?.client && caseIds.includes(files.data.client.id));
+  const mine = (list.data?.deepDives ?? []).filter((record) => caseIds.includes(record.clientCaseId));
+  const current = mine.find((record) => record.status === "active") ?? mine[0] ?? null;
+  const scope = current ? { companyId, recordCaseId: current.id } : null;
   const overview = useQuery({
-    queryKey: deepDiveOverviewQueryKeys.overview(companyId),
-    queryFn: () => deepDiveOverviewApi.get(companyId),
-    enabled: forThisClient,
+    queryKey: scope ? deepDiveOverviewQueryKeys.overview(scope) : ["deep-dive-overview", "none"],
+    queryFn: () => deepDiveOverviewApi.get(scope!),
+    enabled: Boolean(scope),
   });
-  return { enabled, files, forThisClient, overview };
+  return { enabled, list, mine, current, scope, forThisClient: Boolean(current), overview };
 }
 
 // ---------------------------------------------------------------- Overview
@@ -211,7 +220,7 @@ export function EngagementSummary({
             <dt className="text-xs text-muted-foreground">Next session</dt>
             <dd className="mt-0.5" data-testid="organisation-next-session">
               {nextSession ? (
-                <Link to={`/deep-dive/sessions/${nextSession.id}`} className="hover:underline">
+                <Link to={deepDivePath(deepDive.current!.id, `/sessions/${nextSession.id}`)} className="hover:underline">
                   {nextSession.title}
                   {nextSession.plannedFor ? <span className="block text-xs text-muted-foreground">{formatDateTime(nextSession.plannedFor)}</span> : null}
                 </Link>
@@ -235,7 +244,7 @@ export function EngagementSummary({
             <ul className="mt-1 space-y-1 text-sm">
               {needsPerson.map((step) => (
                 <li key={step.key}>
-                  <Link to={step.href} className="hover:underline">{step.title}</Link>
+                  <Link to={deepDivePortalHref(deepDive.current!.id, step.href)} className="hover:underline">{step.title}</Link>
                   <span className="ml-2 text-xs text-muted-foreground">{step.detail}</span>
                 </li>
               ))}
@@ -345,16 +354,22 @@ const INTERVIEW_ROUND_TONE = { setup: "info", open: "running", closed: "archived
 const INTERVIEW_SET_TONE = { draft: "pending", approved: "succeeded" } as const;
 
 /** The company's Parallel Interview round, when it is keyed by this client's website organisation id. */
-export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyId: string; websiteOrganisationId: string | null }) {
-  const enabled = useDeepDiveEnabled();
+export function InterviewsPanel({ companyId, caseIds, websiteOrganisationId }: { companyId: string; caseIds: string[]; websiteOrganisationId: string | null }) {
+  const deepDive = useClientDeepDive(companyId, caseIds);
+  const enabled = deepDive.enabled;
+  const scope = deepDive.scope;
   const round = useQuery({
-    queryKey: deepDiveInterviewsQueryKeys.round(companyId),
-    queryFn: () => deepDiveInterviewsApi.get(companyId),
-    enabled: enabled && Boolean(websiteOrganisationId),
+    queryKey: scope ? deepDiveInterviewsQueryKeys.round(scope) : ["deep-dive-interview-round", "none"],
+    queryFn: () => deepDiveInterviewsApi.get(scope!),
+    enabled: enabled && Boolean(websiteOrganisationId) && Boolean(scope),
   });
-  const open = <SourceLink to="/deep-dive/interviews">Open Parallel Interview</SourceLink>;
+  const interviewsHref = deepDive.current ? deepDivePath(deepDive.current.id, "/interviews") : "/deep-dive";
+  const open = <SourceLink to={interviewsHref}>Open Parallel Interview</SourceLink>;
   if (!websiteOrganisationId) return <HubSection title="Interviews"><NotLinked what="Interview rounds" /></HubSection>;
   if (!enabled) return <HubSection title="Interviews"><Placeholder>Deep Dive is off on this instance.</Placeholder></HubSection>;
+  if (!deepDive.list.isLoading && !scope) {
+    return <HubSection title="Interviews"><Placeholder>This client has no Deep Dive yet, so no interview round.</Placeholder></HubSection>;
+  }
   if (round.isLoading) return <p className="text-sm text-muted-foreground">Loading the interview round…</p>;
   if (round.error) return <ErrorState error={round.error} compact />;
   const current = round.data?.round ?? null;
@@ -363,7 +378,7 @@ export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyI
       <HubSection title="Interviews" action={open}>
         <Placeholder>
           {current ? "The interview round is for another website organisation, not this client." : "No interview round for this client yet."}{" "}
-          Set one up on <Link to="/deep-dive/interviews" className="font-medium text-foreground hover:underline">Parallel Interview</Link>.
+          Set one up on <Link to={interviewsHref} className="font-medium text-foreground hover:underline">Parallel Interview</Link>.
         </Placeholder>
       </HubSection>
     );
@@ -406,18 +421,18 @@ export function InterviewsPanel({ companyId, websiteOrganisationId }: { companyI
           </ul>
         )}
       </HubSection>
-      <InterviewProgressSection companyId={companyId} round={current} />
+      <InterviewProgressSection scope={scope!} round={current} />
       <InterviewOutputsSection round={current} />
     </div>
   );
 }
 
 /** Who was invited and who finished, read live from the website through the bridge (GRE-2665). */
-function InterviewProgressSection({ companyId, round }: { companyId: string; round: DeepDiveInterviewRound }) {
+function InterviewProgressSection({ scope, round }: { scope: DeepDiveScope; round: DeepDiveInterviewRound }) {
   const live = round.status !== "setup";
   const progress = useQuery({
-    queryKey: deepDiveInterviewsQueryKeys.progress(companyId),
-    queryFn: () => deepDiveInterviewsApi.progress(companyId),
+    queryKey: deepDiveInterviewsQueryKeys.progress(scope),
+    queryFn: () => deepDiveInterviewsApi.progress(scope),
     enabled: live,
   });
   const data = progress.data ?? null;
@@ -522,18 +537,6 @@ function InterviewOutputsSection({ round }: { round: DeepDiveInterviewRound }) {
 
 // ----------------------------------------------------------------- Deep Dive
 
-const DEEP_DIVE_SCREENS = [
-  { to: "/deep-dive/overview", label: "Overview" },
-  { to: "/deep-dive", label: "Record and streams" },
-  { to: "/deep-dive/organisation", label: "Organisation board" },
-  { to: "/deep-dive/processes", label: "Process board" },
-  { to: "/deep-dive/sessions", label: "Sessions" },
-  { to: "/deep-dive/findings", label: "Findings" },
-  { to: "/deep-dive/opportunities", label: "Opportunities" },
-  { to: "/deep-dive/traceability", label: "Traceability" },
-  { to: "/deep-dive/files", label: "Evidence and files" },
-] as const;
-
 function SharedCount({ label, shared, total }: { label: string; shared: number; total: number }) {
   return (
     <div className="min-w-0">
@@ -543,29 +546,44 @@ function SharedCount({ label, shared, total }: { label: string; shared: number; 
   );
 }
 
+/** This client's Deep Dives as tiles, the same portal as Clients > Deep Dive, and what its current one shares. */
 export function DeepDivePanel({ companyId, caseIds, shared }: { companyId: string; caseIds: string[]; shared: ClientShared }) {
   const deepDive = useClientDeepDive(companyId, caseIds);
+  const scope = deepDive.scope;
+  const files = useQuery({
+    queryKey: scope ? queryKeys.cases.deepDiveFiles(scope) : ["cases", "deep-dive-files", "none"],
+    queryFn: () => casesApi.deepDiveFiles(scope!),
+    enabled: Boolean(scope),
+  });
   const sessions = useQuery({
-    queryKey: deepDiveSessionsQueryKeys.list(companyId),
-    queryFn: () => deepDiveSessionsApi.list(companyId),
-    enabled: deepDive.forThisClient,
+    queryKey: scope ? deepDiveSessionsQueryKeys.list(scope) : ["deep-dive-sessions", "none"],
+    queryFn: () => deepDiveSessionsApi.list(scope!),
+    enabled: Boolean(scope),
   });
   if (!deepDive.enabled) return <Placeholder>Deep Dive is off on this instance.</Placeholder>;
-  if (deepDive.files.isLoading) return <p className="text-sm text-muted-foreground">Loading the Deep Dive…</p>;
-  if (deepDive.files.error) return <ErrorState error={deepDive.files.error} compact />;
-  if (!deepDive.forThisClient) {
-    const other = deepDive.files.data?.client?.title;
+  if (deepDive.list.isLoading) return <p className="text-sm text-muted-foreground">Loading the Deep Dive…</p>;
+  if (deepDive.list.error) return <ErrorState error={deepDive.list.error} compact />;
+  const startHref = caseIds[0] ? `/deep-dive?start=${caseIds[0]}` : "/deep-dive";
+  if (!deepDive.current) {
     return (
-      <Placeholder>
-        {other ? `The Deep Dive is about ${other}, not this client.` : "The Deep Dive has no client chosen yet."}{" "}
-        <Link to="/deep-dive/files" className="font-medium text-foreground hover:underline">Choose the client</Link> to run it for this one.
-      </Placeholder>
+      <HubSection title="Deep Dive" action={<SourceLink to={startHref}>Start a Deep Dive</SourceLink>}>
+        <Placeholder>This client has no Deep Dive yet.</Placeholder>
+      </HubSection>
     );
   }
-  const links = deepDive.files.data?.links ?? [];
+  const links = files.data?.links ?? [];
   const sessionRows = sessions.data ?? [];
   return (
     <div className="space-y-6">
+      <HubSection title="Deep Dive" action={<SourceLink to={startHref}>Start another</SourceLink>}>
+        <ul className="grid gap-3 sm:grid-cols-2" data-testid="organisation-deep-dives">
+          {deepDive.mine.map((record) => (
+            <li key={record.id}>
+              <DeepDiveTile record={record} to={deepDivePath(record.id)} />
+            </li>
+          ))}
+        </ul>
+      </HubSection>
       <HubSection title="What the client can see" label="Deep Dive sharing">
         <dl className="grid gap-3 rounded-lg border border-border p-4 text-sm sm:grid-cols-3" data-testid="organisation-deep-dive-counts">
           <div className="min-w-0">
@@ -576,21 +594,6 @@ export function DeepDivePanel({ companyId, caseIds, shared }: { companyId: strin
           <SharedCount label="Sessions" shared={sessionRows.filter((row) => row.visibility === "shared").length} total={sessionRows.length} />
         </dl>
         <p className="text-xs text-muted-foreground">Only Shared items, and Shared files on them, reach the client's website hub.</p>
-      </HubSection>
-      <HubSection title="Deep Dive screens">
-        <ul className="grid gap-2 sm:grid-cols-3">
-          {DEEP_DIVE_SCREENS.map((screen, index) => (
-            <li key={screen.to}>
-              <Link
-                to={screen.to}
-                className="flex items-baseline gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
-                <span className="font-medium">{screen.label}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
       </HubSection>
     </div>
   );

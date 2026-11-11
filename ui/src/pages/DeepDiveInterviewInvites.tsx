@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useDeepDiveScope } from "@/lib/deep-dive-scope";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DEEP_DIVE_INTERVIEW_INVITE_LABELS,
@@ -41,12 +42,13 @@ function errorText(error: unknown): string | null {
 }
 
 function useProgressWrite<TInput>(companyId: string, fn: (input: TInput) => Promise<DeepDiveInterviewProgress>) {
+  const scope = useDeepDiveScope();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: fn,
     onSuccess: (progress) => {
-      queryClient.setQueryData(deepDiveInterviewsQueryKeys.progress(companyId), progress);
-      void queryClient.invalidateQueries({ queryKey: deepDiveInterviewsQueryKeys.round(companyId), exact: true });
+      queryClient.setQueryData(deepDiveInterviewsQueryKeys.progress(scope), progress);
+      void queryClient.invalidateQueries({ queryKey: deepDiveInterviewsQueryKeys.round(scope), exact: true });
     },
   });
 }
@@ -166,9 +168,10 @@ function rowProblem(row: InviteRow, perTeam: boolean): string | null {
 }
 
 function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; companyId: string }) {
+  const scope = useDeepDiveScope();
   const queryClient = useQueryClient();
   const perTeam = round.mode === "per_team";
-  const board = useQuery({ queryKey: deepDiveBoardsQueryKeys.organisation(companyId), queryFn: () => deepDiveOrgApi.get(companyId) });
+  const board = useQuery({ queryKey: deepDiveBoardsQueryKeys.organisation(scope), queryFn: () => deepDiveOrgApi.get(scope) });
   const teams = round.sets.filter((set) => set.target.kind === "unit").map((set) => set.target);
   const withSet = new Set(round.sets.map((set) => set.target.id));
   // Per person, only people with a question set; per team, any client person.
@@ -181,7 +184,7 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
   const invite = useMutation({
     mutationFn: () => deepDiveInterviewsApi.invite(round.id, { people: rows.map(toInvitee) }),
     onSuccess: (result) => {
-      queryClient.setQueryData(deepDiveInterviewsQueryKeys.progress(companyId), result.progress);
+      queryClient.setQueryData(deepDiveInterviewsQueryKeys.progress(scope), result.progress);
       setRows([]);
       setSent(
         `${result.invited} invited${result.emailed > 0 ? `, ${result.emailed} emailed the join link` : ""}${
@@ -433,10 +436,11 @@ function Progress({ progress, roundId, companyId, onRefresh, refreshing }: {
 
 /** Below the question sets: open the round, invite, and watch progress. */
 export function InterviewInvites({ round, companyId }: { round: DeepDiveInterviewRound; companyId: string }) {
+  const scope = useDeepDiveScope();
   const live = round.status !== "setup";
   const progress = useQuery({
-    queryKey: deepDiveInterviewsQueryKeys.progress(companyId),
-    queryFn: () => deepDiveInterviewsApi.progress(companyId),
+    queryKey: deepDiveInterviewsQueryKeys.progress(scope),
+    queryFn: () => deepDiveInterviewsApi.progress(scope),
     enabled: live,
     refetchInterval: live ? 30_000 : false,
   });

@@ -16,6 +16,7 @@ import { deepDiveBoardsQueryKeys, deepDiveProcessApi } from "@/api/deepDiveBoard
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref } from "@/lib/deep-dive-scope";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -229,6 +230,7 @@ export function ProcessCanvas({ board, onMove }: { board: ProcessBoard; onMove: 
 }
 
 function HandoffForm({ board, run, companyId }: { board: ProcessBoard; run: Run; companyId: string }) {
+  const scope = useDeepDiveScope();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [what, setWhat] = useState("");
@@ -240,7 +242,7 @@ function HandoffForm({ board, run, companyId }: { board: ProcessBoard; run: Run;
     if (from === to) return setError("A process cannot hand off to itself.");
     if (!what.trim()) return setError("Name what is handed over. A handoff with nothing named is not recorded.");
     setError(null);
-    run(() => deepDiveProcessApi.recordHandoff(companyId, { fromProcessId: from, toProcessId: to, what: what.trim() }));
+    run(() => deepDiveProcessApi.recordHandoff(scope, { fromProcessId: from, toProcessId: to, what: what.trim() }));
     setWhat("");
   }
 
@@ -266,6 +268,8 @@ function HandoffForm({ board, run, companyId }: { board: ProcessBoard; run: Run;
 }
 
 export function DeepDiveProcessBoard() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -275,11 +279,11 @@ export function DeepDiveProcessBoard() {
   const [processLane, setProcessLane] = useState("");
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Process board" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Process board" }]);
   }, [setBreadcrumbs]);
 
-  const queryKey = deepDiveBoardsQueryKeys.process(companyId);
-  const boardQuery = useQuery({ queryKey, queryFn: () => deepDiveProcessApi.get(companyId), enabled: !!selectedCompanyId });
+  const queryKey = deepDiveBoardsQueryKeys.process(scope);
+  const boardQuery = useQuery({ queryKey, queryFn: () => deepDiveProcessApi.get(scope), enabled: !!selectedCompanyId });
   const writeMutation = useMutation({
     mutationFn: (write: () => Promise<ProcessBoard>) => write(),
     onSuccess: (board) => queryClient.setQueryData(queryKey, board),
@@ -299,20 +303,20 @@ export function DeepDiveProcessBoard() {
     queryClient.setQueryData<ProcessBoard>(queryKey, (current) =>
       current && { ...current, processes: current.processes.map((process) => (process.id === processId ? { ...process, ...at } : process)) },
     );
-    run(() => deepDiveProcessApi.saveLayout(companyId, { positions: [{ processId, ...at }] }));
+    run(() => deepDiveProcessApi.saveLayout(scope, { positions: [{ processId, ...at }] }));
   }
 
   function addOffering(event: FormEvent) {
     event.preventDefault();
     if (!offeringName.trim()) return;
-    run(() => deepDiveProcessApi.addOffering(companyId, { name: offeringName.trim() }));
+    run(() => deepDiveProcessApi.addOffering(scope, { name: offeringName.trim() }));
     setOfferingName("");
   }
 
   function addProcess(event: FormEvent) {
     event.preventDefault();
     if (!processName.trim()) return;
-    run(() => deepDiveProcessApi.addProcess(companyId, { name: processName.trim(), offeringId: processLane || null }));
+    run(() => deepDiveProcessApi.addProcess(scope, { name: processName.trim(), offeringId: processLane || null }));
     setProcessName("");
   }
 
@@ -324,8 +328,8 @@ export function DeepDiveProcessBoard() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Process board</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive/organisation" className="text-xs font-medium underline-offset-4 hover:underline">Organisation board</Link>
-            <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">Back to the Deep Dive</Link>
+            <Link to={dd("/organisation")} className="text-xs font-medium underline-offset-4 hover:underline">Organisation board</Link>
+            <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">Overview</Link>
           </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -374,7 +378,7 @@ export function DeepDiveProcessBoard() {
                 type="button"
                 size="xs"
                 variant="ghost"
-                onClick={() => run(() => deepDiveProcessApi.saveLayout(companyId, { positions: placed.map((process) => ({ processId: process.id, x: null, y: null })) }))}
+                onClick={() => run(() => deepDiveProcessApi.saveLayout(scope, { positions: placed.map((process) => ({ processId: process.id, x: null, y: null })) }))}
               >
                 Tidy up
               </Button>

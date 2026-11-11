@@ -43,6 +43,23 @@ const mockApi = vi.hoisted(() => ({
   addBuild: vi.fn(), updateBuild: vi.fn(), removeBuild: vi.fn(), addKpi: vi.fn(), updateKpi: vi.fn(), removeKpi: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveOpportunities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveOpportunities")>()),
   deepDiveOpportunitiesApi: mockApi,
@@ -187,7 +204,7 @@ describe("Deep Dive opportunities and KPIs", () => {
     flushSync(() => setValue(byLabel<HTMLInputElement>(container, "New build for Faster quotes"), "Price list sync"));
     flushSync(() => button(container, "Add build").click());
     await waitFor(() => expect(byLabel<HTMLElement>(container, "Builds for Faster quotes").textContent).toContain("Price list sync"));
-    expect(mockApi.addBuild).toHaveBeenCalledWith(COMPANY_ID, { name: "Price list sync", opportunityId: "o-quotes" });
+    expect(mockApi.addBuild).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), { name: "Price list sync", opportunityId: "o-quotes" });
 
     flushSync(() => setValue(byLabel<HTMLSelectElement>(container, "Opportunity Inbox triage serves"), "o-quotes"));
     await waitFor(() => expect(mockApi.updateBuild).toHaveBeenCalledWith("b-loose", { opportunityId: "o-quotes" }));
@@ -225,7 +242,7 @@ describe("Deep Dive opportunities and KPIs", () => {
     flushSync(() => button(container, "Add KPI").click());
 
     await waitFor(() => expect(container.textContent).toContain("KPIs (1)"));
-    expect(mockApi.addKpi).toHaveBeenCalledWith(COMPANY_ID, expect.objectContaining({
+    expect(mockApi.addKpi).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), expect.objectContaining({
       name: "Days to quote", ownerPersonId: "p-ama", baseline: 8.4, target: 1, direction: "down",
       definition: "Mean working days", baselinePeriod: "Q3 2026", processIds: ["pr-quote"],
     }));
@@ -238,7 +255,7 @@ describe("Deep Dive opportunities and KPIs", () => {
     store.board = { ...fixture(), people: [] };
     render();
     await waitFor(() => expect(container.textContent).toContain("A KPI needs an owner."));
-    expect(container.querySelector('a[href="/deep-dive/organisation"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/deep-dive/record-1/organisation"]')).not.toBeNull();
     expect([...container.querySelectorAll("button")].some((entry) => entry.textContent?.trim() === "Add KPI")).toBe(false);
   });
 });

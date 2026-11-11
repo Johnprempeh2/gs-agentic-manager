@@ -24,6 +24,7 @@ import { deepDiveBoardsQueryKeys, deepDiveOrgApi } from "@/api/deepDiveBoards";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref } from "@/lib/deep-dive-scope";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -320,6 +321,8 @@ function PersonRow({ person, board, run }: { person: DeepDivePerson; board: Deep
 }
 
 export function DeepDiveOrganisation() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -332,17 +335,17 @@ export function DeepDiveOrganisation() {
   const [personUnit, setPersonUnit] = useState("");
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Organisation" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Organisation" }]);
   }, [setBreadcrumbs]);
 
   const boardQuery = useQuery({
-    queryKey: deepDiveBoardsQueryKeys.organisation(companyId),
-    queryFn: () => deepDiveOrgApi.get(companyId),
+    queryKey: deepDiveBoardsQueryKeys.organisation(scope),
+    queryFn: () => deepDiveOrgApi.get(scope),
     enabled: !!selectedCompanyId,
   });
   const writeMutation = useMutation({
     mutationFn: (write: () => Promise<DeepDiveOrgBoard>) => write(),
-    onSuccess: (board) => queryClient.setQueryData(deepDiveBoardsQueryKeys.organisation(companyId), board),
+    onSuccess: (board) => queryClient.setQueryData(deepDiveBoardsQueryKeys.organisation(scope), board),
   });
   const run: Run = (write) => writeMutation.mutate(write);
   const place = (personId: string, unitId: string | null) => {
@@ -362,14 +365,14 @@ export function DeepDiveOrganisation() {
   function addUnit(event: FormEvent) {
     event.preventDefault();
     if (!unitName.trim()) return;
-    run(() => deepDiveOrgApi.addUnit(companyId, { name: unitName.trim(), unitType, parentId: unitParent || null }));
+    run(() => deepDiveOrgApi.addUnit(scope, { name: unitName.trim(), unitType, parentId: unitParent || null }));
     setUnitName("");
   }
 
   function addPerson(event: FormEvent) {
     event.preventDefault();
     if (!personName.trim()) return;
-    run(() => deepDiveOrgApi.addPerson(companyId, { name: personName.trim(), role: personRole.trim(), unitId: personUnit || null }));
+    run(() => deepDiveOrgApi.addPerson(scope, { name: personName.trim(), role: personRole.trim(), unitId: personUnit || null }));
     setPersonName("");
     setPersonRole("");
   }
@@ -382,8 +385,8 @@ export function DeepDiveOrganisation() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Organisation board</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive/processes" className="text-xs font-medium underline-offset-4 hover:underline">Process board</Link>
-            <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">Back to the Deep Dive</Link>
+            <Link to={dd("/processes")} className="text-xs font-medium underline-offset-4 hover:underline">Process board</Link>
+            <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">Overview</Link>
           </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">

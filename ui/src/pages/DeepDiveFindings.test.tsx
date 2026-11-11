@@ -54,6 +54,23 @@ const mockFindingsApi = vi.hoisted(() => ({
   clientEvidence: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/cases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/cases")>()),
   casesApi: mockCasesApi,
@@ -199,7 +216,7 @@ describe("DeepDiveFindings", () => {
     flushSync(() => button(container, "Propose").click());
 
     await waitFor(() => expect(container.querySelector('[data-deep-dive-finding="finding-1"]')).not.toBeNull());
-    expect(mockFindingsApi.propose).toHaveBeenCalledWith(COMPANY_ID, {
+    expect(mockFindingsApi.propose).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), {
       streamCaseId: "stream-operations",
       gifKey: "current-state",
       statement: "Orders are re-keyed by hand.",
@@ -222,7 +239,7 @@ describe("DeepDiveFindings", () => {
     flushSync(() => button(container, "Propose").click());
     await waitFor(() => expect(container.querySelector('[data-deep-dive-finding="finding-2"]')).not.toBeNull());
     expect(mockFindingsApi.propose).toHaveBeenLastCalledWith(
-      COMPANY_ID,
+      expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }),
       expect.objectContaining({ supersedesFindingId: "finding-1", evidenceIds: ["evidence-1"] }),
     );
     // Proposing a replacement leaves the old finding validated.

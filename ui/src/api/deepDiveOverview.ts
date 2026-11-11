@@ -1,3 +1,4 @@
+import type { DeepDiveScope } from "@greatstone/shared";
 import type { DeepDiveOverview } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -5,9 +6,9 @@ import { api } from "./client";
 // one read, no writes.
 
 export const deepDiveOverviewQueryKeys = {
-  overview: (companyId: string) => ["deep-dive-overview", companyId] as const,
+  overview: (scope: DeepDiveScope) => ["deep-dive-overview", scope.companyId, scope.recordCaseId] as const,
 };
 
 export const deepDiveOverviewApi = {
-  get: (companyId: string) => api.get<DeepDiveOverview>(`/companies/${companyId}/deep-dive/overview`),
+  get: (scope: DeepDiveScope) => api.get<DeepDiveOverview>(`/companies/${scope.companyId}/deep-dive/overview?recordId=${scope.recordCaseId}`),
 };

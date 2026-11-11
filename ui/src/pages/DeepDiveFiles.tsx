@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, X } from "lucide-react";
 import {
   DEEP_DIVE_CASE_TYPES,
+  deepDiveStreamKeyOf,
   DEEP_DIVE_LABELS,
-  DEEP_DIVE_RECORD_KEY,
   DEEP_DIVE_STREAMS,
   DEEP_DIVE_VISIBILITIES,
   type ClientDocumentRequest,
@@ -20,6 +20,7 @@ import { websiteDataBridgeApi } from "@/api/website-data-bridge";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref, listDeepDiveCases, deepDiveCasesQueryKey } from "@/lib/deep-dive-scope";
 import { queryKeys } from "@/lib/queryKeys";
 import { formatShortDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -50,13 +51,12 @@ interface DeepDiveItem {
   clientCaseId: string | null;
 }
 
-/** The record and its nine streams, in grid order. */
-export function deepDiveItems(rows: readonly CaseSummary[]): DeepDiveItem[] {
+/** The record and its streams, in grid order. `rows` are the record's own children. */
+export function deepDiveItems(record: { id: string; clientCaseId: string | null } | null, rows: readonly CaseSummary[]): DeepDiveItem[] {
   const items: DeepDiveItem[] = [];
-  const record = rows.find((row) => row.caseType === DEEP_DIVE_CASE_TYPES.record && row.key === DEEP_DIVE_RECORD_KEY);
-  if (record) items.push({ id: record.id, label: "Deep dive record", clientCaseId: record.clientCaseId });
+  if (record) items.push({ id: record.id, label: "Deep Dive record", clientCaseId: record.clientCaseId });
   for (const stream of DEEP_DIVE_STREAMS) {
-    const row = rows.find((entry) => entry.caseType === DEEP_DIVE_CASE_TYPES.stream && entry.key === stream.key);
+    const row = rows.find((entry) => entry.caseType === DEEP_DIVE_CASE_TYPES.stream && deepDiveStreamKeyOf(entry) === stream.key);
     if (row) items.push({ id: row.id, label: stream.label, clientCaseId: row.clientCaseId });
   }
   return items;
@@ -237,6 +237,8 @@ function WebsiteSyncCard({ companyId, clientCaseId }: { companyId: string; clien
 }
 
 export function DeepDiveFiles() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -244,21 +246,24 @@ export function DeepDiveFiles() {
   const [clientDraft, setClientDraft] = useState("");
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Evidence and files" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Evidence and files" }]);
   }, [setBreadcrumbs]);
 
   const itemsQuery = useQuery({
-    queryKey: [...queryKeys.cases.list(companyId), "deep-dive"],
+    queryKey: deepDiveCasesQueryKey(scope),
     queryFn: () =>
-      casesApi.list(companyId, { types: [DEEP_DIVE_CASE_TYPES.record, DEEP_DIVE_CASE_TYPES.stream], limit: 200 }),
+      listDeepDiveCases(scope),
     enabled: !!selectedCompanyId,
   });
   const filesQuery = useQuery({
-    queryKey: queryKeys.cases.deepDiveFiles(companyId),
-    queryFn: () => casesApi.deepDiveFiles(companyId),
+    queryKey: queryKeys.cases.deepDiveFiles(scope),
+    queryFn: () => casesApi.deepDiveFiles(scope),
     enabled: !!selectedCompanyId,
   });
-  const items = useMemo(() => deepDiveItems(itemsQuery.data ?? []), [itemsQuery.data]);
+  const items = useMemo(
+    () => deepDiveItems({ id: scope.recordCaseId, clientCaseId: scope.record.clientCaseId }, itemsQuery.data ?? []),
+    [itemsQuery.data, scope.recordCaseId, scope.record.clientCaseId],
+  );
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.cases.list(companyId) });
 
@@ -316,8 +321,8 @@ export function DeepDiveFiles() {
     <header className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-bold">Evidence and files</h1>
-        <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">
-          Back to the grid
+        <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">
+          Overview
         </Link>
       </div>
       <p className="max-w-3xl text-sm text-muted-foreground">

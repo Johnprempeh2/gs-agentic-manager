@@ -20,6 +20,7 @@ import { deepDiveBoardsQueryKeys, deepDiveOrgApi } from "@/api/deepDiveBoards";
 import { deepDiveFindingsQueryKeys } from "@/api/deepDiveFindings";
 import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDiveInterviews";
 import { Link } from "@/lib/router";
+import { useDeepDiveScope, useDeepDiveHref, listDeepDiveCases, deepDiveCasesQueryKey } from "@/lib/deep-dive-scope";
 import { queryKeys } from "@/lib/queryKeys";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -44,9 +45,9 @@ const GROUPS: { kind: Exclude<DeepDiveProposalKind, "quote">; title: string }[] 
   { kind: "person", title: "People and roles" },
 ];
 const RECORD_LINK: Record<DeepDiveProposalRecordType, { to: string; label: string }> = {
-  finding: { to: "/deep-dive/findings", label: "Open the findings" },
-  process: { to: "/deep-dive/processes", label: "Open the process board" },
-  person: { to: "/deep-dive/organisation", label: "Open the organisation board" },
+  finding: { to: "/findings", label: "Open the findings" },
+  process: { to: "/processes", label: "Open the process board" },
+  person: { to: "/organisation", label: "Open the organisation board" },
 };
 
 function errorText(error: unknown): string | null {
@@ -80,6 +81,8 @@ function Decision({ proposal, roundId, companyId, streams, parentRejected }: {
   streams: StreamOption[];
   parentRejected?: boolean;
 }) {
+  const dd = useDeepDiveHref();
+  const scope = useDeepDiveScope();
   const queryClient = useQueryClient();
   const becomes = deepDiveProposalBecomes(proposal.kind);
   // The streams may load after the card: until the person picks one, the first stream.
@@ -93,9 +96,9 @@ function Decision({ proposal, roundId, companyId, streams, parentRejected }: {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: deepDiveInterviewsQueryKeys.proposals(roundId) }),
         queryClient.invalidateQueries({ queryKey: deepDiveInterviewsQueryKeys.release(roundId) }),
-        queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(companyId) }),
-        queryClient.invalidateQueries({ queryKey: deepDiveBoardsQueryKeys.organisation(companyId) }),
-        queryClient.invalidateQueries({ queryKey: deepDiveBoardsQueryKeys.process(companyId) }),
+        queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(scope) }),
+        queryClient.invalidateQueries({ queryKey: deepDiveBoardsQueryKeys.organisation(scope) }),
+        queryClient.invalidateQueries({ queryKey: deepDiveBoardsQueryKeys.process(scope) }),
       ]);
     },
   });
@@ -105,7 +108,7 @@ function Decision({ proposal, roundId, companyId, streams, parentRejected }: {
     return link && proposal.record?.id ? (
       <p className="text-xs">
         Now {DEEP_DIVE_PROPOSAL_BECOMES_LABELS[proposal.record.type]}.{" "}
-        <Link to={link.to} className="font-medium underline-offset-4 hover:underline">{link.label}</Link>
+        <Link to={dd(link.to)} className="font-medium underline-offset-4 hover:underline">{link.label}</Link>
       </p>
     ) : null;
   }
@@ -291,6 +294,7 @@ function ReleasePanel({ view, roundId }: { view: DeepDiveInterviewReleaseView; r
 
 /** Below the progress, once the round is open: review the synthesis, then release it. */
 export function InterviewReview({ round, companyId }: { round: DeepDiveInterviewRound; companyId: string }) {
+  const scope = useDeepDiveScope();
   const proposals = useQuery({
     queryKey: deepDiveInterviewsQueryKeys.proposals(round.id),
     queryFn: () => deepDiveInterviewsApi.proposals(round.id),
@@ -301,13 +305,13 @@ export function InterviewReview({ round, companyId }: { round: DeepDiveInterview
   });
   // Shared with the progress panel: names are read live from the website.
   const progress = useQuery({
-    queryKey: deepDiveInterviewsQueryKeys.progress(companyId),
-    queryFn: () => deepDiveInterviewsApi.progress(companyId),
+    queryKey: deepDiveInterviewsQueryKeys.progress(scope),
+    queryFn: () => deepDiveInterviewsApi.progress(scope),
   });
-  const board = useQuery({ queryKey: deepDiveBoardsQueryKeys.organisation(companyId), queryFn: () => deepDiveOrgApi.get(companyId) });
+  const board = useQuery({ queryKey: deepDiveBoardsQueryKeys.organisation(scope), queryFn: () => deepDiveOrgApi.get(scope) });
   const cases = useQuery({
-    queryKey: [...queryKeys.cases.list(companyId), "deep-dive"],
-    queryFn: () => casesApi.list(companyId, { types: [DEEP_DIVE_CASE_TYPES.record, DEEP_DIVE_CASE_TYPES.stream], limit: 200 }),
+    queryKey: deepDiveCasesQueryKey(scope),
+    queryFn: () => listDeepDiveCases(scope),
   });
 
   const all = proposals.data?.proposals ?? [];

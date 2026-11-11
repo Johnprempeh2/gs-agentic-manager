@@ -120,6 +120,23 @@ const mockSessionsApi = vi.hoisted(() => ({
   answerToFinding: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/cases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/cases")>()),
   casesApi: mockCasesApi,
@@ -250,8 +267,8 @@ describe("Deep Dive sessions", () => {
 
     flushSync(() => setValue(container.querySelector<HTMLInputElement>("input:not([type])")!, "Operations lead interview"));
     flushSync(() => button(container, "Plan session").click());
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/deep-dive/sessions/session-1"));
-    expect(mockSessionsApi.plan).toHaveBeenCalledWith(COMPANY_ID, { title: "Operations lead interview", plannedFor: null });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/deep-dive/record-1/sessions/session-1"));
+    expect(mockSessionsApi.plan).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), { title: "Operations lead interview", plannedFor: null });
   });
 
   it("shows what is known beside each planned question, runs one question at a time, and closes", async () => {

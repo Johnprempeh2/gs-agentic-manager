@@ -92,6 +92,23 @@ const mockCasesApi = vi.hoisted(() => ({
   unlinkDeepDiveFile: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/cases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/cases")>()),
   casesApi: mockCasesApi,
@@ -215,8 +232,8 @@ describe("Deep Dive evidence and files", () => {
   it("links a file to another item and unlinks it from one item only", async () => {
     const container = await render();
     const file = container.querySelector("[data-deep-dive-file='file-1']")!;
-    await act(async () => select(file.querySelector("select[aria-label='Link to an item']")!, "record"));
-    expect(mockCasesApi.linkDeepDiveFile).toHaveBeenCalledWith("record", { evidenceId: "file-1" });
+    await act(async () => select(file.querySelector("select[aria-label='Link to an item']")!, "record-1"));
+    expect(mockCasesApi.linkDeepDiveFile).toHaveBeenCalledWith("record-1", { evidenceId: "file-1" });
 
     const unlink = file.querySelector<HTMLButtonElement>("button[aria-label='Unlink from Data']")!;
     await act(async () => unlink.click());

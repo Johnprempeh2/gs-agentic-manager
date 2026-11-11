@@ -275,8 +275,8 @@ export const CASES_TOUR: TourDefinition = {
 export const DEEP_DIVE_TOUR: TourDefinition = {
   id: "deep-dive",
   title: "Deep Dive",
-  description: "The nine Investigation Streams against the five GIF questions, and how much of each is known.",
-  version: 1,
+  description: "One Deep Dive for each client engagement, each with its own portal.",
+  version: 2,
   // The page also needs Cases on; Tutorials checks both.
   flag: "enableDeepDive",
   route: { match: /^\/deep-dive\/?$/, path: "/deep-dive" },
@@ -284,24 +284,19 @@ export const DEEP_DIVE_TOUR: TourDefinition = {
   label: "the Deep Dive",
   steps: [
     {
-      target: "deep-dive-sections",
-      title: "The other Deep Dive pages",
-      body: "Overview, Parallel Interview, Sessions, Findings, Organisation, Processes, Opportunities and KPIs, Traceability, and Evidence and files.",
+      target: "deep-dive-start",
+      title: "Start a Deep Dive",
+      body: "Pick the client. A client can have more than one Deep Dive over time.",
     },
     {
-      target: "deep-dive-north-star",
-      title: "North Star",
-      body: "The client's North Star and the other GIF documents. Open one to read or write it.",
+      target: "deep-dive-tiles",
+      title: "One tile for each client",
+      body: "A tile shows what waits for a person: interview drafts to review and findings to validate.",
     },
     {
-      target: "deep-dive-streams",
-      title: "Nine streams, five questions",
-      body: "One row for each Investigation Stream, one cell for each GIF question. Open a cell to write its answer and attach the evidence. Each stream has a status, a depth and a visibility.",
-    },
-    {
-      target: "deep-dive-coverage",
-      title: "How much is known",
-      body: "Cells known, indicated and unknown. Place the known, validate the indicated, and investigate only the unknown.",
+      target: "deep-dive-tiles",
+      title: "Inside a tile",
+      body: "The client's portal: questions and answers, registers, sessions, findings, documents and deliverables, each a tab.",
     },
   ],
 };

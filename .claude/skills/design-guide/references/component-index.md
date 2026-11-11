@@ -415,3 +415,13 @@ import { cn } from "@/lib/utils";
 - `TaskTreeOutline`: the phone layout, an indented outline with a red rail on the blocked path.
 
 Lay out with `layoutTidyTree`, fold with `visibleTaskTree`, trace blockers with `traceBlockedPaths`; never position cards by hand.
+
+### DeepDiveTile
+
+**File:** `ui/src/components/DeepDiveTile.tsx`
+**Usage:** One client's Deep Dive as a tile (GRE-4430). The whole tile is a link to the portal; the last line says what waits for a person (drafts to review, findings to validate). Used on Clients > Deep Dive and on the client profile's Deep Dive tab.
+
+### InterviewLogView
+
+**File:** `ui/src/components/InterviewLogView.tsx`
+**Usage:** An interview logged from a transcript: each question with an Answered, Unclear or Not answered `StatusBadge`, the answer, the speaker's quote and pillar tags, grouped by the Deep Dive's workstreams, then notes outside the questions. `interviewLogCountsText(log)` gives the one-line counts.

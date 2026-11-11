@@ -1,3 +1,4 @@
+import type { DeepDiveScope } from "@greatstone/shared";
 import type {
   CreateDeepDiveBuild,
   CreateDeepDiveKpi,
@@ -14,22 +15,22 @@ import { api } from "./client";
 // board, so the page replaces it in one go.
 
 export const deepDiveOpportunitiesQueryKeys = {
-  board: (companyId: string) => ["deep-dive-opportunities", companyId] as const,
+  board: (scope: DeepDiveScope) => ["deep-dive-opportunities", scope.companyId, scope.recordCaseId] as const,
 };
 
 export const deepDiveOpportunitiesApi = {
-  get: (companyId: string) => api.get<DeepDiveOpportunityBoard>(`/companies/${companyId}/deep-dive/opportunities`),
-  addOpportunity: (companyId: string, input: CreateDeepDiveOpportunity) =>
-    api.post<DeepDiveOpportunityBoard>(`/companies/${companyId}/deep-dive/opportunities`, input),
+  get: (scope: DeepDiveScope) => api.get<DeepDiveOpportunityBoard>(`/companies/${scope.companyId}/deep-dive/opportunities?recordId=${scope.recordCaseId}`),
+  addOpportunity: (scope: DeepDiveScope, input: CreateDeepDiveOpportunity) =>
+    api.post<DeepDiveOpportunityBoard>(`/companies/${scope.companyId}/deep-dive/opportunities?recordId=${scope.recordCaseId}`, input),
   updateOpportunity: (opportunityId: string, input: UpdateDeepDiveOpportunity) =>
     api.patch<DeepDiveOpportunityBoard>(`/deep-dive/opportunities/${opportunityId}`, input),
   removeOpportunity: (opportunityId: string) => api.delete<DeepDiveOpportunityBoard>(`/deep-dive/opportunities/${opportunityId}`),
-  addBuild: (companyId: string, input: CreateDeepDiveBuild) =>
-    api.post<DeepDiveOpportunityBoard>(`/companies/${companyId}/deep-dive/builds`, input),
+  addBuild: (scope: DeepDiveScope, input: CreateDeepDiveBuild) =>
+    api.post<DeepDiveOpportunityBoard>(`/companies/${scope.companyId}/deep-dive/builds?recordId=${scope.recordCaseId}`, input),
   updateBuild: (buildId: string, input: UpdateDeepDiveBuild) => api.patch<DeepDiveOpportunityBoard>(`/deep-dive/builds/${buildId}`, input),
   removeBuild: (buildId: string) => api.delete<DeepDiveOpportunityBoard>(`/deep-dive/builds/${buildId}`),
-  addKpi: (companyId: string, input: CreateDeepDiveKpi) =>
-    api.post<DeepDiveOpportunityBoard>(`/companies/${companyId}/deep-dive/kpis`, input),
+  addKpi: (scope: DeepDiveScope, input: CreateDeepDiveKpi) =>
+    api.post<DeepDiveOpportunityBoard>(`/companies/${scope.companyId}/deep-dive/kpis?recordId=${scope.recordCaseId}`, input),
   updateKpi: (kpiId: string, input: UpdateDeepDiveKpi) => api.patch<DeepDiveOpportunityBoard>(`/deep-dive/kpis/${kpiId}`, input),
   removeKpi: (kpiId: string) => api.delete<DeepDiveOpportunityBoard>(`/deep-dive/kpis/${kpiId}`),
 };

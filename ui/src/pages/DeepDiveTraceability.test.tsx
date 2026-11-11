@@ -34,6 +34,23 @@ const mockApi = vi.hoisted(() => ({
   addRoadmapItem: vi.fn(), updateRoadmapItem: vi.fn(), removeRoadmapItem: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveTraceability", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveTraceability")>()),
   deepDiveTraceabilityApi: mockApi,
@@ -177,7 +194,7 @@ describe("Deep Dive traceability", () => {
     // The design now has its case; the case is on no roadmap until Phase 1 delivers it.
     await waitFor(() => expect(byLabel<HTMLElement>(container, "Broken links").textContent).toContain("Retainer: This commercial case is on no roadmap."));
     expect(byLabel<HTMLElement>(container, "Broken links").textContent).not.toContain("This design has no commercial case.");
-    expect(mockApi.addCommercial).toHaveBeenCalledWith(COMPANY_ID, { name: "Retainer", buildId: "d", terms: "" });
+    expect(mockApi.addCommercial).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), { name: "Retainer", buildId: "d", terms: "" });
 
     flushSync(() => setValue(byLabel<HTMLSelectElement>(container, "Commercial case Phase 1 delivers"), "c-1"));
     await waitFor(() => expect(container.textContent).toContain("Broken links (0)"));
@@ -189,6 +206,6 @@ describe("Deep Dive traceability", () => {
     store.chain = { ...fixture(), opportunities: [], designs: [], commercials: [], roadmap: [], kpis: [] };
     render();
     await waitFor(() => expect(container.textContent).toContain("No opportunities yet, so there is no chain."));
-    expect(container.querySelector('a[href="/deep-dive/opportunities"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/deep-dive/record-1/opportunities"]')).not.toBeNull();
   });
 });

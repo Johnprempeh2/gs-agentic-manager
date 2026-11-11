@@ -584,7 +584,7 @@ export const queryKeys = {
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
     detail: (id: string) => ["cases", "detail", id] as const,
-    deepDiveFiles: (companyId: string) => ["cases", companyId, "deep-dive-files"] as const,
+    deepDiveFiles: (scope: { companyId: string; recordCaseId: string }) => ["cases", scope.companyId, "deep-dive-files", scope.recordCaseId] as const,
     documents: (id: string) => ["cases", "documents", id] as const,
     documentAnnotations: (
       caseId: string,
