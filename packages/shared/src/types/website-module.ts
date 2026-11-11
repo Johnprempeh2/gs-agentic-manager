@@ -15,6 +15,9 @@ export type WebsitePageMenu = (typeof WEBSITE_PAGE_MENUS)[number];
 /** Largest page or entry body GSAM saves (ADR section 3: about 280 times today's largest page). */
 export const WEBSITE_CONTENT_MAX_BYTES = 2 * 1024 * 1024;
 
+/** greatstoneint.com's Netlify site: its record publishes to staging, and only Deploy reaches it. */
+export const PUBLIC_NETLIFY_SITE_ID = "3b1e97e6-e184-4251-badd-deed532be3ab";
+
 export type WebsiteNetlifyTokenSource = "own" | "shared";
 
 /** A company secret a site can use as its Netlify token: id and name only. */

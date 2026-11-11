@@ -17,7 +17,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmButton } from "@/components/commerce/CommerceWriteParts";
 import { ErrorState, errorStateMessage } from "../ErrorState";
-import { ENTRY_STATUS_LABEL } from "./WebsiteCollections";
+import { useEntryStatusWord } from "./WebsiteCollections";
 
 // Redirects (GRE-4785, GRE-4079 step 5d): old addresses that send visitors on. Each change is a draft of a
 // `redirect` entry; a person with Publish rights approves it, Publish puts it on staging and Deploy puts it live.
@@ -127,6 +127,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
   });
   const canEdit = access.data?.edit ?? false;
   const canApprove = access.data?.publish ?? false;
+  const statusWord = useEntryStatusWord();
   const [editing, setEditing] = useState<WebsiteRedirect | null | undefined>(undefined);
   const [message, setMessage] = useState<string | null>(null);
   const refresh = () => {
@@ -138,7 +139,8 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
       action === "review"
         ? websiteModuleApi.submitEntry(companyId, siteId, redirect.entryId)
         : action === "approve"
-          ? websiteModuleApi.approveEntry(companyId, siteId, redirect.entryId)
+          // A person with Publish rights approves a draft in one click: the server approves only what is in review.
+          ? (redirect.state === "draft" ? websiteModuleApi.submitEntry(companyId, siteId, redirect.entryId) : Promise.resolve()).then(() => websiteModuleApi.approveEntry(companyId, siteId, redirect.entryId))
           : websiteModuleApi.deleteRedirect(companyId, siteId, redirect.entryId),
     onSuccess: (_result, { action, redirect }) => {
       setMessage(
@@ -148,6 +150,7 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
       );
       refresh();
     },
+    onError: () => refresh(),
   });
 
   const list = redirects.data ?? [];
@@ -189,16 +192,16 @@ export function WebsiteRedirects({ companyId, siteId }: { companyId: string; sit
                   <span className="break-all">{redirect.to}</span>
                 </p>
                 <p className="flex flex-wrap items-center gap-2">
-                  <span className={cn(PILL, STATE_PILL[redirect.state])}>{ENTRY_STATUS_LABEL[redirect.state]}</span>
+                  <span className={cn(PILL, STATE_PILL[redirect.state])}>{statusWord(redirect.state)}</span>
                   <span className="text-xs text-muted-foreground">{REDIRECT_STATUS_LABEL[redirect.status]}</span>
                 </p>
               </div>
               {canEdit ? (
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {redirect.state === "draft" ? (
+                  {redirect.state === "draft" && !canApprove ? (
                     <Button size="sm" variant="outline" disabled={step.isPending} onClick={() => step.mutate({ action: "review", redirect })}>Send for review</Button>
                   ) : null}
-                  {redirect.state === "review" && canApprove ? (
+                  {(redirect.state === "draft" || redirect.state === "review") && canApprove ? (
                     <Button size="sm" variant="outline" disabled={step.isPending} onClick={() => step.mutate({ action: "approve", redirect })}>Approve</Button>
                   ) : null}
                   <Button size="sm" variant="ghost" onClick={() => { setMessage(null); setEditing(redirect); }} aria-label={`Change redirect from ${redirect.from}`}>

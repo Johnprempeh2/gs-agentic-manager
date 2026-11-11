@@ -69,6 +69,8 @@ beforeEach(() => {
   moduleApiMock.access.mockResolvedValue({ view: true, edit: true, publish: true });
   moduleApiMock.redirects.mockResolvedValue([redirect("r1", "/old-pricing", "/pricing"), redirect("r2", "/blog", "https://blog.example.com/", { state: "review", status: 302 })]);
   moduleApiMock.media.mockResolvedValue([media]);
+  moduleApiMock.submitEntry.mockResolvedValue({});
+  moduleApiMock.approveEntry.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -84,14 +86,30 @@ describe("WebsiteRedirects (GRE-4785)", () => {
     expect(rows[0]).toContain("/old-pricing");
     expect(rows[0]).toContain("Draft");
     expect(rows[0]).toContain("Permanent (301)");
-    expect(rows[0]).toContain("Send for review");
+    // A person with Publish rights approves a draft straight away: no Send for review step.
+    expect(rows[0]).not.toContain("Send for review");
+    expect(rows[0]).toContain("Approve");
     expect(rows[1]).toContain("In review");
     expect(rows[1]).toContain("Temporary (302)");
     expect(rows[1]).toContain("Approve");
 
-    await click(buttonByText("Approve"));
+    const approveIn = (n: number) => [...container.querySelectorAll('[data-testid="redirect-row"]')][n]!.querySelector("button");
+    await click(approveIn(1));
+    expect(moduleApiMock.submitEntry).not.toHaveBeenCalled();
     expect(moduleApiMock.approveEntry).toHaveBeenCalledWith("co-1", "site-1", "r2");
     expect(container.textContent).toContain("Approved /blog. Publish puts it on staging, and Deploy puts it live.");
+
+    await click(approveIn(0));
+    expect(moduleApiMock.submitEntry).toHaveBeenCalledWith("co-1", "site-1", "r1");
+    expect(moduleApiMock.approveEntry).toHaveBeenCalledWith("co-1", "site-1", "r1");
+  });
+
+  it("keeps Send for review for someone who can edit but not approve", async () => {
+    moduleApiMock.access.mockResolvedValue({ view: true, edit: true, publish: false });
+    await render(<WebsiteRedirects companyId="co-1" siteId="site-1" />);
+    const rows = [...container.querySelectorAll('[data-testid="redirect-row"]')].map((row) => row.textContent);
+    expect(rows[0]).toContain("Send for review");
+    expect(buttonByText("Approve")).toBeUndefined();
   });
 
   it("checks the addresses before it saves, then adds the redirect as a draft", async () => {

@@ -119,7 +119,7 @@ export const WEBSITE_EDITOR_TOUR: TourDefinition = {
     {
       target: ["Unsaved edits", "Live design chat"],
       title: "Save to draft",
-      body: "Your edits wait in this panel until you save. A line appears here that counts them, with Save to draft to keep them and Undo to drop them.",
+      body: "Your edits wait in this panel until you save. A line appears here that counts them, with Save to draft to keep them and Undo to drop them. If you can approve pages, Save and approve saves them and approves the page in one go.",
     },
     {
       target: "Versions",
@@ -186,7 +186,7 @@ export const WEBSITE_PAGES_TOUR: TourDefinition = {
     {
       target: "website-page-status",
       title: "Its state",
-      body: "Draft, Waiting for approval, Approved or Live. Visitors only see a page once it is Live.",
+      body: "Draft, In review, Approved, On staging or Live. Publish puts approved pages on staging; visitors only see a page once Deploy makes it Live.",
     },
     {
       target: "website-pages-edit",
@@ -252,7 +252,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
     {
       target: "website-collection-new",
       title: "Add one",
-      body: "A new entry starts as a draft. Send it for review. Once a person approves it, Publish puts it on staging and Deploy puts it on the live site.",
+      body: "A new entry starts as a draft. Send it for review, or, if you can approve, use Save and approve. Once it is approved, Publish puts it on staging and Deploy puts it on the live site.",
     },
   ],
 };

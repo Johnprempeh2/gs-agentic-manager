@@ -13,7 +13,7 @@ import type {
   WebsiteReleaseKind,
   WebsiteReleaseStatus,
 } from "@greatstone/shared";
-import { websiteCollectionDefinition, websitePageSeoSchema } from "@greatstone/shared";
+import { PUBLIC_NETLIFY_SITE_ID, websiteCollectionDefinition, websitePageSeoSchema } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { getStorageService } from "../../storage/index.js";
@@ -103,7 +103,7 @@ export const WEBSITE_RELEASE_SCHEMA = 1;
 export const WEBSITE_HTML_RELEASE_SCHEMA = 2;
 const CURRENT_KEY = "current";
 /** greatstone-home (greatstoneint.com): only the editor's Deploy reaches it. */
-export const PUBLIC_NETLIFY_SITE_ID = "3b1e97e6-e184-4251-badd-deed532be3ab";
+export { PUBLIC_NETLIFY_SITE_ID };
 /**
  * Staging holds the edits (John, 7 Nov): the public site's record publishes its content releases to STAGING's
  * store and checks them on the staging site. Git builds are off there, so no build is started: the staging watch

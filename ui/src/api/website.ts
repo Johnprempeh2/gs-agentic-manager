@@ -152,6 +152,9 @@ export const websiteModuleApi = {
     api.post<LiveDesignView>(`${pagePath(companyId, siteId, pageId)}/live-restore`, { revisionId }),
   submitPage: (companyId: string, siteId: string, pageId: string) =>
     api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/submit`, {}),
+  /** Approve the page's latest saved version, from draft or review (website:publish, people only). Nothing is published. */
+  approvePage: (companyId: string, siteId: string, pageId: string) =>
+    api.post<WebsitePage>(`${pagePath(companyId, siteId, pageId)}/approve`, {}),
   restoreRevision: (companyId: string, siteId: string, pageId: string, revisionId: string, baseRevisionId: string) =>
     saveAnswer(
       api.post<WebsiteSaveResult>(

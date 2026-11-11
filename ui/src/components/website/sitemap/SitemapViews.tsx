@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -16,8 +16,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
+import { WEBSITE_STATUS_TONE, WebsiteContentLiveContext } from "@/lib/website-status";
 import {
   SITEMAP_STATUS_LABELS,
+  sitemapStatusLabel,
   childrenOf,
   indent,
   menuItems,
@@ -55,7 +57,8 @@ export function Pill({ className, children }: { className: string; children: Rea
 }
 
 export function StatusPill({ status }: { status: SitemapPageStatus }) {
-  return <Pill className={STATUS_CLASSES[status]}>{SITEMAP_STATUS_LABELS[status]}</Pill>;
+  const onLive = useContext(WebsiteContentLiveContext);
+  return <Pill className={status === "live" && !onLive ? WEBSITE_STATUS_TONE["On staging"] : STATUS_CLASSES[status]}>{sitemapStatusLabel(status, onLive)}</Pill>;
 }
 
 /** Agreed strings (GRE-2081): `menus.planned_hidden` and `journeys.gap`. */
@@ -131,6 +134,7 @@ export function SitemapListView({ tree, pagesById }: SitemapViewProps) {
   const [sort, setSort] = useState<{ key: ListKey; direction: 1 | -1 }>({ key: "path", direction: 1 });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<SitemapPageStatus | "all">("all");
+  const onLive = useContext(WebsiteContentLiveContext);
   const [menuFilter, setMenuFilter] = useState<WebsitePageMenu | "all">("all");
 
   const rows = useMemo(() => {
@@ -163,7 +167,7 @@ export function SitemapListView({ tree, pagesById }: SitemapViewProps) {
           <NativeSelect value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as SitemapPageStatus | "all")}>
             <option value="all">All</option>
             {(Object.keys(SITEMAP_STATUS_LABELS) as SitemapPageStatus[]).map((status) => (
-              <option key={status} value={status}>{SITEMAP_STATUS_LABELS[status]}</option>
+              <option key={status} value={status}>{sitemapStatusLabel(status, onLive)}</option>
             ))}
           </NativeSelect>
         </label>

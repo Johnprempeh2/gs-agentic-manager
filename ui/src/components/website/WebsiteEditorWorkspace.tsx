@@ -115,6 +115,7 @@ import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComme
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { countOf, isBuiltPage } from "./sitemap/model";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websiteStatusWord } from "../../lib/website-status";
 import { WebsiteStyleForSite } from "./WebsiteStyle";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
 
@@ -124,7 +125,7 @@ import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type Picked
 // one drawer for History, Media, Motion and click to change that opens only
 // when asked for. Every save goes through GSAM's API; the frame holds no
 // login, and nothing publishes from here: Send for review asks a person with
-// Publish rights to approve the page.
+// Publish rights to approve the page; that person gets Save and approve instead.
 
 const ORIGIN_CHANGED_NOTICE = "The editor address for this site changed. Reload to continue.";
 
@@ -132,13 +133,17 @@ type Mode = "edit" | "preview";
 type Source = "draft" | "live";
 type Drawer = "history" | "media" | "motion" | "change" | "comments" | "style" | null;
 
-const PAGE_STATUS_COPY: Record<WebsitePageStatus, { label: string; tone: string }> = {
-  planned: { label: "Planned", tone: "bg-muted text-muted-foreground" },
-  draft: { label: "Draft", tone: "bg-status-running-soft text-status-running-foreground" },
-  review: { label: "Waiting for approval", tone: "bg-status-warning-soft text-status-warning-foreground" },
-  approved: { label: "Approved", tone: "bg-status-info-soft text-status-info-foreground" },
-  published: { label: "Live", tone: "bg-status-success-soft text-status-success-foreground" },
-};
+/**
+ * The review button. A person with Publish rights saves and approves in one click (Approve when nothing is
+ * unsaved); anyone else sends the saved version for review.
+ */
+export function reviewButton(canPublish: boolean, dirty: boolean, status: WebsitePageStatus): { label: string; disabled: boolean; approve: boolean } {
+  if (canPublish) {
+    if (dirty) return { label: "Save and approve", disabled: false, approve: true };
+    return { label: "Approve", disabled: status !== "draft" && status !== "review", approve: true };
+  }
+  return status === "review" ? { label: "In review", disabled: true, approve: false } : { label: "Send for review", disabled: false, approve: false };
+}
 
 /* ---- Pages tab ---- */
 
@@ -176,6 +181,7 @@ export function WebsitePagesTab({
   onOpenTab: (tab: WebsiteTab) => void;
 }) {
   const { site, isLoading, error, refetch } = useWebsiteSite(companyId, property.id);
+  const onLive = useWebsiteContentLive(companyId, site);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   // GRE-4822: pages are HTML since the schema 2 release, so Edit opens live design, as Home and Sitemap do.
@@ -251,7 +257,7 @@ export function WebsitePagesTab({
               <span className="truncate text-sm font-medium">{entry.title}</span>
               <span className="truncate font-mono text-xs text-muted-foreground">{entry.slug}</span>
             </button>
-            <PageStatusPill status={entry.status} />
+            <PageStatusPill status={entry.status} onLive={onLive} />
             <Button type="button" size="xs" variant="outline" onClick={() => openPage(entry.id)} aria-label={`Edit ${entry.title}`}>
               <PenLine />
               Edit
@@ -263,9 +269,9 @@ export function WebsitePagesTab({
   );
 }
 
-function PageStatusPill({ status }: { status: WebsitePageStatus }) {
-  const copy = PAGE_STATUS_COPY[status] ?? PAGE_STATUS_COPY.draft;
-  return <span className={cn("inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", copy.tone)} data-tour="website-page-status">{copy.label}</span>;
+function PageStatusPill({ status, onLive }: { status: WebsitePageStatus; onLive: boolean }) {
+  const word = websiteStatusWord(status, onLive);
+  return <span className={cn("inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium", WEBSITE_STATUS_TONE[word])} data-tour="website-page-status">{word}</span>;
 }
 
 /* ---- Full-screen editor ---- */
@@ -638,8 +644,36 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     onError: (error) => setMessage({ text: errorStateMessage(error), tone: "warn" }),
   });
 
+  // Save and approve (people with Publish rights; agents never): approve runs only once this save has landed.
+  const access = useQuery({
+    queryKey: queryKeys.website.access(companyId, site.id),
+    queryFn: () => websiteModuleApi.access(companyId, site.id),
+    retry: false,
+  });
+  const canPublish = access.data?.publish ?? false;
+  const onLive = useWebsiteContentLive(companyId, site);
+  const [approveAfterSave, setApproveAfterSave] = useState(false);
+  const approve = useMutation({
+    mutationFn: (target: WebsitePage) => websiteModuleApi.approvePage(companyId, site.id, target.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
+      setMessage({ text: "Approved. Publish puts it on staging, and Deploy puts it live.", tone: "success" });
+    },
+    onError: (error) => setMessage({ text: `Not approved: ${errorStateMessage(error)}`, tone: "warn" }),
+  });
+  const saveAndApprove = () => {
+    if (!page) return;
+    if (!dirty) return approve.mutate(page);
+    if (mode !== "edit" || !run("save")) {
+      setMessage({ text: "This site's editor saves from its own Save button. Save there, then select Approve.", tone: "warn" });
+      return;
+    }
+    setApproveAfterSave(true);
+  };
+
   const askToPublish = async () => {
     if (!page) return;
+    if (canPublish) return saveAndApprove();
     if (dirty) {
       setMessage({ text: "Save the page first. Send for review sends the saved version.", tone: "warn" });
       return;
@@ -747,7 +781,8 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
   const canAddBlock = editing && ready && commands.has("add-block");
   const canOutline = editing && ready && commands.has("outline");
   const outlineOn = Boolean(editorState?.outline);
-  const waiting = page.status === "review";
+  const review = reviewButton(canPublish, dirty, page.status);
+  const reviewBusy = requestPublish.isPending || approve.isPending || approveAfterSave;
   const connectionMessage = frameConnectionMessage(connection, site.editorFrameOrigin!);
   // GRE-2357: an editor host older than the shell's contract never shows its own studio.
   const outOfDate = editing && connection.phase === "out-of-date";
@@ -781,7 +816,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
       <TopBar>
         <BackButton onClick={() => void leave()} />
         <PagePicker pages={pages} page={page} onOpen={(id) => void openPage(id)} />
-        <SaveStatePill mode={mode} connection={connection} saveState={saveState} dirty={dirty} status={page.status} />
+        <SaveStatePill mode={mode} connection={connection} saveState={saveState} dirty={dirty} status={page.status} onLive={onLive} />
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           {editing && copyAvailable ? (
             <Segmented
@@ -862,12 +897,12 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             type="button"
             size="sm"
             onClick={() => void askToPublish()}
-            disabled={waiting || requestPublish.isPending}
+            disabled={review.disabled || reviewBusy}
             className="hidden sm:inline-flex"
             data-testid="website-request-publish"
           >
-            <Send />
-            {waiting ? "Waiting for approval" : "Send for review"}
+            {review.approve ? <Check /> : <Send />}
+            {review.label}
           </Button>
           <MoreMenu
             mode={mode}
@@ -875,7 +910,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
             device={device}
             drawer={drawer}
             openComments={openComments}
-            waiting={waiting}
+            review={{ ...review, disabled: review.disabled || reviewBusy }}
             canUndo={canUndo}
             canRedo={canRedo}
             canAddBlock={canAddBlock}
@@ -966,6 +1001,12 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
               }}
               onSaveState={(next) => {
                 setSaveState(next);
+                if (approveAfterSave && (next.status === "saved" || next.status === "failed" || next.status === "conflict")) {
+                  setApproveAfterSave(false);
+                  // Only the version this click saved is approved; a failed or conflicting save approves nothing.
+                  if (next.status === "saved") approve.mutate(page);
+                  else setMessage({ text: "The save did not go through, so nothing was approved. Fix the save, then try again.", tone: "warn" });
+                }
                 if (next.status === "saved") {
                   // The import's save fills the empty draft.
                   setDraftEmpty(sessionRef.current?.draftEmpty ?? null);
@@ -1328,12 +1369,14 @@ function SaveStatePill({
   saveState,
   dirty,
   status,
+  onLive,
 }: {
   mode: Mode;
   connection: WebsiteFrameConnection;
   saveState: WebsiteFrameSaveState;
   dirty: boolean;
   status: WebsitePageStatus;
+  onLive: boolean;
 }) {
   let text: string;
   // Full-strength text on a neutral fill: the state is a must-have, so never the faint grey.
@@ -1352,10 +1395,9 @@ function SaveStatePill({
     text = `Saved ${formatTime(saveState.savedAt)}`;
     tone = "bg-status-success-soft text-status-success-foreground";
   } else {
-    const copy = PAGE_STATUS_COPY[status] ?? PAGE_STATUS_COPY.draft;
-    text = copy.label;
-    // Draft keeps the neutral pill: the draft token is green in this palette and read as Saved.
-    if (status !== "planned" && status !== "draft") tone = copy.tone;
+    const word = websiteStatusWord(status, onLive);
+    text = word;
+    if (word !== "Draft") tone = WEBSITE_STATUS_TONE[word];
   }
   return (
     <span
@@ -1375,7 +1417,7 @@ function MoreMenu({
   device,
   drawer,
   openComments,
-  waiting,
+  review,
   canUndo,
   canRedo,
   canAddBlock,
@@ -1397,7 +1439,7 @@ function MoreMenu({
   device: WebsitePreviewDevice;
   drawer: Drawer;
   openComments: number;
-  waiting: boolean;
+  review: { label: string; disabled: boolean; approve: boolean };
   canUndo: boolean;
   canRedo: boolean;
   canAddBlock: boolean;
@@ -1425,9 +1467,9 @@ function MoreMenu({
           {mode === "preview" ? <PenLine /> : <Eye />}
           {mode === "preview" ? "Edit" : "Preview"}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onRequestPublish} disabled={waiting} className="sm:hidden">
-          <Send />
-          {waiting ? "Waiting for approval" : "Send for review"}
+        <DropdownMenuItem onSelect={onRequestPublish} disabled={review.disabled} className="sm:hidden">
+          {review.approve ? <Check /> : <Send />}
+          {review.label}
         </DropdownMenuItem>
         {mode === "edit" ? (
           <>
