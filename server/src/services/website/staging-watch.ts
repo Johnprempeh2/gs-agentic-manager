@@ -18,8 +18,14 @@ export const STAGING_WATCH_TITLE = "Put website main on staging";
 export const STAGING_WATCH_ALERT_TITLE = "Staging watch cannot reach";
 /** Sweeps in a row that must fail before the team gets a task: one blip is not worth a task. */
 export const STAGING_WATCH_FAILURES_BEFORE_ALERT = 3;
-/** Each GitHub or Netlify call's own limit: Netlify's staging deploy list takes 2 to 4 s and can spike past 15 s (GRE-5060). */
+/** Each GitHub or Netlify call's own limit: a page of staging's deploy list takes about 6 s (GRE-5060, GRE-5062). */
 export const STAGING_WATCH_CALL_TIMEOUT_MS = 20_000;
+/**
+ * Staging's deploy list is read 10 at a time, newest first, up to the last 100 (GRE-5062). Each deploy record is
+ * about 27 KB and grows with every deploy: one page of 100 took 39 s, one of 10 takes about 6 s.
+ */
+export const STAGING_DEPLOYS_PER_PAGE = 10;
+export const STAGING_DEPLOYS_CAP = 100;
 const CHECK_EVERY_MS = 2 * 60_000;
 
 export interface StagingWatchDeps {
@@ -70,6 +76,17 @@ export async function watchCall<T>(
         : `${service}: ${step} failed${tries}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+/** The commit of staging's newest guarded deploy, read page by page until found, the list ends, or the cap. */
+export async function pagedStagedCommit(readPage: (page: number) => Promise<Parameters<typeof lastGuardedCommit>[0]>) {
+  for (let page = 1; page <= STAGING_DEPLOYS_CAP / STAGING_DEPLOYS_PER_PAGE; page += 1) {
+    const deploys = await readPage(page);
+    const sha = lastGuardedCommit(deploys, "staging");
+    if (sha) return sha;
+    if (deploys.length < STAGING_DEPLOYS_PER_PAGE) break;
+  }
+  return null;
 }
 
 /** One sweep: the check, then the alert after 3 failures in a row (one task), closed by the next success. */
@@ -138,11 +155,13 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
     },
     async stagedCommit() {
       const token = await readNetlifyToken();
-      return watchCall("Netlify", "staging deploy list", async (signal) => {
-        const res = await fetch(`https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=100`, { headers: headers(token), signal });
+      // Each page is its own call, with its own 20 s limit and retry.
+      return pagedStagedCommit((page) => watchCall("Netlify", `staging deploy list page ${page}`, async (signal) => {
+        const url = `https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=${STAGING_DEPLOYS_PER_PAGE}&page=${page}`;
+        const res = await fetch(url, { headers: headers(token), signal });
         if (!res.ok) throw new StagingWatchError("Netlify", `Netlify answered ${res.status} for the staging site's deploys (check the website site's Netlify token)`);
-        return lastGuardedCommit(await res.json(), "staging");
-      });
+        return res.json();
+      }));
     },
     async openTask() {
       const [row] = await db
