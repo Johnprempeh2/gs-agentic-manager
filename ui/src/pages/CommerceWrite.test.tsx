@@ -333,6 +333,45 @@ describe("Commerce write screens", () => {
       offeringName: "Aspose.Total for .NET", variantName: "Developer OEM", licenceKey: "KEY-1234", orderId: ORDER_ID, seats: 2 } });
   });
 
+  it("filters client companies by how recently they had a timeline item, and puts the quietest first", async () => {
+    const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    mocks.bridge.list.mockImplementation(async (_c: string, _s: string, resource: string) => ({ nextCursor: null,
+      items: resource === "customers"
+        ? [{ id: "c1", name: "Alpha" }, { id: "c2", name: "Bravo" }, { id: "c3", name: "Charlie" }]
+        : resource === "engagements"
+          ? [{ customer_id: "c1", occurred_on: day(3) }, { customer_id: "c2", occurred_on: day(45) }, { customer_id: "c2", occurred_on: day(90) }]
+          : [] }));
+    render("/commerce/customers");
+    await flush();
+    const names = () => [...container.querySelectorAll("[data-testid=commerce-clients] li")].map((li) => li.textContent);
+    expect(names()[1]).toContain("Last item 45 days ago");
+    expect(buttonNamed("Quiet 1")).toBeDefined();
+    act(() => buttonNamed("Quiet 1")!.click());
+    await flush();
+    expect(names()).toHaveLength(1);
+    expect(names()[0]).toContain("Bravo");
+    act(() => buttonNamed("Quiet 1")!.click());
+    act(() => buttonNamed("Quietest first")!.click());
+    await flush();
+    expect(names().map((n) => n?.slice(0, 5))).toEqual(["Charl", "Bravo", "Alpha"]);
+  });
+
+  it("starts a timeline item from a template, still as a draft a person adds", async () => {
+    const CLIENT = "0c0c0c0c-0000-4000-8000-000000000001";
+    mocks.bridge.get.mockResolvedValue({ item: { id: CLIENT, name: "Example Engineering Ltd", row_version: 1 } });
+    mocks.commerce.write.mockResolvedValue({ item: { id: "e9" } });
+    render(`/commerce/customers/${CLIENT}`);
+    await flush();
+    act(() => buttonNamed("Add item")!.click());
+    act(() => buttonNamed("Kickoff")!.click());
+    expect(container.querySelector<HTMLInputElement>("#engagement-new-title")!.value).toBe("Kickoff: mapping the climb");
+    submitForm(container.querySelector("#engagement-new-title")!);
+    await flush();
+    const body = mocks.commerce.write.mock.calls[0]![2].body;
+    expect(body).toMatchObject({ title: "Kickoff: mapping the climb", kind: "kickoff", phase: "Discovery" });
+    expect(body.occurredOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   it("hides apply on a validated import and issue on a draft invoice from an agent", async () => {
     mocks.commerce.get.mockResolvedValue({ item: { id: "job-1", filename: "prices.csv", status: "validated", dry_run: true, rows: { items: [], nextCursor: null } } });
     render("/commerce/imports/job-1");

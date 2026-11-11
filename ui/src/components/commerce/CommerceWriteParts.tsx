@@ -245,10 +245,12 @@ export function ConfirmButton({ label, ariaLabel, title, description, confirmLab
 }
 
 /** A form for one row: every filled field on create, only what changed on edit. */
-export function CommerceRowForm({ idPrefix, fields, base, refOptions, saving, submitLabel, onSave, onCancel }: {
+export function CommerceRowForm({ idPrefix, fields, base, initial, refOptions, saving, submitLabel, onSave, onCancel }: {
   idPrefix: string;
   fields: readonly CommerceFieldDef[];
   base: CommerceRow | null;
+  /** On create only: values to start from (a template). Every filled field is still sent. */
+  initial?: CommerceRow | null;
   /** The choices of each `ref` field, by its `ref`. */
   refOptions?: Partial<Record<string, readonly { value: string; label: string }[]>>;
   saving: boolean;
@@ -256,7 +258,7 @@ export function CommerceRowForm({ idPrefix, fields, base, refOptions, saving, su
   onSave: (body: Record<string, unknown>) => void;
   onCancel?: () => void;
 }) {
-  const [values, setValues] = useState(() => formValuesOf(fields, base));
+  const [values, setValues] = useState(() => formValuesOf(fields, base ?? initial ?? null));
   const [problem, setProblem] = useState<string | null>(null);
   const submit = (event: FormEvent) => {
     event.preventDefault();
