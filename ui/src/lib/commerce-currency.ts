@@ -31,7 +31,8 @@ export function parseRate(raw: string): { rate: number } | { problem: string } {
 /** A stored rate ("1.300000") as people write it: 1.30. Null when it is not a number. */
 export function showRate(value: unknown): string | null {
   const n = Number(text(value));
-  return text(value) && Number.isFinite(n) ? n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false }) : null;
+  if (!text(value) || !Number.isFinite(n)) return null;
+  return n.toFixed(6).replace(/0+$/, "").replace(/\.(\d?)$/, (_, d: string) => `.${d.padEnd(2, "0")}`);
 }
 
 /** "$1.30 to the pound" read the other way: pounds for one dollar, to 4 places. */

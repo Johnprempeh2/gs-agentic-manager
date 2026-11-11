@@ -172,7 +172,7 @@ export function CommerceCurrency({ companyId, siteId }: { companyId: string; sit
               <tbody className="divide-y divide-border">
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td className="max-w-[9rem] truncate px-4 py-2 sm:max-w-[16rem]" title={row.name}>{row.name}</td>
+                    <td className="max-w-36 truncate px-4 py-2 sm:max-w-64" title={row.name}>{row.name}</td>
                     <td className="hidden px-4 py-2 text-right tabular-nums text-muted-foreground sm:table-cell">{formatMinor(row.usdMinor, "USD")}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{gbp(row.now)}</td>
                     {changed ? <td className="px-4 py-2 text-right font-medium tabular-nums">{gbp(row.next)}</td> : null}
