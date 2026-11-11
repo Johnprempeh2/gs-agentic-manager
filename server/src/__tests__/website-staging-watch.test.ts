@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { StagingWatchError, stagingWatchSweep, stagingWatchTaskDescription, stagingWatchTick, type StagingWatchDeps } from "../services/website/staging-watch.js";
+import {
+  STAGING_WATCH_CALL_TIMEOUT_MS,
+  STAGING_WATCH_FAILURES_BEFORE_ALERT,
+  StagingWatchError,
+  stagingWatchSweep,
+  stagingWatchTaskDescription,
+  stagingWatchTick,
+  watchCall,
+  type StagingWatchDeps,
+} from "../services/website/staging-watch.js";
 
 function deps(over: Partial<StagingWatchDeps>): StagingWatchDeps {
   return {
@@ -114,5 +123,65 @@ describe("website staging watch", () => {
     expect(await stagingWatchSweep(d, state)).toBe("current");
     expect(d.closeAlert).toHaveBeenCalledWith("alert-1");
     expect(state.failures).toBe(0);
+  });
+
+  describe("each GitHub or Netlify call (GRE-5060)", () => {
+    // Waits for the call's own signal, as a fetch does on a service that does not answer in time.
+    const hang = (signal: AbortSignal) => new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+
+    it("tries a timed-out call once more and keeps its answer", async () => {
+      let calls = 0;
+      const sha = await watchCall("Netlify", "staging deploy list", async (signal) => {
+        calls += 1;
+        return calls === 1 ? hang(signal) : "b".repeat(40);
+      }, 10);
+      expect(sha).toBe("b".repeat(40));
+      expect(calls).toBe(2);
+    });
+
+    it("tries a dropped connection once more", async () => {
+      let calls = 0;
+      const sha = await watchCall("GitHub", "website main commit", async () => {
+        calls += 1;
+        if (calls === 1) throw new TypeError("fetch failed");
+        return "b".repeat(40);
+      });
+      expect(sha).toBe("b".repeat(40));
+      expect(calls).toBe(2);
+    });
+
+    it("names the service and step when both tries time out", async () => {
+      let calls = 0;
+      const err = await watchCall("Netlify", "staging deploy list", (signal) => { calls += 1; return hang(signal); }, 10).catch(e => e);
+      expect(calls).toBe(2);
+      expect(err).toBeInstanceOf(StagingWatchError);
+      expect(err.service).toBe("Netlify");
+      expect(err.message).toBe("Netlify: staging deploy list timed out after 0.01 s, tried 2 times");
+    });
+
+    it("does not retry a service's own answer", async () => {
+      let calls = 0;
+      const err = await watchCall("Netlify", "staging deploy list", async () => {
+        calls += 1;
+        throw new StagingWatchError("Netlify", "Netlify answered 401 for the staging site's deploys");
+      }).catch(e => e);
+      expect(calls).toBe(1);
+      expect(err.message).toContain("401");
+    });
+
+    it("gives every call 20 s", () => {
+      expect(STAGING_WATCH_CALL_TIMEOUT_MS).toBe(20_000);
+    });
+
+    it("raises the alert on Netlify alone when only its deploy list times out (GRE-5056, GRE-5057)", async () => {
+      const d = deps({
+        mainCommit: () => watchCall("GitHub", "website main commit", async () => "b".repeat(40), 10),
+        stagedCommit: () => watchCall("Netlify", "staging deploy list", hang, 10),
+      });
+      const state = { failures: 0 };
+      for (let i = 0; i < STAGING_WATCH_FAILURES_BEFORE_ALERT; i += 1) await expect(stagingWatchSweep(d, state)).rejects.toThrow();
+      expect(d.createAlert).toHaveBeenCalledTimes(1);
+      expect(d.createAlert).toHaveBeenCalledWith("Netlify", "Netlify: staging deploy list timed out after 0.01 s, tried 2 times");
+    });
   });
 });
