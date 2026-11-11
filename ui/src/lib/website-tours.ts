@@ -465,7 +465,7 @@ export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
   id: "commerce-catalogue-setup",
   title: "Commerce catalogue set-up",
   description: "Vendors, categories, pricing rules, customer tiers, the display rate and price-book imports.",
-  version: 1,
+  version: 2,
   flag: "enableWebsiteView",
   route: { match: /^\/commerce\/(vendors|categories|pricing-rules|customer-tiers|currency|imports)\/?$/, path: "/commerce/vendors" },
   autoStart: false,
@@ -488,7 +488,7 @@ export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
     {
       target: "Display rate",
       title: "The display rate",
-      body: "Prices are kept in USD, and the website shows GBP at this rate. Only a person changes it, and every change is kept in the history below.",
+      body: "The rate is US dollars for one pound. The website shows and charges the dollar price divided by it, rounded to the whole pound. Type a new rate to preview real prices; only a person saves it, after a confirm, and every change is kept in the history.",
     },
     {
       target: "commerce-import-new",

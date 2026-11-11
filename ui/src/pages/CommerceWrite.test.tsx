@@ -199,27 +199,56 @@ describe("Commerce write screens", () => {
   });
 
   it("hides the rate change from an agent", async () => {
-    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "0.7900", row_version: 4, history: [] } });
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.300000", row_version: 4, history: [] } });
     render("/commerce/currency");
     await flush();
-    expect(byTestId("commerce-fx-rate")?.textContent).toBe("1 USD = 0.7900 GBP");
+    // the site divides dollars by this rate: it is dollars for one pound, never pounds for one dollar
+    expect(byTestId("commerce-fx-rate")?.textContent).toBe("£1 = $1.30");
     expect(buttonNamed("Change rate")).toBeUndefined();
     expect(byTestId("commerce-people-only-note")?.textContent).toContain("Only a person changes the rate");
   });
 
+  it("shows how stale the rate is and previews real prices at the new rate before a person saves", async () => {
+    person();
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.320000", row_version: 4, updated_at: "2026-01-01T00:00:00Z", history: [
+      { id: "h1", old_rate: "1.300000", new_rate: "1.320000", changed_at: "2026-01-01T00:00:00Z" }] } });
+    mocks.commerce.list.mockImplementation(async (_c: string, _s: string, resource: string) => resource === "offerings"
+      ? { items: [{ id: "o1", name: "Aspose.Total", status: "published", from_price_minor: "100000", from_price_currency: "USD",
+          variants: [{ base_price_minor: "100000", currency: "USD" }] }], nextCursor: null }
+      : { items: [], nextCursor: null });
+    render("/commerce/currency");
+    await flush();
+    expect(byTestId("commerce-fx-staleness")?.textContent).toContain("Check it still matches the market");
+    expect(byTestId("commerce-fx-history")?.textContent).toMatch(/^\$1\.30 .*\$1\.32 to the pound/);
+    const preview = byTestId("commerce-fx-preview")!;
+    expect(preview.textContent).toContain("Aspose.Total");
+    expect(preview.textContent).toContain("£758");
+    act(() => buttonNamed("Change rate")!.click());
+    type(container.querySelector<HTMLInputElement>("#commerce-fx-input")!, "1.25");
+    await flush();
+    expect(preview.textContent).toContain("£800");
+    expect(container.textContent).toContain("a $1,000 product shows as £800");
+    act(() => byTestId("commerce-fx-save")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(document.body.querySelector("[role=alertdialog]")?.textContent).toContain("1 dollar price on 1 product changes on the website");
+  });
+
   it("shows the server's people-only refusal when it comes back", async () => {
     person();
-    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "0.7900", row_version: 4, history: [] } });
+    mocks.commerce.fx.mockResolvedValue({ item: { usd_to_gbp_display_rate: "1.300000", row_version: 4, history: [] } });
     const message = "Only a person can do this, by clicking in GSAM. Agents draft; people publish, archive, change FX, apply imports, issue invoices and decide refunds.";
     mocks.commerce.write.mockRejectedValueOnce(new ApiError(message, 403, { error: message, code: "website_commerce_people_only" }));
     render("/commerce/currency");
     await flush();
     act(() => buttonNamed("Change rate")!.click());
     const input = container.querySelector<HTMLInputElement>("#commerce-fx-input")!;
-    type(input, "0.81");
+    type(input, "1.25");
     submitForm(input);
     await flush();
-    expect(mocks.commerce.write.mock.calls[0]![2]).toEqual({ method: "PATCH", parts: ["fx"], body: { usdToGbpDisplayRate: "0.81", expectedRowVersion: 4 } });
+    expect(mocks.commerce.write).not.toHaveBeenCalled(); // Enter never reprices: the confirm does
+    act(() => byTestId("commerce-fx-save")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    act(() => { [...document.body.querySelectorAll("[role=alertdialog] button")].find((b) => b.textContent === "Save rate")!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    await flush();
+    expect(mocks.commerce.write.mock.calls[0]![2]).toEqual({ method: "PATCH", parts: ["fx"], body: { usdToGbpDisplayRate: "1.25", expectedRowVersion: 4 } });
     expect(byTestId("commerce-people-only-error")?.textContent).toBe(message);
   });
 

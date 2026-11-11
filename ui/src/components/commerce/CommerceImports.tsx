@@ -52,7 +52,7 @@ function summaryLine(summary: unknown) {
 }
 
 /** Every live offering with its editions, for the planner. Up to 2,000. */
-function useWholeCatalogue(companyId: string, siteId: string, enabled: boolean) {
+export function useWholeCatalogue(companyId: string, siteId: string, enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.website.commerce(companyId, siteId, "offerings", "all"),
     enabled,
