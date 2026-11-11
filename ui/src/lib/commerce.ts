@@ -226,3 +226,10 @@ export function vendorForLicence<T extends CommerceRecord>(offeringName: unknown
   });
   return matches.find((vendor) => text(vendor.activation_instructions)) ?? matches[0] ?? null;
 }
+
+/** The website's printable VAT invoice for an order with an invoice number (the site's /invoice/<orderId>). */
+export function invoiceWebsiteUrl(record: Record<string, unknown>, domain: string | null | undefined): string | null {
+  const id = text(record.id);
+  const host = text(domain);
+  return id && host && text(record.invoice_number) ? `https://${host}/invoice/${encodeURIComponent(id)}` : null;
+}

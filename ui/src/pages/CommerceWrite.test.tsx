@@ -293,6 +293,46 @@ describe("Commerce write screens", () => {
     expect(byTestId("commerce-export-skus")?.textContent).toContain("Exported 1 edition. 1 edition with no SKU is left out");
   });
 
+  it("links an invoiced order to the website's printable invoice", async () => {
+    mocks.bridge.get.mockResolvedValue({ item: order });
+    render(`/commerce/invoices/${ORDER_ID}`);
+    await flush();
+    expect(byTestId("commerce-invoice-website")?.getAttribute("href")).toBe(`https://stg.greatstone.example/invoice/${ORDER_ID}`);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.bridge.get.mockResolvedValue({ item: draftOrder });
+    render(`/commerce/orders/${ORDER_ID}`);
+    await flush();
+    expect(byTestId("commerce-invoice-website")).toBeNull(); // no invoice number, no invoice
+  });
+
+  it("issues a licence from an order line, filled in from the line, and marks lines already licensed", async () => {
+    person();
+    const CUSTOMER = "0c0c0c0c-0000-4000-8000-000000000001";
+    const items = [
+      { id: "i1", offering_name: "Aspose.Total for .NET", variant_name: "Developer OEM", qty: 2, unit_price_minor: "100", line_total_minor: "200", currency: "GBP" },
+      { id: "i2", offering_name: "JetBrains All Products", variant_name: null, qty: 1, unit_price_minor: "100", line_total_minor: "100", currency: "GBP" },
+    ];
+    mocks.bridge.get.mockResolvedValue({ item: { ...order, customer_id: CUSTOMER, status: "confirmed", items } });
+    mocks.bridge.list.mockImplementation(async (_c: string, _s: string, resource: string) => ({ nextCursor: null,
+      items: resource === "licences" ? [{ id: "l1", order_id: ORDER_ID, offering_name: "JetBrains All Products", variant_name: null, status: "delivered" }] : [] }));
+    mocks.commerce.write.mockResolvedValue({ item: { id: "l2" } });
+    render(`/commerce/orders/${ORDER_ID}`);
+    await flush();
+    const section = byTestId("commerce-order-licences")!;
+    expect(section.querySelectorAll("li")[0]!.textContent).toContain("No licence yet");
+    expect(section.querySelectorAll("li")[1]!.textContent).toContain("Issue another");
+    act(() => (byTestId("commerce-order-licence-0") as HTMLButtonElement).click());
+    expect(container.querySelector<HTMLInputElement>("#issue-product")!.value).toBe("Aspose.Total for .NET");
+    expect(container.querySelector<HTMLInputElement>("#issue-seats")!.value).toBe("2");
+    type(container.querySelector<HTMLInputElement>("#issue-secret")!, "KEY-1234");
+    submitForm(container.querySelector("#issue-secret")!);
+    await flush();
+    expect(mocks.commerce.write.mock.calls[0]![2]).toEqual({ method: "POST", parts: ["customers", CUSTOMER, "licences"], body: {
+      offeringName: "Aspose.Total for .NET", variantName: "Developer OEM", licenceKey: "KEY-1234", orderId: ORDER_ID, seats: 2 } });
+  });
+
   it("hides apply on a validated import and issue on a draft invoice from an agent", async () => {
     mocks.commerce.get.mockResolvedValue({ item: { id: "job-1", filename: "prices.csv", status: "validated", dry_run: true, rows: { items: [], nextCursor: null } } });
     render("/commerce/imports/job-1");
