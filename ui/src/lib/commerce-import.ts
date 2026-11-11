@@ -166,3 +166,27 @@ export function planSkuImport(objects: readonly Record<string, string>[], catalo
   const count = (action: ImportJobRow["action"]) => rows.filter((row) => row.action === action).length;
   return { rows, counts: { total: rows.length, insert: count("insert"), update: count("update"), noop: count("noop"), error: count("error") } };
 }
+
+/**
+ * The catalogue as a price book (parity with the site's "Export SKUs CSV"): one row per live edition with a SKU, in
+ * SKU_COLUMNS, so the file comes straight back through planSkuImport. A price is written only when it is in USD, as
+ * the importer reads every price as USD; any other price is left blank, which the importer reads as "no change".
+ */
+export function catalogueSkuRows(offerings: readonly CommerceRow[], names: { vendors: ReadonlyMap<string, string>; categories: ReadonlyMap<string, string> }) {
+  const rows: string[][] = [];
+  let withoutSku = 0;
+  const str = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+  for (const offering of offerings) {
+    for (const variant of Array.isArray(offering.variants) ? (offering.variants as CommerceRow[]) : []) {
+      const sku = str(variant.sku).trim();
+      if (!sku) { withoutSku += 1; continue; }
+      const minor = currentMinor(variant.base_price_minor);
+      const price = minor !== null && Number.isFinite(minor) && str(variant.currency) === "USD" ? (minor / 100).toFixed(2) : "";
+      rows.push([sku, str(offering.slug), str(offering.name), names.vendors.get(str(offering.vendor_id)) ?? "",
+        names.categories.get(str(offering.category_id)) ?? "", str(variant.name), str(variant.license_type), str(variant.billing_period),
+        price, str(offering.status), offering.featured === true ? "true" : "false"]);
+    }
+  }
+  rows.sort((a, b) => a[1]!.localeCompare(b[1]!) || a[0]!.localeCompare(b[0]!));
+  return { headers: [...SKU_COLUMNS] as string[], rows, withoutSku };
+}

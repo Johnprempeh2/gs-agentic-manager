@@ -1,6 +1,6 @@
 import { useId, useState, type ChangeEvent } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileUp, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Download, FileUp, ShoppingBag } from "lucide-react";
 import { websiteCommerceApi, type CommerceRow } from "@/api/website-commerce";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -11,12 +11,15 @@ import { statusLabel, statusTone, text } from "@/lib/commerce";
 import {
   MAX_IMPORT_ROWS,
   SKU_COLUMNS,
+  catalogueSkuRows,
   csvToObjects,
   importCatalogueOf,
   planSkuImport,
   type ImportPlan,
 } from "@/lib/commerce-import";
+import { downloadTextFile } from "@/lib/issues-csv";
 import { queryKeys } from "@/lib/queryKeys";
+import { sheetToCsv } from "@/lib/spreadsheet-export";
 import { Link, useNavigate } from "@/lib/router";
 import { cn, formatDateTime, formatNumber } from "@/lib/utils";
 import { CommerceWriteError, ConfirmButton, PeopleOnlyNote } from "./CommerceWriteParts";
@@ -51,24 +54,27 @@ function summaryLine(summary: unknown) {
   return parts.join(" · ");
 }
 
-/** Every live offering with its editions, for the planner. Up to 2,000. */
+/** Every live offering with its editions. Up to 2,000. */
+async function fetchAllOfferings(companyId: string, siteId: string) {
+  const rows: CommerceRow[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page += 1) {
+    const result = await websiteCommerceApi.list(companyId, siteId, "offerings", { limit: 100, ...(cursor ? { cursor } : {}) });
+    rows.push(...result.items);
+    if (!result.nextCursor) break;
+    cursor = result.nextCursor;
+  }
+  return rows;
+}
+
+/** The whole catalogue, for the planner. */
 export function useWholeCatalogue(companyId: string, siteId: string, enabled: boolean) {
   return useQuery({
     // Not "all": the catalogue screens cache { items } under that key, and an array here under the same key broke
     // whichever screen read the other's shape second.
     queryKey: queryKeys.website.commerce(companyId, siteId, "offerings", "whole"),
     enabled,
-    queryFn: async () => {
-      const rows: CommerceRow[] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 20; page += 1) {
-        const result = await websiteCommerceApi.list(companyId, siteId, "offerings", { limit: 100, ...(cursor ? { cursor } : {}) });
-        rows.push(...result.items);
-        if (!result.nextCursor) break;
-        cursor = result.nextCursor;
-      }
-      return rows;
-    },
+    queryFn: () => fetchAllOfferings(companyId, siteId),
   });
 }
 
@@ -143,6 +149,60 @@ function NewDryRun({ companyId, siteId }: { companyId: string; siteId: string })
   );
 }
 
+/** Every live row of a small catalogue list (vendors, categories) by id, for names. */
+async function namesOf(companyId: string, siteId: string, resource: "vendors" | "categories") {
+  const names = new Map<string, string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page += 1) {
+    const result = await websiteCommerceApi.list(companyId, siteId, resource, { limit: 100, ...(cursor ? { cursor } : {}) });
+    for (const row of result.items) if (text(row.id)) names.set(text(row.id)!, text(row.name) ?? "");
+    if (!result.nextCursor) break;
+    cursor = result.nextCursor;
+  }
+  return names;
+}
+
+/** Parity with the site's "Export SKUs CSV": the whole catalogue as a price book, ready to edit and import. Reads only. */
+function ExportSkus({ companyId, siteId }: { companyId: string; siteId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const exportCsv = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const [offerings, vendors, categories] = await Promise.all([
+        fetchAllOfferings(companyId, siteId),
+        namesOf(companyId, siteId, "vendors"),
+        namesOf(companyId, siteId, "categories"),
+      ]);
+      const sheet = catalogueSkuRows(offerings, { vendors, categories });
+      downloadTextFile(`price-book-${new Date().toISOString().slice(0, 10)}.csv`, sheetToCsv({ name: "SKUs", headers: sheet.headers, rows: sheet.rows }));
+      const editions = (n: number) => `${formatNumber(n)} edition${n === 1 ? "" : "s"}`;
+      setNote({ tone: "ok", text: `Exported ${editions(sheet.rows.length)}.${sheet.withoutSku ? ` ${editions(sheet.withoutSku)} with no SKU ${sheet.withoutSku === 1 ? "is" : "are"} left out: give ${sheet.withoutSku === 1 ? "it" : "them"} a SKU to manage ${sheet.withoutSku === 1 ? "it" : "them"} by file.` : ""}` });
+    } catch (error) {
+      setNote({ tone: "error", text: error instanceof Error ? error.message : "The website did not send the catalogue." });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="space-y-3 rounded-xl border border-border bg-card p-4" aria-label="Export the price book" data-testid="commerce-export-skus">
+      <div className="space-y-1">
+        <h2 className="text-sm font-semibold">Export the price book</h2>
+        <p className="text-sm text-muted-foreground">
+          Every edition with a SKU, in the same columns the import reads. Edit it in a spreadsheet and bring it back as a dry run.
+          Dollar prices only: a price in another currency is left blank, which the import reads as no change.
+        </p>
+      </div>
+      <Button size="sm" variant="outline" onClick={() => void exportCsv()} disabled={busy}>
+        <Download className="size-4" aria-hidden="true" />
+        {busy ? "Exporting" : "Export SKUs as CSV"}
+      </Button>
+      {note ? <p role={note.tone === "error" ? "alert" : "status"} className={cn("text-sm", note.tone === "error" ? "text-destructive" : "text-muted-foreground")}>{note.text}</p> : null}
+    </section>
+  );
+}
+
 export function CommerceImports({ companyId, siteId }: { companyId: string; siteId: string }) {
   const jobs = useInfiniteQuery({
     queryKey: queryKeys.website.commerce(companyId, siteId, "imports", "list"),
@@ -155,6 +215,7 @@ export function CommerceImports({ companyId, siteId }: { companyId: string; site
   return (
     <div className="space-y-6" data-testid="commerce-imports">
       <NewDryRun companyId={companyId} siteId={siteId} />
+      <ExportSkus companyId={companyId} siteId={siteId} />
       <section className="space-y-2" aria-label="Import jobs">
         <h2 className="text-sm font-semibold">Import jobs</h2>
         {jobs.isLoading ? <PageSkeleton variant="list" /> : null}

@@ -158,5 +158,6 @@ export const CatalogueSearch: Story = { render: () => <CommerceAt path="/commerc
 export const CatalogueOffering: Story = { render: () => <CommerceAt path={`/commerce/offerings/${OFFERING}`} /> };
 export const Currency: Story = { render: () => <CommerceAt path="/commerce/currency" /> };
 export const CurrencyAsAgent: Story = { render: () => <CommerceAt path="/commerce/currency" person={false} /> };
+export const PriceBookImport: Story = { render: () => <CommerceAt path="/commerce/imports" /> };
 export const CatalogueVendors: Story = { render: () => <CommerceAt path="/commerce/vendors" /> };
 export const ClientPageAsAgent: Story = { render: () => <CommerceAt path={`/commerce/customers/${CLIENT}`} person={false} /> };

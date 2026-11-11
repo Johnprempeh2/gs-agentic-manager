@@ -493,7 +493,7 @@ export const COMMERCE_CATALOGUE_SETUP_TOUR: TourDefinition = {
     {
       target: "commerce-import-new",
       title: "Price-book import",
-      body: "Choose a price book as a CSV file. GSAM compares it with the catalogue and shows the plan as a dry run. Nothing changes until a person applies it.",
+      body: "Export the catalogue as a CSV price book, edit it, then choose it here. GSAM compares it with the catalogue and shows the plan as a dry run. Nothing changes until a person applies it.",
     },
   ],
 };
