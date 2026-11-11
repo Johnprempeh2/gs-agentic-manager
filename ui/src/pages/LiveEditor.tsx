@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView, type WebsiteDeployChanges } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView } from "@greatstone/shared";
 import { ArrowLeft, Check, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -132,7 +132,7 @@ export function WebsitePageLiveEditor() {
     : undefined;
   const navigate = useNavigate();
   const engine = useMemo(
-    () => ({ siteId, draft: (revisionId: string, sessionId: string | null) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId, sessionId), deployChanges: () => websiteModuleApi.deployChanges(companyId, siteId) }),
+    () => ({ siteId, draft: (revisionId: string, sessionId: string | null) => websiteModuleApi.liveDraft(companyId, siteId, pageId, revisionId, sessionId) }),
     [companyId, siteId, pageId],
   );
   const { data: pages } = useQuery({
@@ -266,7 +266,7 @@ function LiveEditorShell({
   /** A website page drawn by the site's own engine (its /live-design route): who to greet and where the draft comes from. */
   /** An old block format page: the real page from the site, read-only, with an optional rebuild. */
   readOnly?: { url: string; onRebuild?: () => void };
-  engine?: { siteId: string; draft: (revisionId: string, sessionId: string | null) => Promise<Record<string, unknown>>; deployChanges?: () => Promise<WebsiteDeployChanges> };
+  engine?: { siteId: string; draft: (revisionId: string, sessionId: string | null) => Promise<Record<string, unknown>> };
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<keyof typeof WIDTHS>("fit");
@@ -684,7 +684,7 @@ function LiveEditorShell({
           )}
         </div>
         <aside className="flex h-(--sz-42dvh) w-full flex-col border-t border-border md:order-1 md:h-auto md:w-96 md:border-r md:border-t-0">
-          <LiveDesignChat live={live} deployable={!!engine} deployChanges={engine?.deployChanges} onPreview={(url, label) => {
+          <LiveDesignChat live={live} deployable={!!engine} onPreview={(url, label) => {
             setViewing(null);
             setPreview({ url, label });
           }} onEditsChanged={reloadFrame} onApprove={onApprove} />

@@ -1240,6 +1240,9 @@ export const PERMISSION_KEYS = [
   "website:view",
   "website:edit",
   "website:publish",
+  // Deploy and Roll back of the public site (John, 11 Nov 2026): starts the production workflow with a signed ticket.
+  // People only, no role default: held by explicit grant (John first). Never granted to or held by an agent.
+  "website:deploy",
   // Commerce changes on the site through the bridge's write and refund keys (GRE-2354 2c(b)). Role default: owner
   // and admin. An agent needs an explicit grant, and even then the people-only operations refuse it.
   "website:commerce",

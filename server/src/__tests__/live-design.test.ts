@@ -1,4 +1,3 @@
-import { LIVE_DEPLOY_REQUEST } from "@greatstone/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   acceptLiveDesign,
@@ -265,25 +264,24 @@ describe("live design through Impeccable's page tools", () => {
     expect(viewLiveDesign(startLiveDesign(ids).session).codeTasks).toHaveLength(1);
   });
 
-  it("tells the agent how the deploy button works: merge when green, John's card, the guarded deploy", async () => {
+  it("tells the agent it never deploys the public site: Deploy is John's button on the Website module", async () => {
     const { session: s } = startLiveDesign(ids);
     await pollLiveDesign(s, 1000);
-    steerLiveDesign(s, "", null, true);
+    steerLiveDesign(s, "make the heading shorter");
     const event = (await pollLiveDesign(s, 1000)) as { _instructions: string; deploy?: boolean; message: string };
-    expect(event).toMatchObject({ deploy: true, message: LIVE_DEPLOY_REQUEST });
-    expect(event._instructions).toContain('"deploy": true (John pressed the Deploy button)');
+    expect(event.deploy).toBeUndefined();
     expect(event._instructions).toContain("Merge it yourself as soon as its checks pass");
-    expect(event._instructions).toContain('"kind": "deploy"');
     expect(event._instructions).toContain("npm run deploy:staging");
-    expect(event._instructions).toContain("confirmation:<GRE-n>:weekly-release:<full staged sha>");
-    expect(event._instructions).toContain("npm run deploy:prod -- greatstone-home");
-    expect(event._instructions).toContain("Never deploy with `netlify deploy --dir`");
+    expect(event._instructions).toContain("Never deploy greatstoneint.com");
+    expect(event._instructions).not.toContain("deploy:prod -- greatstone-home");
+    expect(event._instructions).not.toContain("weekly-release");
+    expect(event._instructions).not.toContain('"kind": "deploy"');
   });
 
   it("never deploys from a typed message: GSAM answers that Deploy is the button, the agent gets nothing", async () => {
     const { session: s } = startLiveDesign(ids);
     await pollLiveDesign(s, 1000);
-    for (const typed of [LIVE_DEPLOY_REQUEST, "deploy it", "please publish this to the public site", "go live now", "put these changes live"]) {
+    for (const typed of ["Deploy these changes to the public site.", "deploy it", "please publish this to the public site", "go live now", "put these changes live"]) {
       steerLiveDesign(s, typed);
       expect(s.messages.at(-1)).toMatchObject({ from: "gsam", text: DEPLOY_ANSWER });
     }

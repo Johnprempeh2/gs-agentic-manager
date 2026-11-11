@@ -700,6 +700,7 @@ export const queryKeys = {
     access: (companyId: string, siteId: string | null) => ["website", companyId, "access", siteId] as const,
     pages: (companyId: string, siteId: string) => ["website", companyId, "pages", siteId] as const,
     deployChanges: (companyId: string, siteId: string) => ["website", companyId, "deploy-changes", siteId] as const,
+    production: (companyId: string, siteId: string) => ["website", companyId, "production", siteId] as const,
     page: (companyId: string, siteId: string, pageId: string) => ["website", companyId, "page", siteId, pageId] as const,
     review: (companyId: string, siteId: string) => ["website", companyId, "review", siteId] as const,
     revisions: (companyId: string, siteId: string, pageId: string) =>

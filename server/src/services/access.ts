@@ -47,7 +47,7 @@ type MemberArchiveInput = {
 
 /** website:publish is for people only (GRE-1914 ADR section 6): no route, import or plugin can grant it to an agent. */
 export function assertNoAgentWebsitePublish(principalType: PrincipalType, grants: Array<{ permissionKey: string }>) {
-  if (principalType === "agent" && grants.some((grant) => grant.permissionKey === "website:publish")) {
+  if (principalType === "agent" && grants.some((grant) => grant.permissionKey === "website:publish" || grant.permissionKey === "website:deploy")) {
     throw unprocessable(WEBSITE_MESSAGES["agent.grant_refused"], {
       code: "website_publish_agent_refused",
     });

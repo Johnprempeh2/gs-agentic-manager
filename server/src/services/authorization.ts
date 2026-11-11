@@ -741,8 +741,8 @@ export function authorizationService(db: Db | DbTransaction) {
     permissionKey: PermissionKey;
     scope?: Record<string, unknown> | null;
   }): Promise<PrincipalGrantDecision> {
-    // website:publish is for people only, even if a grant row got in by import.
-    if (input.principalType === "agent" && input.permissionKey === "website:publish") {
+    // website:publish and website:deploy are for people only, even if a grant row got in by import.
+    if (input.principalType === "agent" && (input.permissionKey === "website:publish" || input.permissionKey === "website:deploy")) {
       return deny({
         action: input.action,
         reason: "deny_missing_grant",
@@ -766,7 +766,7 @@ export function authorizationService(db: Db | DbTransaction) {
         grantsForHumanRole(role).some((g) => g.permissionKey === input.permissionKey)
         || pipelineRoleDefaultAllows(role, input.permissionKey)
         || websiteRoleDefaultAllows(role, input.permissionKey);
-      if (input.permissionKey === "website:publish" || !roleDefault) {
+      if (input.permissionKey === "website:publish" || input.permissionKey === "website:deploy" || !roleDefault) {
         return deny({
           action: input.action,
           reason: "deny_missing_grant",

@@ -16678,6 +16678,32 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: `${siteParams}/production`,
+  tags: ["website"],
+  summary: "greatstoneint.com only: what staging serves, what is live, what Deploy would change, the pre-Deploy checks and recent Deploys and Roll backs (website:view); 503 when GitHub or Netlify cannot say",
+  responses: websiteModuleResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/production/deploy`,
+  tags: ["website"],
+  summary: "John's Deploy: signs a 15 minute single-use ticket for the commit and content release staging serves and starts the website repo's production workflow (a signed-in person with an explicit website:deploy grant; never an agent or API key)",
+  body: z.object({ stagingCommit: z.string(), stagingRelease: z.number().int() }),
+  responses: { ...websiteModuleResponses, 202: r.ok(), 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: `${siteParams}/production/rollback`,
+  tags: ["website"],
+  summary: "John's Roll back: puts the previous live deploy of greatstoneint.com back through the production workflow (a signed-in person with an explicit website:deploy grant; never an agent or API key)",
+  body: z.object({ deployId: z.string() }),
+  responses: { ...websiteModuleResponses, 202: r.ok(), 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: `${siteParams}/stylesheet`,
   tags: ["website"],
   summary: "The site stylesheet for HTML pages (release schema 2), as CSS, so agents can use its classes and tokens (website:view)",

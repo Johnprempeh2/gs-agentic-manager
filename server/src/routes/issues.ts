@@ -30,9 +30,6 @@ import {
   refuseLiveDesignSave,
   viewLiveDesign,
 } from "../services/live-design.js";
-import { deployBlockers, deployRefusal } from "../services/website/deploy-readiness.js";
-import { PUBLIC_NETLIFY_SITE_ID } from "../services/website/publish.js";
-import { secretService } from "../services/secrets.js";
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
 import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
 import { deliverableService } from "../services/deliverables.js";
@@ -110,7 +107,6 @@ import {
   pipelineStages,
   pipelines,
   projectWorkspaces,
-  websiteSite,
 } from "@greatstone/db";
 import {
   addIssueCommentSchema,
@@ -21149,18 +21145,6 @@ export function issueRoutes(
   });
 
   /** Live design (John, 2 Nov): John asks for a change, the agent answers with versions shown in place. */
-  /** The pre-Deploy safety check on staging, with the public site's Netlify token (Deploy only ever targets it). */
-  async function liveDeployBlockers(companyId: string): Promise<string[]> {
-    const site = await db.select().from(websiteSite)
-      .where(and(eq(websiteSite.companyId, companyId), eq(websiteSite.netlifySiteId, PUBLIC_NETLIFY_SITE_ID)))
-      .then((rows) => rows[0] ?? null);
-    if (!site?.netlifyTokenSecretId) return ["GSAM has no Netlify token for greatstoneint.com, so it cannot check staging."];
-    const token = await secretService(db).resolveSecretValue(site.companyId, site.netlifyTokenSecretId, "latest", {
-      accessContext: { consumerType: "system", consumerId: `website-deploy-check:${site.id}`, configPath: "netlify.token", actorType: "system" },
-    });
-    return deployBlockers(token, site.blobsStoreName);
-  }
-
   /** The person behind a board request, for keeping their edits not saved yet. */
   const boardUserId = (req: Request) => {
     const actor = getActorInfo(req);
@@ -21465,15 +21449,13 @@ export function issueRoutes(
 
   router.post("/live-design/:sessionId/steer", validate(liveDesignSteerSchema), async (req, res) => {
     const session = liveSessionForBoard(req);
+    // Deploy is the Website module's button now (11 Nov); the chat never deploys.
     if (req.body.deploy === true) {
-      const problems = await liveDeployBlockers(session.companyId);
-      if (problems.length) {
-        res.status(409).json({ error: deployRefusal(problems) });
-        return;
-      }
+      res.status(410).json({ error: "Deploy has moved: it is John's button on the Website module (Releases). Nothing was deployed." });
+      return;
     }
     try {
-      steerLiveDesign(session, req.body.message, null, req.body.deploy === true);
+      steerLiveDesign(session, req.body.message, null);
     } catch (err) {
       if (!sendLiveConflict(res, err)) throw err;
       return;

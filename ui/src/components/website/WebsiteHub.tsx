@@ -12,7 +12,7 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
-import { websitePreviewAddresses, type Agent, type DecisionCard, type ProjectTree, type WebsiteProperty } from "@greatstone/shared";
+import { PUBLIC_NETLIFY_SITE_ID, websitePreviewAddresses, type Agent, type DecisionCard, type ProjectTree, type WebsiteProperty } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { authApi } from "../../api/auth";
 import { projectsApi } from "../../api/projects";
@@ -33,6 +33,7 @@ import { ScaledFrame } from "../AttachmentPreviewPanel";
 import { ProjectTreeView } from "../../pages/ProjectTree";
 import { WebsiteSiteConnection, useWebsiteSite } from "./WebsiteSiteConnection";
 import { WebsiteReleases } from "./WebsiteReleases";
+import { WebsiteDeployPanel } from "./WebsiteDeployPanel";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { SitemapNow } from "./sitemap/SitemapNow";
 import { SitemapSection, StartSitemap, useSitemapData } from "./sitemap/SitemapSection";
@@ -275,7 +276,14 @@ export function workItemIcon(type: string) {
 /** Releases and Publish, once the site is connected (GRE-2133). */
 function SiteReleases({ companyId, property }: { companyId: string; property: WebsiteProperty }) {
   const { site } = useWebsiteSite(companyId, property.id);
-  return site ? <WebsiteReleases companyId={companyId} site={site} /> : null;
+  if (!site) return null;
+  return (
+    <>
+      {/* Deploy and Roll back of greatstoneint.com (John, 11 Nov): only on the record that publishes to its staging. */}
+      {site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? <WebsiteDeployPanel companyId={companyId} site={site} /> : null}
+      <WebsiteReleases companyId={companyId} site={site} />
+    </>
+  );
 }
 
 /** The Releases tab: the site connection, then Releases and Publish (moved here from the old Overview). */
