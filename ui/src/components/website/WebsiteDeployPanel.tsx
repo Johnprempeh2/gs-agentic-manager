@@ -190,9 +190,10 @@ export function WebsiteDeployPanel({ companyId, site }: { companyId: string; sit
       )}
       {error ? <p role="alert" className="text-xs text-status-danger">{errorStateMessage(error)}</p> : null}
 
-      {status.canDeploy && !status.workflowReady && status.publicKey ? (
-        <details className="text-xs" data-testid="website-deploy-setup">
-          <summary className="cursor-pointer font-medium">Set up Deploy in GitHub (once)</summary>
+      {/* Shown even when the workflow file exists: the key variable can still be missing, and GitHub does not say. */}
+      {status.canDeploy && status.publicKey ? (
+        <details className="text-xs" data-testid="website-deploy-setup" open={!status.workflowReady}>
+          <summary className="cursor-pointer font-medium">GSAM's public key for GitHub (set up once)</summary>
           <p className="mt-1">In the website repository, environment production, add the variable GSAM_DEPLOY_PUBLIC_KEY with this value. It is GSAM's public key, not a secret:</p>
           <code className="mt-1 block break-all rounded bg-muted p-2 font-mono">{status.publicKey}</code>
         </details>

@@ -81,6 +81,13 @@ describe("WebsiteDeployPanel", () => {
     expect(await disabled(status())).toBe(false);
   });
 
+  it("keeps GSAM's public key within John's reach even when the workflow file exists", async () => {
+    const el = await mount(status({ workflowReady: true }));
+    expect(el.querySelector("[data-testid=website-deploy-setup]")?.textContent).toContain("k".repeat(43));
+    const other = await mount(status({ canDeploy: false, publicKey: null }));
+    expect(other.querySelector("[data-testid=website-deploy-setup]")).toBeNull();
+  });
+
   it("names runs in plain words and counts what waits", () => {
     const run = { id: 1, request: "r", createdAt: "", url: "" };
     expect(runLabel({ ...run, action: "deploy", status: "in_progress", conclusion: null })).toBe("Deploying");
