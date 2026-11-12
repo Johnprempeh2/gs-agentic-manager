@@ -164,6 +164,7 @@ export async function listDeepDiveStartableClients(db: Db, companyId: string): P
       organisationName: organisations.name,
       stageName: pipelineStages.name,
       stageKey: pipelineStages.key,
+      pipelineId: pipelineCases.pipelineId,
     })
     .from(pipelineCases)
     .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
@@ -171,7 +172,14 @@ export async function listDeepDiveStartableClients(db: Db, companyId: string): P
     .where(and(eq(pipelineCases.companyId, companyId), isNull(pipelineCases.retiredAt)))
     .orderBy(asc(pipelineCases.title));
   const atDeepDive = (row: { stageKey: string; stageName: string }) => /deep.?dive/i.test(`${row.stageKey} ${row.stageName}`);
+  // Only client journeys: pipelines that have a Deep Dive stage, not every sales or hiring pipeline.
+  const journeys = new Set(
+    (await db.select({ pipelineId: pipelineStages.pipelineId, key: pipelineStages.key, name: pipelineStages.name }).from(pipelineStages))
+      .filter((stage) => atDeepDive({ stageKey: stage.key, stageName: stage.name }))
+      .map((stage) => stage.pipelineId),
+  );
   return rows
+    .filter((row) => journeys.has(row.pipelineId))
     .map((row) => ({ id: row.id, name: row.organisationName ?? row.title, stageName: row.stageName, atDeepDiveStage: atDeepDive(row) }))
     .sort((a, b) => Number(b.atDeepDiveStage) - Number(a.atDeepDiveStage));
 }
