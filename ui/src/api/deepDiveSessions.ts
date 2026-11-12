@@ -1,3 +1,4 @@
+import type { DeepDiveScope } from "@greatstone/shared";
 import type {
   AddDeepDiveSessionQuestion,
   AnswerToDeepDiveFinding,
@@ -14,15 +15,15 @@ import { api } from "./client";
 // Every write returns the whole session, so the page replaces it in one go.
 
 export const deepDiveSessionsQueryKeys = {
-  list: (companyId: string) => ["deep-dive-sessions", companyId] as const,
+  list: (scope: DeepDiveScope) => ["deep-dive-sessions", scope.companyId, scope.recordCaseId] as const,
   detail: (sessionId: string) => ["deep-dive-sessions", "detail", sessionId] as const,
 };
 
 export const deepDiveSessionsApi = {
-  list: (companyId: string) =>
-    api.get<{ sessions: DeepDiveSessionSummary[] }>(`/companies/${companyId}/deep-dive/sessions`).then((res) => res.sessions),
-  plan: (companyId: string, input: PlanDeepDiveSession) =>
-    api.post<DeepDiveSession>(`/companies/${companyId}/deep-dive/sessions`, input),
+  list: (scope: DeepDiveScope) =>
+    api.get<{ sessions: DeepDiveSessionSummary[] }>(`/companies/${scope.companyId}/deep-dive/sessions?recordId=${scope.recordCaseId}`).then((res) => res.sessions),
+  plan: (scope: DeepDiveScope, input: PlanDeepDiveSession) =>
+    api.post<DeepDiveSession>(`/companies/${scope.companyId}/deep-dive/sessions?recordId=${scope.recordCaseId}`, input),
   get: (sessionId: string) => api.get<DeepDiveSession>(`/deep-dive/sessions/${sessionId}`),
   update: (sessionId: string, input: UpdateDeepDiveSession) =>
     api.patch<DeepDiveSession>(`/deep-dive/sessions/${sessionId}`, input),

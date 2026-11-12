@@ -64,6 +64,23 @@ const mockApi = vi.hoisted(() => ({
   removeSet: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveInterviews", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveInterviews")>()),
   deepDiveInterviewsApi: mockApi,
@@ -220,7 +237,7 @@ describe("Parallel Interview page (GRE-2611)", () => {
     flushSync(() => setValue(background.querySelector("textarea")!, "A regional haulier with four depots."));
     flushSync(() => button(container, "Set up the round").click());
     await waitFor(() => expect(container.textContent).toContain("Per person, about 25 minutes"));
-    expect(mockApi.create).toHaveBeenCalledWith(COMPANY_ID, {
+    expect(mockApi.create).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), {
       websiteOrganisationId: "org_7Hq2kLm9",
       mode: "per_person",
       targetMinutes: 25,

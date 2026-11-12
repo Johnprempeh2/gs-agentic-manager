@@ -27,6 +27,7 @@ import { deepDiveSessionsApi, deepDiveSessionsQueryKeys } from "@/api/deepDiveSe
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link, useNavigate, useParams } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref, listDeepDiveCases, deepDiveCasesQueryKey } from "@/lib/deep-dive-scope";
 import { queryKeys } from "@/lib/queryKeys";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,9 +58,10 @@ function errorText(error: unknown): string | null {
 
 /** The company's streams in Book V order, with each GIF cell's Known/Indicated/Unknown. */
 function useStreams(companyId: string) {
+  const scope = useDeepDiveScope();
   const query = useQuery({
-    queryKey: [...queryKeys.cases.list(companyId), "deep-dive"],
-    queryFn: () => casesApi.list(companyId, { types: [DEEP_DIVE_CASE_TYPES.record, DEEP_DIVE_CASE_TYPES.stream], limit: 200 }),
+    queryKey: deepDiveCasesQueryKey(scope),
+    queryFn: () => listDeepDiveCases(scope),
     enabled: !!companyId,
   });
   const streams = useMemo(
@@ -80,6 +82,8 @@ type Streams = ReturnType<typeof useStreams>["streams"];
 // ---------------------------------------------------------------------------
 
 export function DeepDiveSessions() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
@@ -89,21 +93,21 @@ export function DeepDiveSessions() {
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Sessions" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Sessions" }]);
   }, [setBreadcrumbs]);
 
   const listQuery = useQuery({
-    queryKey: deepDiveSessionsQueryKeys.list(companyId),
-    queryFn: () => deepDiveSessionsApi.list(companyId),
+    queryKey: deepDiveSessionsQueryKeys.list(scope),
+    queryFn: () => deepDiveSessionsApi.list(scope),
     enabled: !!selectedCompanyId,
   });
   const planMutation = useMutation({
     mutationFn: () =>
-      deepDiveSessionsApi.plan(companyId, {
+      deepDiveSessionsApi.plan(scope, {
         title: title.trim(),
         plannedFor: plannedFor ? new Date(plannedFor).toISOString() : null,
       }),
-    onSuccess: (session) => navigate(`/deep-dive/sessions/${session.id}`),
+    onSuccess: (session) => navigate(dd(`/sessions/${session.id}`)),
   });
 
   if (!selectedCompanyId) {
@@ -130,8 +134,8 @@ export function DeepDiveSessions() {
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Sessions</h1>
-          <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">
-            Back to the Deep Dive
+          <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">
+            Overview
           </Link>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -178,7 +182,7 @@ export function DeepDiveSessions() {
             <li key={session.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
               <div className="min-w-0 space-y-0.5">
                 <Link
-                  to={`/deep-dive/sessions/${session.id}`}
+                  to={dd(`/sessions/${session.id}`)}
                   className="block truncate text-sm font-medium underline-offset-4 hover:underline"
                 >
                   {session.title}
@@ -261,6 +265,7 @@ function AddQuestionForm({
   busy: boolean;
   onAdd: (input: { streamCaseId: string; gifKey: DeepDiveGifKey; prompt?: string }) => void;
 }) {
+  const dd = useDeepDiveHref();
   const [streamCaseId, setStreamCaseId] = useState(defaultStreamCaseId ?? streams[0]?.row.id ?? "");
   const [gifKey, setGifKey] = useState<DeepDiveGifKey>(DEEP_DIVE_GIF[0].key);
   const [prompt, setPrompt] = useState("");
@@ -322,11 +327,12 @@ function FindingFromAnswer({
   busy: boolean;
   onPropose: (question: DeepDiveSessionQuestion, statement: string) => void;
 }) {
+  const dd = useDeepDiveHref();
   const [open, setOpen] = useState(false);
   const [statement, setStatement] = useState(question.answer ?? "");
   if (question.findingId) {
     return (
-      <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">
+      <Link to={dd("/findings")} className="text-xs font-medium underline-offset-4 hover:underline">
         Proposed as a finding
       </Link>
     );
@@ -462,6 +468,8 @@ function LiveRun({
 }
 
 export function DeepDiveSessionDetail() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -477,15 +485,15 @@ export function DeepDiveSessionDetail() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Deep Dive", href: "/deep-dive" },
-      { label: "Sessions", href: "/deep-dive/sessions" },
+      { label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() },
+      { label: "Sessions", href: dd("/sessions") },
       { label: sessionQuery.data?.title ?? "Session" },
     ]);
   }, [setBreadcrumbs, sessionQuery.data?.title]);
 
   function keep(session: DeepDiveSession) {
     queryClient.setQueryData(deepDiveSessionsQueryKeys.detail(sessionId), session);
-    void queryClient.invalidateQueries({ queryKey: deepDiveSessionsQueryKeys.list(companyId) });
+    void queryClient.invalidateQueries({ queryKey: deepDiveSessionsQueryKeys.list(scope) });
   }
 
   const mutation = useMutation({
@@ -497,7 +505,7 @@ export function DeepDiveSessionDetail() {
       deepDiveSessionsApi.answerToFinding(question.id, statement === question.answer ? {} : { statement }),
     onSuccess: (result) => {
       keep(result.session);
-      void queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(companyId) });
+      void queryClient.invalidateQueries({ queryKey: deepDiveFindingsQueryKeys.list(scope) });
     },
   });
 
@@ -520,7 +528,7 @@ export function DeepDiveSessionDetail() {
       <header className="space-y-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">{session.title}</h1>
-          <Link to="/deep-dive/sessions" className="text-xs font-medium underline-offset-4 hover:underline">
+          <Link to={dd("/sessions")} className="text-xs font-medium underline-offset-4 hover:underline">
             All sessions
           </Link>
         </div>

@@ -1,3 +1,4 @@
+import type { DeepDiveScope } from "@greatstone/shared";
 import type {
   CreateDeepDiveInterviewRound,
   DecideDeepDiveInterviewProposal,
@@ -19,8 +20,8 @@ import { api } from "./client";
 // Every write returns the whole round view, so the page replaces it in one go.
 
 export const deepDiveInterviewsQueryKeys = {
-  round: (companyId: string) => ["deep-dive-interview-round", companyId] as const,
-  progress: (companyId: string) => ["deep-dive-interview-round", companyId, "progress"] as const,
+  round: (scope: DeepDiveScope) => ["deep-dive-interview-round", scope.companyId, scope.recordCaseId] as const,
+  progress: (scope: DeepDiveScope) => ["deep-dive-interview-round", scope.companyId, scope.recordCaseId, "progress"] as const,
   proposals: (roundId: string) => ["deep-dive-interview-proposals", roundId] as const,
   release: (roundId: string) => ["deep-dive-interview-round", "release", roundId] as const,
 };
@@ -34,9 +35,9 @@ export interface DeepDiveInterviewInviteResult {
 }
 
 export const deepDiveInterviewsApi = {
-  get: (companyId: string) => api.get<DeepDiveInterviewRoundView>(`/companies/${companyId}/deep-dive/interview-round`),
-  create: (companyId: string, input: CreateDeepDiveInterviewRound) =>
-    api.post<DeepDiveInterviewRoundView>(`/companies/${companyId}/deep-dive/interview-round`, input),
+  get: (scope: DeepDiveScope) => api.get<DeepDiveInterviewRoundView>(`/companies/${scope.companyId}/deep-dive/interview-round?recordId=${scope.recordCaseId}`),
+  create: (scope: DeepDiveScope, input: CreateDeepDiveInterviewRound) =>
+    api.post<DeepDiveInterviewRoundView>(`/companies/${scope.companyId}/deep-dive/interview-round?recordId=${scope.recordCaseId}`, input),
   update: (roundId: string, input: UpdateDeepDiveInterviewRound) =>
     api.patch<DeepDiveInterviewRoundView>(`/deep-dive/interview-rounds/${roundId}`, input),
   draftSet: (roundId: string, input: DraftDeepDiveInterviewSet) =>
@@ -47,8 +48,8 @@ export const deepDiveInterviewsApi = {
   approveSet: (setId: string) => api.post<DeepDiveInterviewRoundView>(`/deep-dive/interview-sets/${setId}/approve`, {}),
   removeSet: (setId: string) => api.delete<DeepDiveInterviewRoundView>(`/deep-dive/interview-sets/${setId}`),
   // Invites and live progress (GRE-2665). Names, emails and status come live from the website.
-  progress: (companyId: string) =>
-    api.get<DeepDiveInterviewProgress>(`/companies/${companyId}/deep-dive/interview-round/progress`),
+  progress: (scope: DeepDiveScope) =>
+    api.get<DeepDiveInterviewProgress>(`/companies/${scope.companyId}/deep-dive/interview-round/progress?recordId=${scope.recordCaseId}`),
   open: (roundId: string, input: OpenDeepDiveInterviewRound) =>
     api.post<DeepDiveInterviewProgress>(`/deep-dive/interview-rounds/${roundId}/open`, input),
   invite: (roundId: string, input: InviteDeepDiveInterviewPeople) =>

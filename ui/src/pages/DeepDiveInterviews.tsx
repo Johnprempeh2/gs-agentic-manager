@@ -20,6 +20,7 @@ import { deepDiveInterviewsApi, deepDiveInterviewsQueryKeys } from "@/api/deepDi
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref } from "@/lib/deep-dive-scope";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -61,10 +62,11 @@ function cellLabel(question: Pick<DeepDiveInterviewQuestion, "streamKey" | "gifK
 }
 
 function useRoundWrite<TInput>(companyId: string, fn: (input: TInput) => Promise<DeepDiveInterviewRoundView>) {
+  const scope = useDeepDiveScope();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: (view) => queryClient.setQueryData(deepDiveInterviewsQueryKeys.round(companyId), view),
+    onSuccess: (view) => queryClient.setQueryData(deepDiveInterviewsQueryKeys.round(scope), view),
   });
 }
 
@@ -100,13 +102,14 @@ function ContextFields({
 // ---------------------------------------------------------------------------
 
 function SetUpRound({ companyId }: { companyId: string }) {
+  const scope = useDeepDiveScope();
   const [organisationId, setOrganisationId] = useState("");
   const [mode, setMode] = useState<DeepDiveInterviewMode>("per_team");
   const [minutes, setMinutes] = useState(String(DEEP_DIVE_INTERVIEW_DEFAULT_MINUTES));
   const [context, setContext] = useState<DeepDiveInterviewContextPack>({});
   const [formError, setFormError] = useState<string | null>(null);
   const create = useRoundWrite(companyId, () =>
-    deepDiveInterviewsApi.create(companyId, {
+    deepDiveInterviewsApi.create(scope, {
       websiteOrganisationId: organisationId.trim(),
       mode,
       targetMinutes: Number(minutes),
@@ -411,6 +414,7 @@ function QuestionSetCard({ set, companyId, editable }: { set: DeepDiveInterviewS
 }
 
 function QuestionSets({ view, companyId }: { view: DeepDiveInterviewRoundView & { round: DeepDiveInterviewRound }; companyId: string }) {
+  const dd = useDeepDiveHref();
   const { round, available } = view;
   const editable = round.status === "setup";
   const [targetId, setTargetId] = useState("");
@@ -430,7 +434,7 @@ function QuestionSets({ view, companyId }: { view: DeepDiveInterviewRoundView & 
               {round.sets.length === 0
                 ? `No ${noun === "team" ? "teams" : "client people"} on the organisation board yet. `
                 : `Every ${noun} on the organisation board has a question set. `}
-              <Link to="/deep-dive/organisation" className="underline">Open the organisation board</Link>.
+              <Link to={dd("/organisation")} className="underline">Open the organisation board</Link>.
             </p>
           ) : (
             <form
@@ -470,17 +474,19 @@ function QuestionSets({ view, companyId }: { view: DeepDiveInterviewRoundView & 
 }
 
 export function DeepDiveInterviews() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const companyId = selectedCompanyId ?? "";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Parallel Interview" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Parallel Interview" }]);
   }, [setBreadcrumbs]);
 
   const query = useQuery({
-    queryKey: deepDiveInterviewsQueryKeys.round(companyId),
-    queryFn: () => deepDiveInterviewsApi.get(companyId),
+    queryKey: deepDiveInterviewsQueryKeys.round(scope),
+    queryFn: () => deepDiveInterviewsApi.get(scope),
     enabled: !!selectedCompanyId,
   });
 
@@ -494,8 +500,8 @@ export function DeepDiveInterviews() {
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Parallel Interview</h1>
-          <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">
-            Back to the Deep Dive
+          <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">
+            Overview
           </Link>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">

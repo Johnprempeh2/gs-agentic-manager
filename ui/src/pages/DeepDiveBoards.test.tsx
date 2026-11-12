@@ -57,6 +57,23 @@ const mockProcessApi = vi.hoisted(() => ({
   updateProcess: vi.fn(), removeProcess: vi.fn(), recordHandoff: vi.fn(), updateHandoff: vi.fn(), removeHandoff: vi.fn(),
 }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveBoards", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveBoards")>()),
   deepDiveOrgApi: mockOrgApi,
@@ -242,7 +259,7 @@ describe("Deep Dive boards", () => {
       flushSync(() => setValue(byLabel<HTMLInputElement>(container, "What is handed over"), "The wave plan"));
       flushSync(() => button(container, "Record handoff").click());
       await waitFor(() => expect(arrows(container)).toHaveLength(1));
-      expect(mockProcessApi.recordHandoff).toHaveBeenCalledWith(COMPANY_ID, { fromProcessId: "pr-plan", toProcessId: "pr-run", what: "The wave plan" });
+      expect(mockProcessApi.recordHandoff).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, recordCaseId: "record-1" }), { fromProcessId: "pr-plan", toProcessId: "pr-run", what: "The wave plan" });
       expect(arrows(container)[0]!.getAttribute("data-handoff-id")).toBe("h-1");
       expect(arrows(container)[0]!.textContent).toBe("The wave plan");
 

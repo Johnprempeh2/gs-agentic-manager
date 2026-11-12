@@ -73,7 +73,8 @@
       "ui/src/components/IssueCasesPanel.test.tsx"
     ],
     "enableDeepDive": [
-      "ui/src/pages/DeepDive.test.tsx"
+      "ui/src/pages/DeepDivePortal.test.tsx",
+      "server/src/__tests__/deep-dive-drafts.test.ts"
     ],
     "enableStrategy": [
       "server/src/__tests__/goals-strategy-entitlement.test.ts",

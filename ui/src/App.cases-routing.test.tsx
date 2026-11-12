@@ -67,7 +67,7 @@ vi.mock("./components/OnDemandDialogs", () => ({
 // Sentinel pages so we can assert *which* route resolved.
 vi.mock("./pages/Cases", () => ({ Cases: () => <div>CASES_LIST_PAGE</div> }));
 vi.mock("./pages/CaseDetail", () => ({ CaseDetail: () => <div>CASE_DETAIL_PAGE</div> }));
-vi.mock("./pages/DeepDive", () => ({ DeepDive: () => <div>DEEP_DIVE_PAGE</div> }));
+vi.mock("./pages/DeepDiveTiles", () => ({ DeepDiveTiles: () => <div>DEEP_DIVE_PAGE</div> }));
 
 // Cloud access is unrelated to the route-table regression. Let it fall through
 // synchronously so this test does not poll its three query transitions.

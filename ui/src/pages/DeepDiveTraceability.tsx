@@ -15,6 +15,7 @@ import { deepDiveTraceabilityApi, deepDiveTraceabilityQueryKeys } from "@/api/de
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Link } from "@/lib/router";
+import { DEEP_DIVE_TILES_PATH, useDeepDiveScope, useDeepDiveHref } from "@/lib/deep-dive-scope";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,12 +36,12 @@ type Run = (write: () => Promise<DeepDiveTraceability>) => void;
 
 /** Where to add the item a step is missing. */
 const STEP_HOME: Partial<Record<(typeof DEEP_DIVE_CHAIN_STEPS)[number], { to: string; label: string }>> = {
-  north_star: { to: "/deep-dive", label: "Deep Dive record" },
-  source: { to: "/deep-dive/findings", label: "Findings" },
-  finding: { to: "/deep-dive/opportunities", label: "Opportunities" },
-  opportunity: { to: "/deep-dive/opportunities", label: "Opportunities" },
-  design: { to: "/deep-dive/opportunities", label: "Opportunities" },
-  kpi: { to: "/deep-dive/opportunities", label: "KPIs" },
+  north_star: { to: "", label: "Overview" },
+  source: { to: "/findings", label: "Findings" },
+  finding: { to: "/opportunities", label: "Opportunities" },
+  opportunity: { to: "/opportunities", label: "Opportunities" },
+  design: { to: "/opportunities", label: "Opportunities" },
+  kpi: { to: "/opportunities", label: "KPIs" },
 };
 
 function errorText(error: unknown): string | null {
@@ -111,6 +112,7 @@ function CommercialRow({ commercial, chain, run }: { commercial: DeepDiveCommerc
 }
 
 function RoadmapRow({ item, chain, run }: { item: DeepDiveRoadmapItem; chain: DeepDiveTraceability; run: Run }) {
+  const dd = useDeepDiveHref();
   return (
     <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -136,7 +138,7 @@ function RoadmapRow({ item, chain, run }: { item: DeepDiveRoadmapItem; chain: De
         legend={`KPIs ${item.name} moves (${item.kpiIds.length})`}
         options={chain.kpis.map((kpi) => ({ id: kpi.id, label: kpi.name }))}
         selected={item.kpiIds}
-        empty={<>No KPIs yet. <Link to="/deep-dive/opportunities" className="underline">Add KPIs</Link> first.</>}
+        empty={<>No KPIs yet. <Link to={dd("/opportunities")} className="underline">Add KPIs</Link> first.</>}
         onChange={(kpiIds) => run(() => deepDiveTraceabilityApi.updateRoadmapItem(item.id, { kpiIds }))}
       />
     </li>
@@ -144,6 +146,7 @@ function RoadmapRow({ item, chain, run }: { item: DeepDiveRoadmapItem; chain: De
 }
 
 function AddCommercial({ chain, run, pending }: { chain: DeepDiveTraceability; run: Run; pending: boolean }) {
+  const scope = useDeepDiveScope();
   const [name, setName] = useState("");
   const [buildId, setBuildId] = useState("");
   const [terms, setTerms] = useState("");
@@ -152,7 +155,7 @@ function AddCommercial({ chain, run, pending }: { chain: DeepDiveTraceability; r
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    run(() => deepDiveTraceabilityApi.addCommercial(chain.companyId, { name: name.trim(), buildId: buildId || null, terms: terms.trim() }));
+    run(() => deepDiveTraceabilityApi.addCommercial(scope, { name: name.trim(), buildId: buildId || null, terms: terms.trim() }));
     setName("");
     setBuildId("");
     setTerms("");
@@ -172,6 +175,8 @@ function AddCommercial({ chain, run, pending }: { chain: DeepDiveTraceability; r
 }
 
 function AddRoadmapItem({ chain, run, pending }: { chain: DeepDiveTraceability; run: Run; pending: boolean }) {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const [name, setName] = useState("");
   const [phase, setPhase] = useState("");
   const [commercialId, setCommercialId] = useState("");
@@ -180,7 +185,7 @@ function AddRoadmapItem({ chain, run, pending }: { chain: DeepDiveTraceability; 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    run(() => deepDiveTraceabilityApi.addRoadmapItem(chain.companyId, {
+    run(() => deepDiveTraceabilityApi.addRoadmapItem(scope, {
       name: name.trim(),
       phase: phase.trim(),
       commercialId: commercialId || null,
@@ -207,7 +212,7 @@ function AddRoadmapItem({ chain, run, pending }: { chain: DeepDiveTraceability; 
         legend="KPIs it moves"
         options={chain.kpis.map((kpi) => ({ id: kpi.id, label: kpi.name }))}
         selected={kpiIds}
-        empty={<>No KPIs yet. <Link to="/deep-dive/opportunities" className="underline">Add KPIs</Link> first.</>}
+        empty={<>No KPIs yet. <Link to={dd("/opportunities")} className="underline">Add KPIs</Link> first.</>}
         onChange={setKpiIds}
       />
     </form>
@@ -215,23 +220,25 @@ function AddRoadmapItem({ chain, run, pending }: { chain: DeepDiveTraceability; 
 }
 
 export function DeepDiveTraceability() {
+  const scope = useDeepDiveScope();
+  const dd = useDeepDiveHref();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const companyId = selectedCompanyId ?? "";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Deep Dive", href: "/deep-dive" }, { label: "Traceability" }]);
+    setBreadcrumbs([{ label: "Deep Dive", href: DEEP_DIVE_TILES_PATH }, { label: scope.record.clientName, href: dd() }, { label: "Traceability" }]);
   }, [setBreadcrumbs]);
 
   const chainQuery = useQuery({
-    queryKey: deepDiveTraceabilityQueryKeys.chain(companyId),
-    queryFn: () => deepDiveTraceabilityApi.get(companyId),
+    queryKey: deepDiveTraceabilityQueryKeys.chain(scope),
+    queryFn: () => deepDiveTraceabilityApi.get(scope),
     enabled: !!selectedCompanyId,
   });
   const writeMutation = useMutation({
     mutationFn: (write: () => Promise<DeepDiveTraceability>) => write(),
-    onSuccess: (chain) => queryClient.setQueryData(deepDiveTraceabilityQueryKeys.chain(companyId), chain),
+    onSuccess: (chain) => queryClient.setQueryData(deepDiveTraceabilityQueryKeys.chain(scope), chain),
   });
   const run: Run = (write) => writeMutation.mutate(write);
 
@@ -249,9 +256,9 @@ export function DeepDiveTraceability() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-xl font-bold">Traceability</h1>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <Link to="/deep-dive/findings" className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
-            <Link to="/deep-dive/opportunities" className="text-xs font-medium underline-offset-4 hover:underline">Opportunities and KPIs</Link>
-            <Link to="/deep-dive" className="text-xs font-medium underline-offset-4 hover:underline">Back to the Deep Dive</Link>
+            <Link to={dd("/findings")} className="text-xs font-medium underline-offset-4 hover:underline">Findings</Link>
+            <Link to={dd("/opportunities")} className="text-xs font-medium underline-offset-4 hover:underline">Opportunities and KPIs</Link>
+            <Link to={dd()} className="text-xs font-medium underline-offset-4 hover:underline">Overview</Link>
           </div>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -275,7 +282,7 @@ export function DeepDiveTraceability() {
                   </span>{" "}
                   {link.itemId ? <span className="font-medium">{link.itemName}: </span> : null}
                   {link.message}
-                  {home ? <> <Link to={home.to} className="text-xs underline">{home.label}</Link></> : null}
+                  {home ? <> <Link to={dd(home.to)} className="text-xs underline">{home.label}</Link></> : null}
                 </li>
               );
             })}
@@ -293,7 +300,7 @@ export function DeepDiveTraceability() {
           <ul className="grid gap-2 lg:grid-cols-2">{chains.map((entry) => <ChainCard key={entry.opportunity.id} chain={entry} />)}</ul>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No opportunities yet, so there is no chain. <Link to="/deep-dive/opportunities" className="underline">Add an opportunity</Link>.
+            No opportunities yet, so there is no chain. <Link to={dd("/opportunities")} className="underline">Add an opportunity</Link>.
           </p>
         )}
       </section>

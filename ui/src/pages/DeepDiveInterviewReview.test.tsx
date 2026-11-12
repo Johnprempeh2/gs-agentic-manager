@@ -23,6 +23,23 @@ const mockApi = vi.hoisted(() => ({
 const mockOrg = vi.hoisted(() => ({ get: vi.fn() }));
 const mockCases = vi.hoisted(() => ({ list: vi.fn() }));
 
+// GRE-4430: every Deep Dive screen is a tab of one client's portal.
+vi.mock("@/lib/deep-dive-scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/deep-dive-scope")>();
+  const { casesApi } = await import("@/api/cases");
+  const scope = {
+    companyId: "company-1",
+    recordCaseId: "record-1",
+    record: { id: "record-1", identifier: "C001-C1", title: "Deep Dive", clientCaseId: "client-1", clientName: "Demo client", organisationId: null, workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00.000Z" },
+  };
+  return {
+    ...actual,
+    useDeepDiveScope: () => scope,
+    useDeepDiveHref: () => (path = "") => `/deep-dive/record-1${path}`,
+    listDeepDiveCases: () => casesApi.list("company-1", {}),
+  };
+});
+
 vi.mock("@/api/deepDiveInterviews", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/deepDiveInterviews")>()),
   deepDiveInterviewsApi: mockApi,
@@ -186,7 +203,7 @@ describe("Parallel Interview synthesis review (GRE-2756)", () => {
     buttons(pain, "Accept")[0]!.click();
     await waitFor(() => expect(mockApi.decide).toHaveBeenCalledWith("pain-1", { decision: "accepted", streamCaseId: "stream-people", gifKey: "business-impact" }));
     await waitFor(() => expect(container.textContent).toContain("Now a proposed finding."));
-    expect(container.querySelector('a[href="/deep-dive/findings"]')).toBeTruthy();
+    expect(container.querySelector('a[href="/deep-dive/record-1/findings"]')).toBeTruthy();
     expect(mockApi.release).toHaveBeenCalledTimes(2);
   });
 

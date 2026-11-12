@@ -68,6 +68,17 @@ vi.mock("@/api/deepDiveInterviews", () => ({
   },
 }));
 
+// GRE-4430: the client's own Deep Dive (one per engagement) scopes its interview round.
+vi.mock("@/api/deepDiveRecords", () => ({
+  deepDiveRecordsApi: {
+    list: () => Promise.resolve({
+      deepDives: [{ id: "record-1", identifier: "C-1", title: "Deep Dive", clientCaseId: "case-1", clientName: "Acme", organisationId: "org-1", workstreams: [], status: "active", draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-11-01T00:00:00Z" }],
+      clients: [],
+    }),
+  },
+  deepDiveRecordsQueryKeys: { list: (companyId: string) => ["deep-dive-records", companyId] },
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -501,7 +512,7 @@ describe("Organisation company page", () => {
         mockApi.get.mockResolvedValue({ ...detail(), websiteOrganisationId: "cust-9" });
         mockInterviews.get.mockResolvedValue(round("cust-9"));
         await render("/organisations/org-1?tab=interviews");
-        expect(mockInterviews.get).toHaveBeenCalledWith("company-1");
+        expect(mockInterviews.get).toHaveBeenCalledWith({ companyId: "company-1", recordCaseId: "record-1" });
         const summary = container.querySelector('[data-testid="organisation-interview-round"]')!;
         expect(summary.textContent).toContain("Per team, about 20 minutes");
         expect(summary.textContent).toContain("1 of 2 question sets approved");
@@ -511,7 +522,7 @@ describe("Organisation company page", () => {
           expect.stringContaining("Plant maintenance"),
         ]);
         expect(rows[0]!.textContent).toContain("3 questions · approved 20 Oct 2026");
-        expect(container.querySelector('a[href="/deep-dive/interviews"]')).not.toBeNull();
+        expect(container.querySelector('a[href="/deep-dive/record-1/interviews"]')).not.toBeNull();
         // A round still in setup has nobody on it: nothing is read from the website yet.
         expect(container.textContent).toContain("Progress shows here once the round opens on the website.");
         expect(mockInterviews.progress).not.toHaveBeenCalled();
@@ -539,7 +550,7 @@ describe("Organisation company page", () => {
           proposals: [proposal("p1", "pain", "proposed"), proposal("p2", "pain", "accepted"), proposal("p3", "quote", "proposed")],
         });
         await render("/organisations/org-1?tab=interviews");
-        expect(mockInterviews.progress).toHaveBeenCalledWith("company-1");
+        expect(mockInterviews.progress).toHaveBeenCalledWith({ companyId: "company-1", recordCaseId: "record-1" });
         expect(mockInterviews.proposals).toHaveBeenCalledWith("round-1");
         const progress = container.querySelector('[data-testid="organisation-interview-progress"]')!;
         expect(progress.textContent).toContain("1 of 2 completed");

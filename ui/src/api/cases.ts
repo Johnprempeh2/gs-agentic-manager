@@ -1,4 +1,5 @@
 import type {
+  DeepDiveScope,
   DeepDiveFilesResponse,
   DeepDiveItemFileLink,
   DeepDiveVisibility,
@@ -283,6 +284,8 @@ export interface CreateCaseInput {
   fields?: Record<string, unknown>;
   parentCaseId?: string | null;
   projectId?: string | null;
+  /** Deep Dive items only: the client journey case the item is about. */
+  clientCaseId?: string | null;
 }
 
 export function caseDocumentToIssueDocument(caseId: string, key: string, document: CaseDocument): IssueDocument {
@@ -368,7 +371,7 @@ export const casesApi = {
   listForIssue: (issueIdOrIdentifier: string) =>
     api.get<IssueCaseLink[]>(`/issues/${issueIdOrIdentifier}/cases`),
   // Deep Dive evidence and files (GRE-2395): one client file, many items.
-  deepDiveFiles: (companyId: string) => api.get<DeepDiveFilesResponse>(`/companies/${companyId}/deep-dive/files`),
+  deepDiveFiles: (scope: DeepDiveScope) => api.get<DeepDiveFilesResponse>(`/companies/${scope.companyId}/deep-dive/files?recordId=${scope.recordCaseId}`),
   linkDeepDiveFile: (caseId: string, input: LinkDeepDiveFile) =>
     api.post<DeepDiveItemFileLink>(`/cases/${caseId}/deep-dive-files`, input),
   setDeepDiveFileVisibility: (caseId: string, linkId: string, visibility: DeepDiveVisibility) =>

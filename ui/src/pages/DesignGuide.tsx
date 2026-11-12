@@ -200,6 +200,8 @@ import {
 import type { CompanySecret, EnvBinding, Issue } from "@greatstone/shared";
 import { CollectionToolbar } from "@/components/CollectionToolbar";
 import { IssueRow } from "@/components/IssueRow";
+import { DeepDiveTile } from "@/components/DeepDiveTile";
+import { InterviewLogView } from "@/components/InterviewLogView";
 import {
   EnvInputsList,
   ExternalSourcesList,
@@ -2643,6 +2645,44 @@ export function DesignGuide() {
 
       <Section title="Intelligence cards">
         <IntelligenceDesignExamples />
+      </Section>
+
+      <Section title="Deep Dive tiles and interview logs">
+        <SubSection title="DeepDiveTile">
+          <p className="text-sm text-muted-foreground">
+            One client's Deep Dive. The whole tile opens its portal; the last line is what waits for a person.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <DeepDiveTile
+              to="/deep-dive"
+              record={{ clientName: "Demo client", identifier: "GRE-C42", status: "active", workstreams: ["Evidence", "Economics"], draftsWaiting: 2, findingsToValidate: 1, createdAt: "2026-11-01T09:00:00Z" }}
+            />
+            <DeepDiveTile
+              to="/deep-dive"
+              record={{ clientName: "Another demo client", identifier: null, status: "finished", workstreams: [], draftsWaiting: 0, findingsToValidate: 0, createdAt: "2026-06-01T09:00:00Z" }}
+            />
+          </div>
+        </SubSection>
+        <SubSection title="InterviewLogView">
+          <p className="text-sm text-muted-foreground">
+            An interview logged from a transcript: answered, unclear or not answered, with the speaker's own words, grouped by workstream.
+          </p>
+          <InterviewLogView
+            log={{
+              notionPage: "https://www.notion.so/demo",
+              meetingTitle: "Demo interview",
+              heldOn: "2026-11-12",
+              interviewee: "Demo Person, Finance lead",
+              questionSource: "Demo interview guide",
+              items: [
+                { question: "How is a month closed?", status: "answered", answer: "By hand over five days.", quote: "We close by hand, it takes five days.", at: "00:04:10", workstream: "Economics", pillars: ["process", "data"] },
+                { question: "Which system holds the ledger?", status: "unclear", answer: "Two systems were named.", workstream: "Economics" },
+                { question: "Who signs off the forecast?", status: "not_answered" },
+              ],
+              outsideNotes: [{ note: "A new ERP is on trial.", at: "00:31:40" }],
+            }}
+          />
+        </SubSection>
       </Section>
 
       <Section title="Built-in Agent Lifecycle Chips">

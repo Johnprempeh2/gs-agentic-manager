@@ -1,3 +1,4 @@
+import type { DeepDiveScope } from "@greatstone/shared";
 import type { ClientEvidenceItem, DeepDiveFinding, DeepDiveVisibility, ProposeDeepDiveFinding } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -6,15 +7,15 @@ import { api } from "./client";
 // cell or evidence; a new finding supersedes it.
 
 export const deepDiveFindingsQueryKeys = {
-  list: (companyId: string) => ["deep-dive-findings", companyId] as const,
+  list: (scope: DeepDiveScope) => ["deep-dive-findings", scope.companyId, scope.recordCaseId] as const,
   clientEvidence: (clientCaseId: string) => ["deep-dive-findings", "client-evidence", clientCaseId] as const,
 };
 
 export const deepDiveFindingsApi = {
-  list: (companyId: string) =>
-    api.get<{ findings: DeepDiveFinding[] }>(`/companies/${companyId}/deep-dive/findings`).then((res) => res.findings),
-  propose: (companyId: string, input: ProposeDeepDiveFinding) =>
-    api.post<DeepDiveFinding>(`/companies/${companyId}/deep-dive/findings`, input),
+  list: (scope: DeepDiveScope) =>
+    api.get<{ findings: DeepDiveFinding[] }>(`/companies/${scope.companyId}/deep-dive/findings?recordId=${scope.recordCaseId}`).then((res) => res.findings),
+  propose: (scope: DeepDiveScope, input: ProposeDeepDiveFinding) =>
+    api.post<DeepDiveFinding>(`/companies/${scope.companyId}/deep-dive/findings?recordId=${scope.recordCaseId}`, input),
   decide: (findingId: string, decision: "validated" | "rejected") =>
     api.post<DeepDiveFinding>(`/deep-dive/findings/${findingId}/decision`, { decision }),
   setVisibility: (findingId: string, visibility: DeepDiveVisibility) =>
