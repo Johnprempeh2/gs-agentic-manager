@@ -18,6 +18,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { caseRoutes } from "../routes/cases.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -90,6 +91,7 @@ describeEmbeddedPostgres("Deep Dive sharing and client-edit locks (GRE-2366)", (
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 

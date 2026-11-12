@@ -18,6 +18,7 @@ import {
   type ProposeDeepDiveFinding,
 } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 
 // Deep Dive findings (GRE-2367). Proposed by a person or an agent, validated
 // or rejected by a person, never edited: a new finding supersedes a validated
@@ -118,19 +119,23 @@ export function deepDiveFindingsService(db: Db) {
 
     get: getOne,
 
-    list: async (companyId: string, filter: { streamCaseId?: string }) => {
+    /** The Deep Dive a finding belongs to, for the route's access check. */
+    scopeOf: async (findingId: string): Promise<DeepDiveScope> => scopeOfRow(await loadRow(findingId), "Finding"),
+
+    list: async (scope: DeepDiveScope, filter: { streamCaseId?: string }) => {
       const rows = await db
         .select()
         .from(deepDiveFindings)
         .where(and(
-          eq(deepDiveFindings.companyId, companyId),
+          inRecord(deepDiveFindings, scope),
           filter.streamCaseId ? eq(deepDiveFindings.streamCaseId, filter.streamCaseId) : undefined,
         ))
         .orderBy(asc(deepDiveFindings.createdAt), asc(deepDiveFindings.id));
       return present(rows);
     },
 
-    propose: async (companyId: string, input: ProposeDeepDiveFinding, actor: DeepDiveFindingActor) => {
+    propose: async (scope: DeepDiveScope, input: ProposeDeepDiveFinding, actor: DeepDiveFindingActor) => {
+      const companyId = scope.companyId;
       const stream = await db
         .select({ id: cases.id, clientCaseId: cases.clientCaseId })
         .from(cases)
@@ -138,9 +143,10 @@ export function deepDiveFindingsService(db: Db) {
           eq(cases.id, input.streamCaseId),
           eq(cases.companyId, companyId),
           eq(cases.caseType, DEEP_DIVE_CASE_TYPES.stream),
+          eq(cases.parentCaseId, scope.recordCaseId),
         ))
         .then((rows) => rows[0] ?? null);
-      if (!stream) throw unprocessable("Investigation Stream not found in this company");
+      if (!stream) throw unprocessable("Investigation Stream not found in this Deep Dive");
 
       const gif = DEEP_DIVE_GIF.find((entry) => entry.key === input.gifKey)!;
       const cell = await db
@@ -170,9 +176,9 @@ export function deepDiveFindingsService(db: Db) {
         const previous = await db
           .select({ status: deepDiveFindings.status })
           .from(deepDiveFindings)
-          .where(and(eq(deepDiveFindings.id, input.supersedesFindingId), eq(deepDiveFindings.companyId, companyId)))
+          .where(and(eq(deepDiveFindings.id, input.supersedesFindingId), inRecord(deepDiveFindings, scope)))
           .then((rows) => rows[0] ?? null);
-        if (!previous) throw unprocessable("The finding to supersede was not found in this company");
+        if (!previous) throw unprocessable("The finding to supersede was not found in this Deep Dive");
         if (previous.status !== "validated") throw conflict("Only a validated finding can be superseded");
         const pending = await db
           .select({ id: deepDiveFindings.id })
@@ -187,7 +193,7 @@ export function deepDiveFindingsService(db: Db) {
 
       const id = await db.transaction(async (tx) => {
         const [row] = await tx.insert(deepDiveFindings).values({
-          companyId,
+          ...scope,
           streamCaseId: stream.id,
           gifDocumentId: cell.id,
           statement: input.statement,

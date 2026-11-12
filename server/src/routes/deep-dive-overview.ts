@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { deepDiveOverviewService } from "../services/deep-dive-overview.js";
 import { assertEntitled } from "../services/entitlements.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess } from "./authz.js";
 
 // Deep Dive overview (GRE-2372): Screen 1 of the GRE-2327 plan. One read, no
@@ -19,7 +20,7 @@ export function deepDiveOverviewRoutes(db: Db) {
     await assertEntitled(settings, "enableDeepDive");
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json(await overview.overview(companyId));
+    res.json(await overview.overview(await resolveDeepDiveScope(db, companyId, req.query.recordId)));
   });
 
   return router;

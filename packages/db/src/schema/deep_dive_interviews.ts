@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
+import { cases } from "./cases.js";
 import { companies } from "./companies.js";
 import { deepDiveOrgUnits, deepDivePeople, deepDiveProcesses } from "./deep_dive_boards.js";
 import { deepDiveFindings } from "./deep_dive_findings.js";
@@ -18,6 +19,8 @@ export const deepDiveInterviewRounds = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // The client Deep Dive this round belongs to (GRE-4430).
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     // The client's one id (John, 25 Oct): the website organisation id. Every
     // bridge call for the round is keyed by it; it never changes.
     websiteOrganisationId: text("website_organisation_id").notNull(),

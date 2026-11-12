@@ -18,7 +18,6 @@ import {
 import {
   DEEP_DIVE_CASE_TYPES,
   DEEP_DIVE_RECORD_DOCUMENTS,
-  DEEP_DIVE_RECORD_KEY,
   deepDiveBrokenLinks,
   deepDiveNorthStarWords,
   type CreateDeepDiveCommercial,
@@ -30,6 +29,7 @@ import {
   type UpdateDeepDiveCommercial,
   type UpdateDeepDiveRoadmapItem,
 } from "@greatstone/shared";
+import { inRecord, scopeOfRow, type DeepDiveScope } from "./deep-dive-scope.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import type { DeepDiveOpportunityActor } from "./deep-dive-opportunities.js";
 
@@ -71,19 +71,21 @@ function sent<T extends Record<string, unknown>>(input: T): Partial<T> {
 export function deepDiveTraceabilityService(db: Db) {
   type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-  async function companyOf(kind: DeepDiveTraceKind, id: string): Promise<string> {
-    const { table, label } = DEEP_DIVE_TRACE_KINDS[kind];
+  async function scopeOf(kind: DeepDiveTraceKind, id: string): Promise<DeepDiveScope> {
+    const { label } = DEEP_DIVE_TRACE_KINDS[kind];
+    const table = DEEP_DIVE_TRACE_KINDS[kind].table as typeof deepDiveCommercials;
     const row = await db
-      .select({ companyId: table.companyId })
+      .select({ companyId: table.companyId, recordCaseId: table.recordCaseId })
       .from(table)
       .where(eq(table.id, id))
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound(`${label} not found`);
-    return row.companyId;
+    return scopeOfRow(row, label);
   }
 
-  async function chain(companyId: string): Promise<DeepDiveTraceability> {
-    const [northStar, opportunities, findingLinks, builds, commercials, roadmap, kpiLinks, kpis] = await Promise.all([
+  async function chain(scope: DeepDiveScope): Promise<DeepDiveTraceability> {
+    const companyId = scope.companyId;
+    const [northStar, opportunities, allFindingLinks, builds, commercials, roadmap, allKpiLinks, kpis] = await Promise.all([
       db.select({ documentId: documents.id, body: documents.latestBody })
         .from(cases)
         .innerJoin(caseDocuments, and(eq(caseDocuments.caseId, cases.id), eq(caseDocuments.key, NORTH_STAR_KEY)))
@@ -91,11 +93,11 @@ export function deepDiveTraceabilityService(db: Db) {
         .where(and(
           eq(cases.companyId, companyId),
           eq(cases.caseType, DEEP_DIVE_CASE_TYPES.record),
-          eq(cases.key, DEEP_DIVE_RECORD_KEY),
+          eq(cases.id, scope.recordCaseId),
         ))
         .then((rows) => rows[0] ?? null),
       db.select({ id: deepDiveOpportunities.id, name: deepDiveOpportunities.name }).from(deepDiveOpportunities)
-        .where(eq(deepDiveOpportunities.companyId, companyId)).orderBy(asc(deepDiveOpportunities.createdAt)),
+        .where(inRecord(deepDiveOpportunities, scope)).orderBy(asc(deepDiveOpportunities.createdAt)),
       db.select().from(deepDiveOpportunityFindings).where(eq(deepDiveOpportunityFindings.companyId, companyId))
         .orderBy(asc(deepDiveOpportunityFindings.createdAt)),
       db.select({
@@ -103,23 +105,27 @@ export function deepDiveTraceabilityService(db: Db) {
         name: deepDiveBuilds.name,
         state: deepDiveBuilds.state,
         opportunityId: deepDiveBuilds.opportunityId,
-      }).from(deepDiveBuilds).where(eq(deepDiveBuilds.companyId, companyId)).orderBy(asc(deepDiveBuilds.createdAt)),
-      db.select().from(deepDiveCommercials).where(eq(deepDiveCommercials.companyId, companyId))
+      }).from(deepDiveBuilds).where(inRecord(deepDiveBuilds, scope)).orderBy(asc(deepDiveBuilds.createdAt)),
+      db.select().from(deepDiveCommercials).where(inRecord(deepDiveCommercials, scope))
         .orderBy(asc(deepDiveCommercials.createdAt)),
-      db.select().from(deepDiveRoadmapItems).where(eq(deepDiveRoadmapItems.companyId, companyId))
+      db.select().from(deepDiveRoadmapItems).where(inRecord(deepDiveRoadmapItems, scope))
         .orderBy(asc(deepDiveRoadmapItems.createdAt)),
       db.select().from(deepDiveRoadmapKpis).where(eq(deepDiveRoadmapKpis.companyId, companyId))
         .orderBy(asc(deepDiveRoadmapKpis.createdAt)),
       db.select({ id: deepDiveKpis.id, name: deepDiveKpis.name }).from(deepDiveKpis)
-        .where(eq(deepDiveKpis.companyId, companyId)).orderBy(asc(deepDiveKpis.createdAt)),
+        .where(inRecord(deepDiveKpis, scope)).orderBy(asc(deepDiveKpis.createdAt)),
     ]);
+    const opportunityIds = new Set(opportunities.map((o) => o.id));
+    const roadmapIds = new Set(roadmap.map((r) => r.id));
+    const findingLinks = allFindingLinks.filter((l) => opportunityIds.has(l.opportunityId));
+    const kpiLinks = allKpiLinks.filter((l) => roadmapIds.has(l.roadmapItemId));
 
     const linkedFindingIds = [...new Set(findingLinks.map((l) => l.findingId))];
     const findings = await db
       .select({ id: deepDiveFindings.id, statement: deepDiveFindings.statement, status: deepDiveFindings.status })
       .from(deepDiveFindings)
       .where(and(
-        eq(deepDiveFindings.companyId, companyId),
+        inRecord(deepDiveFindings, scope),
         linkedFindingIds.length
           ? or(eq(deepDiveFindings.status, "validated"), inArray(deepDiveFindings.id, linkedFindingIds))
           : eq(deepDiveFindings.status, "validated"),
@@ -192,60 +198,70 @@ export function deepDiveTraceabilityService(db: Db) {
     }
   }
 
+  async function assertKpisInRecord(ids: string[] | undefined, scope: DeepDiveScope) {
+    const wanted = [...new Set(ids ?? [])];
+    if (!wanted.length) return;
+    const found = await db.select({ id: deepDiveKpis.id }).from(deepDiveKpis).where(and(inRecord(deepDiveKpis, scope), inArray(deepDiveKpis.id, wanted)));
+    if (found.length !== wanted.length) throw unprocessable("That link points at something that is not in this Deep Dive");
+  }
+
   function onlyPersonShares(visibility: DeepDiveVisibility | undefined, actor: DeepDiveOpportunityActor) {
     if (actor.type !== "user" && visibility !== undefined) throw forbidden("Only a person can share or unshare a Deep Dive item");
   }
 
   return {
-    companyOf,
+    scopeOf,
+    companyOf: async (kind: DeepDiveTraceKind, id: string) => (await scopeOf(kind, id)).companyId,
     chain,
 
-    createCommercial: async (companyId: string, input: CreateDeepDiveCommercial) => {
-      await write(db.insert(deepDiveCommercials).values({ companyId, ...input }));
-      return chain(companyId);
+    createCommercial: async (scope: DeepDiveScope, input: CreateDeepDiveCommercial) => {
+      await write(db.insert(deepDiveCommercials).values({ ...scope, ...input }));
+      return chain(scope);
     },
 
     updateCommercial: async (commercialId: string, input: UpdateDeepDiveCommercial, actor: DeepDiveOpportunityActor) => {
       onlyPersonShares(input.visibility, actor);
-      const companyId = await companyOf("commercial", commercialId);
+      const scope = await scopeOf("commercial", commercialId);
       await write(db.update(deepDiveCommercials).set({ ...sent(input), updatedAt: new Date() })
         .where(eq(deepDiveCommercials.id, commercialId)));
-      return chain(companyId);
+      return chain(scope);
     },
 
     /** Roadmap items that delivered it stay, and the check shows them as broken. */
     deleteCommercial: async (commercialId: string) => {
-      const companyId = await companyOf("commercial", commercialId);
+      const scope = await scopeOf("commercial", commercialId);
       await write(db.delete(deepDiveCommercials).where(eq(deepDiveCommercials.id, commercialId)));
-      return chain(companyId);
+      return chain(scope);
     },
 
-    createRoadmapItem: async (companyId: string, input: CreateDeepDiveRoadmapItem) => {
+    createRoadmapItem: async (scope: DeepDiveScope, input: CreateDeepDiveRoadmapItem) => {
       const { kpiIds, ...fields } = input;
+      await assertKpisInRecord(kpiIds, scope);
       await write(db.transaction(async (tx) => {
-        const [row] = await tx.insert(deepDiveRoadmapItems).values({ companyId, ...fields })
+        const [row] = await tx.insert(deepDiveRoadmapItems).values({ ...scope, ...fields })
           .returning({ id: deepDiveRoadmapItems.id });
-        if (kpiIds) await setKpis(tx, companyId, row!.id, kpiIds);
+        if (kpiIds) await setKpis(tx, scope.companyId, row!.id, kpiIds);
       }));
-      return chain(companyId);
+      return chain(scope);
     },
 
     updateRoadmapItem: async (roadmapItemId: string, input: UpdateDeepDiveRoadmapItem, actor: DeepDiveOpportunityActor) => {
       onlyPersonShares(input.visibility, actor);
-      const companyId = await companyOf("roadmap", roadmapItemId);
+      const scope = await scopeOf("roadmap", roadmapItemId);
       const { kpiIds, ...fields } = input;
+      await assertKpisInRecord(kpiIds, scope);
       await write(db.transaction(async (tx) => {
         await tx.update(deepDiveRoadmapItems).set({ ...sent(fields), updatedAt: new Date() })
           .where(eq(deepDiveRoadmapItems.id, roadmapItemId));
-        if (kpiIds) await setKpis(tx, companyId, roadmapItemId, kpiIds);
+        if (kpiIds) await setKpis(tx, scope.companyId, roadmapItemId, kpiIds);
       }));
-      return chain(companyId);
+      return chain(scope);
     },
 
     deleteRoadmapItem: async (roadmapItemId: string) => {
-      const companyId = await companyOf("roadmap", roadmapItemId);
+      const scope = await scopeOf("roadmap", roadmapItemId);
       await write(db.delete(deepDiveRoadmapItems).where(eq(deepDiveRoadmapItems.id, roadmapItemId)));
-      return chain(companyId);
+      return chain(scope);
     },
   };
 }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { caseDocuments, cases } from "./cases.js";
 import { companies } from "./companies.js";
@@ -16,6 +16,8 @@ export const deepDiveSessions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     title: text("title").notNull(),
     // planned -> live -> closed.
     status: text("status").$type<"planned" | "live" | "closed">().notNull().default("planned"),

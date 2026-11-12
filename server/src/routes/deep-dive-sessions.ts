@@ -17,6 +17,7 @@ import { deepDiveSessionsService, type DeepDiveSessionActor } from "../services/
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Deep Dive sessions (GRE-2368): Screen 2 of the GRE-2327 plan. Anyone with
@@ -72,14 +73,15 @@ export function deepDiveSessionsRoutes(db: Db) {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json({ sessions: await sessions.list(companyId) });
+    res.json({ sessions: await sessions.list(await resolveDeepDiveScope(db, companyId, req.query.recordId)) });
   });
 
   router.post("/companies/:companyId/deep-dive/sessions", validate(planDeepDiveSessionSchema), async (req, res) => {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const session = await sessions.plan(companyId, req.body as PlanDeepDiveSession, sessionActor(req));
+    const scope = await resolveDeepDiveScope(db, companyId, req.query.recordId);
+    const session = await sessions.plan(scope, req.body as PlanDeepDiveSession, sessionActor(req));
     await log(req, companyId, "deep_dive_session.planned", session.id, { questionCount: session.questionCount });
     res.status(201).json(session);
   });

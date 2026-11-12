@@ -22,6 +22,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { caseRoutes } from "../routes/cases.js";
 import { deepDiveFindingsRoutes } from "../routes/deep-dive-findings.js";
@@ -102,6 +103,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -131,6 +133,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(companyId),
       key,
       title: `Deep dive: ${key}`,
       fields: fields as unknown as Record<string, unknown>,
@@ -151,7 +154,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
   }
 
   function plan(actor: Express.Request["actor"], companyId: string, body: Record<string, unknown>) {
-    return request(app(actor)).post(`/api/companies/${companyId}/deep-dive/sessions`).send(body);
+    return request(app(actor)).post(`/api/companies/${companyId}/deep-dive/sessions?${rq(companyId)}`).send(body);
   }
 
   function answer(questionId: string, text: string | null, actor = person) {
@@ -222,7 +225,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
       await request(app(person)).patch(`/api/deep-dive/sessions/${planned.body.id}`).send({ title: "Renamed" }).expect(409);
       await request(app(person)).patch(`/api/deep-dive/sessions/${planned.body.id}`).send({ visibility: "shared" }).expect(200);
 
-      const list = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/sessions`).expect(200);
+      const list = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/sessions?${rq(company.id)}`).expect(200);
       expect(list.body.sessions).toEqual([
         expect.objectContaining({ id: planned.body.id, status: "closed", visibility: "shared", questionCount: 2, answeredCount: 1 }),
       ]);
@@ -322,7 +325,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
 
       // Closing the session leaves the link in place, and a closed answer can still become a finding.
       await request(app(person)).post(`/api/deep-dive/sessions/${planned.body.id}/close`).expect(200);
-      const findings = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/findings`).expect(200);
+      const findings = await request(app(person)).get(`/api/companies/${company.id}/deep-dive/findings?${rq(company.id)}`).expect(200);
       expect(findings.body.findings).toHaveLength(1);
     });
   });
@@ -338,7 +341,7 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
 
       const planned = await plan(person, company.id, { title: "Ops", questions: [{ streamCaseId: stream.id, gifKey: "current-state" }] }).expect(201);
       await request(app(outsider)).get(`/api/deep-dive/sessions/${planned.body.id}`).expect(403);
-      await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/sessions`).expect(403);
+      await request(app(outsider)).get(`/api/companies/${company.id}/deep-dive/sessions?${rq(company.id)}`).expect(403);
       await request(app(outsider)).patch(`/api/deep-dive/session-questions/${planned.body.questions[0].id}`).send({ prompt: "x" }).expect(403);
 
       // A question can only sit in this company's streams.
@@ -362,9 +365,9 @@ describeEmbeddedPostgres("Deep Dive sessions (GRE-2368)", () => {
     it("refuses a session created Live, a step backwards, and answers outside a live session", async () => {
       const company = await seedCompany("DSG");
       const { stream, cells } = await seedStream(company.id, "operations");
-      expect((await refused(db.insert(deepDiveSessions).values({ companyId: company.id, title: "x", status: "live", startedAt: new Date() }))).code).toBe("23514");
+      expect((await refused(db.insert(deepDiveSessions).values({ companyId: company.id, recordCaseId: recordOf(company.id), title: "x", status: "live", startedAt: new Date() }))).code).toBe("23514");
 
-      const [session] = await db.insert(deepDiveSessions).values({ companyId: company.id, title: "Direct" }).returning();
+      const [session] = await db.insert(deepDiveSessions).values({ companyId: company.id, recordCaseId: recordOf(company.id), title: "Direct" }).returning();
       const [question] = await db.insert(deepDiveSessionQuestions).values({
         companyId: company.id,
         sessionId: session!.id,

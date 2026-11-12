@@ -29,6 +29,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveInterviewsRoutes } from "../routes/deep-dive-interviews.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -97,6 +98,7 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -137,6 +139,7 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
       caseNumber: Math.floor(Math.random() * 1_000_000),
       identifier: `DD-${randomUUID()}`,
       caseType: "deep_dive_stream",
+      parentCaseId: recordOf(company.id),
       key: "operations",
       title: "Deep dive: operations",
       fields: fields as unknown as Record<string, unknown>,
@@ -145,10 +148,10 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
       const [doc] = await db.insert(documents).values({ companyId: company.id, title: gif.label, latestBody: `# ${gif.label}\n\n${gif.question}\n` }).returning();
       await db.insert(caseDocuments).values({ companyId: company.id, caseId: stream!.id, documentId: doc!.id, key: gif.documentKey });
     }
-    const [co] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, name: "Northwind Freight", unitType: "company" }).returning();
-    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, name: "Finance", unitType: "team", parentId: co!.id, position: 1 }).returning();
-    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, name: "Depot", unitType: "team", parentId: co!.id, position: 2 }).returning();
-    const created = await request(app(person)).post(`/api/companies/${company.id}/deep-dive/interview-round`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
+    const [co] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "Northwind Freight", unitType: "company" }).returning();
+    const [finance] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "Finance", unitType: "team", parentId: co!.id, position: 1 }).returning();
+    const [depot] = await db.insert(deepDiveOrgUnits).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "Depot", unitType: "team", parentId: co!.id, position: 2 }).returning();
+    const created = await request(app(person)).post(`/api/companies/${company.id}/deep-dive/interview-round?${rq(company.id)}`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
     const roundId = (created.body as DeepDiveInterviewRoundView).round!.id;
     for (const unitId of [finance!.id, depot!.id]) {
       const drafted = await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/sets`).send({ unitId }).expect(201);
@@ -263,7 +266,7 @@ describeEmbeddedPostgres("Parallel Interview release to the client (GRE-2667)", 
   it("waits for the round to open", async () => {
     bridge = createFakeInterviewBridge();
     const company = await seedCompany("DRS");
-    const created = await request(app(person)).post(`/api/companies/${company.id}/deep-dive/interview-round`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
+    const created = await request(app(person)).post(`/api/companies/${company.id}/deep-dive/interview-round?${rq(company.id)}`).send({ websiteOrganisationId: ORG, mode: "per_team" }).expect(201);
     const roundId = (created.body as DeepDiveInterviewRoundView).round!.id;
     const waiting = await request(app(person)).post(`/api/deep-dive/interview-rounds/${roundId}/synthesis/release`).send({ headline: "x" }).expect(409);
     expect(waiting.body.error).toContain("has not opened");

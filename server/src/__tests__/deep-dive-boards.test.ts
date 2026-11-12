@@ -21,6 +21,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { recordOf, rq, seedDeepDiveRecord } from "./helpers/deep-dive-record.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { deepDiveBoardsRoutes } from "../routes/deep-dive-boards.js";
 import { companyService } from "../services/companies.js";
@@ -97,6 +98,7 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       name: `${prefix} Co`,
       issuePrefix: `${prefix}${randomUUID().replace(/-/g, "").slice(0, 4)}`,
     }).returning();
+    await seedDeepDiveRecord(db, company!.id);
     return company!;
   }
 
@@ -118,16 +120,16 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
   describe("organisation board", () => {
     it("saves units, people, unplaced people and tasks, and reloads them as saved", async () => {
       const company = await seedCompany("DBO");
-      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "Operations", unitType: "division", headcount: 3 }).expect(201)).body;
+      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "Operations", unitType: "division", headcount: 3 }).expect(201)).body;
       const ops = board.units[0];
       expect(ops).toMatchObject({ name: "Operations", unitType: "division", headcount: 3, parentId: null, visibility: "internal" });
 
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "Field team", parentId: ops.id }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "Field team", parentId: ops.id }).expect(201)).body;
       const field = board.units.find((u: { name: string }) => u.name === "Field team");
       expect(field).toMatchObject({ parentId: ops.id, unitType: "team", position: 1 });
 
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Ama", role: "Field supervisor", unitId: field.id }).expect(201)).body;
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Kofi" }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Ama", role: "Field supervisor", unitId: field.id }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Kofi" }).expect(201)).body;
       const ama = board.people.find((p: { name: string }) => p.name === "Ama");
       const kofi = board.people.find((p: { name: string }) => p.name === "Kofi");
       expect(deepDiveUnplacedPeople(board.people, board.units).map((p: { name: string }) => p.name)).toEqual(["Kofi"]);
@@ -141,7 +143,7 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       await api().post(`/api/deep-dive/people/${ama.id}/tasks`).send({ what: "Check reports", hoursPerWeek: 20, fate: "agentic" }).expect(201);
       board = (await api().post(`/api/deep-dive/people/${kofi.id}/tasks`).send({ what: "Hand over shifts", hoursPerWeek: 20, fate: "moves" }).expect(201)).body;
 
-      const reloaded = (await api().get(`/api/companies/${company.id}/deep-dive/organisation`).expect(200)).body;
+      const reloaded = (await api().get(`/api/companies/${company.id}/deep-dive/organisation?${rq(company.id)}`).expect(200)).body;
       expect(reloaded).toEqual(board);
       expect(reloaded.people.find((p: { id: string }) => p.id === kofi.id)).toMatchObject({ unitId: field.id, reportsToId: ama.id });
       expect(reloaded.units.find((u: { id: string }) => u.id === field.id).leadPersonId).toBe(ama.id);
@@ -151,10 +153,10 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
 
     it("removing a unit moves the units under it to the top and leaves its people unplaced", async () => {
       const company = await seedCompany("DBR");
-      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "Top" }).expect(201)).body;
+      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "Top" }).expect(201)).body;
       const top = board.units[0];
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "Under", parentId: top.id }).expect(201)).body;
-      await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Esi", unitId: top.id }).expect(201);
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "Under", parentId: top.id }).expect(201)).body;
+      await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Esi", unitId: top.id }).expect(201);
       board = (await api().delete(`/api/deep-dive/org-units/${top.id}`).expect(200)).body;
       expect(board.units).toHaveLength(1);
       expect(board.units[0]).toMatchObject({ name: "Under", parentId: null });
@@ -163,16 +165,16 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
 
     it("refuses a unit inside itself and a reporting loop", async () => {
       const company = await seedCompany("DBC");
-      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "A" }).expect(201)).body;
+      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "A" }).expect(201)).body;
       const a = board.units[0];
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "B", parentId: a.id }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "B", parentId: a.id }).expect(201)).body;
       const b = board.units.find((u: { name: string }) => u.name === "B");
       const loop = await api().patch(`/api/deep-dive/org-units/${a.id}`).send({ parentId: b.id }).expect(422);
       expect(loop.body.error).toMatch(/inside itself/);
 
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Boss" }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Boss" }).expect(201)).body;
       const boss = board.people[0];
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Report", reportsToId: boss.id }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Report", reportsToId: boss.id }).expect(201)).body;
       const report = board.people.find((p: { name: string }) => p.name === "Report");
       await api().patch(`/api/deep-dive/people/${boss.id}`).send({ reportsToId: report.id }).expect(422);
       await api().patch(`/api/deep-dive/people/${boss.id}`).send({ reportsToId: boss.id }).expect(422);
@@ -181,10 +183,10 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
 
   describe("process board", () => {
     async function seedBoard(companyId: string) {
-      let board = (await api().post(`/api/companies/${companyId}/deep-dive/offerings`).send({ name: "Field surveys" }).expect(201)).body;
+      let board = (await api().post(`/api/companies/${companyId}/deep-dive/offerings?${rq(companyId)}`).send({ name: "Field surveys" }).expect(201)).body;
       const lane = board.offerings[0];
       for (const name of ["Plan the wave", "Run interviews", "Clean the data"]) {
-        board = (await api().post(`/api/companies/${companyId}/deep-dive/processes`).send({ name, offeringId: lane.id }).expect(201)).body;
+        board = (await api().post(`/api/companies/${companyId}/deep-dive/processes?${rq(companyId)}`).send({ name, offeringId: lane.id }).expect(201)).body;
       }
       const byName = (name: string) => board.processes.find((p: { name: string }) => p.name === name);
       return { lane, plan: byName("Plan the wave"), run: byName("Run interviews"), clean: byName("Clean the data") };
@@ -195,12 +197,12 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       const { lane, plan, run } = await seedBoard(company.id);
       expect(plan).toMatchObject({ offeringId: lane.id, x: null, y: null, visibility: "internal" });
 
-      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`)
+      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`)
         .send({ positions: [{ processId: plan.id, x: 40, y: 20 }, { processId: run.id, x: 320, y: 20 }] }).expect(200);
-      const saved = (await api().post(`/api/companies/${company.id}/deep-dive/handoffs`)
+      const saved = (await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`)
         .send({ fromProcessId: plan.id, toProcessId: run.id, what: "The wave plan" }).expect(201)).body;
 
-      const reloaded = (await api().get(`/api/companies/${company.id}/deep-dive/process-board`).expect(200)).body;
+      const reloaded = (await api().get(`/api/companies/${company.id}/deep-dive/process-board?${rq(company.id)}`).expect(200)).body;
       expect(reloaded).toEqual(saved);
       expect(reloaded.processes.find((p: { id: string }) => p.id === plan.id)).toMatchObject({ x: 40, y: 20 });
       expect(reloaded.handoffs).toEqual([
@@ -208,10 +210,10 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       ]);
 
       // Tidy up: null puts a card back in its automatic place.
-      const tidy = (await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`)
+      const tidy = (await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`)
         .send({ positions: [{ processId: plan.id, x: null, y: null }] }).expect(200)).body;
       expect(tidy.processes.find((p: { id: string }) => p.id === plan.id)).toMatchObject({ x: null, y: null });
-      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`)
+      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`)
         .send({ positions: [{ processId: plan.id, x: 10, y: null }] }).expect(422);
 
       // Moving a process to another lane places it automatically there.
@@ -224,7 +226,7 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       const { plan, run, clean } = await seedBoard(company.id);
 
       // Cards laid out left to right in a row: position is layout, never an arrow.
-      let board = (await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`).send({
+      let board = (await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`).send({
         positions: [
           { processId: plan.id, x: 0, y: 0 },
           { processId: run.id, x: 300, y: 0 },
@@ -235,29 +237,29 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       expect(deepDiveProcessArrows(board)).toEqual([]);
 
       // A handoff with nothing named is not recorded, and a process cannot hand off to itself.
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`).send({ fromProcessId: plan.id, toProcessId: run.id }).expect(400);
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`).send({ fromProcessId: plan.id, toProcessId: run.id, what: "  " }).expect(400);
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`).send({ fromProcessId: plan.id, toProcessId: plan.id, what: "x" }).expect(422);
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`).send({ fromProcessId: plan.id, toProcessId: run.id }).expect(400);
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`).send({ fromProcessId: plan.id, toProcessId: run.id, what: "  " }).expect(400);
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`).send({ fromProcessId: plan.id, toProcessId: plan.id, what: "x" }).expect(422);
       // Neither a layout nor a process can carry an arrow.
-      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`)
+      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`)
         .send({ positions: [{ processId: plan.id, x: 0, y: 0, feeds: [run.id] }] }).expect(400);
       await api().patch(`/api/deep-dive/processes/${plan.id}`).send({ feeds: [run.id] }).expect(400);
-      board = (await api().get(`/api/companies/${company.id}/deep-dive/process-board`).expect(200)).body;
+      board = (await api().get(`/api/companies/${company.id}/deep-dive/process-board?${rq(company.id)}`).expect(200)).body;
       expect(deepDiveProcessArrows(board)).toEqual([]);
 
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/handoffs`)
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`)
         .send({ fromProcessId: plan.id, toProcessId: run.id, what: "The wave plan" }).expect(201)).body;
       const handoff = board.handoffs[0];
       expect(deepDiveProcessArrows(board)).toEqual([
         { handoffId: handoff.id, fromProcessId: plan.id, toProcessId: run.id, what: "The wave plan" },
       ]);
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`)
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`)
         .send({ fromProcessId: plan.id, toProcessId: run.id, what: "Again" }).expect(409);
 
       // Removing the handoff removes the arrow; removing a process removes its handoffs.
       board = (await api().delete(`/api/deep-dive/handoffs/${handoff.id}`).expect(200)).body;
       expect(deepDiveProcessArrows(board)).toEqual([]);
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`).send({ fromProcessId: run.id, toProcessId: clean.id, what: "Interviews" }).expect(201);
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`).send({ fromProcessId: run.id, toProcessId: clean.id, what: "Interviews" }).expect(201);
       board = (await api().delete(`/api/deep-dive/processes/${clean.id}`).expect(200)).body;
       expect(board.handoffs).toEqual([]);
       expect(deepDiveProcessArrows(board)).toEqual([]);
@@ -269,7 +271,7 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       const { plan, run } = await seedBoard(company.id);
       const theirs = await seedBoard(other.id);
 
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`)
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`)
         .send({ fromProcessId: plan.id, toProcessId: theirs.plan.id, what: "Leak" }).expect(422);
       expect((await refused(db.insert(deepDiveHandoffs).values({
         companyId: company.id, fromProcessId: plan.id, toProcessId: theirs.run.id, what: "Leak",
@@ -289,7 +291,7 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       )).code).toBe("23514");
       // A process cannot be placed in another company's lane.
       await api().patch(`/api/deep-dive/processes/${plan.id}`).send({ offeringId: theirs.lane.id }).expect(422);
-      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout`)
+      await api().put(`/api/companies/${company.id}/deep-dive/process-board/layout?${rq(company.id)}`)
         .send({ positions: [{ processId: theirs.plan.id, x: 0, y: 0 }] }).expect(422);
     });
   });
@@ -301,9 +303,9 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       const outsider = await seedAgentActor(other.id);
       const insider = await seedAgentActor(company.id);
 
-      await api(outsider).get(`/api/companies/${company.id}/deep-dive/organisation`).expect(403);
-      await api(outsider).get(`/api/companies/${company.id}/deep-dive/process-board`).expect(403);
-      const board = (await api(insider).post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Yaw" }).expect(201)).body;
+      await api(outsider).get(`/api/companies/${company.id}/deep-dive/organisation?${rq(company.id)}`).expect(403);
+      await api(outsider).get(`/api/companies/${company.id}/deep-dive/process-board?${rq(company.id)}`).expect(403);
+      const board = (await api(insider).post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Yaw" }).expect(201)).body;
       const yaw = board.people[0];
       expect(yaw.visibility).toBe("internal");
       await api(outsider).patch(`/api/deep-dive/people/${yaw.id}`).send({ name: "x" }).expect(403);
@@ -314,20 +316,20 @@ describeEmbeddedPostgres("Deep Dive boards (GRE-2369)", () => {
       expect(shared.people[0].visibility).toBe("shared");
 
       // Nothing is created Shared, even by a direct write.
-      expect((await refused(db.insert(deepDiveOfferings).values({ companyId: company.id, name: "x", visibility: "shared" }))).code).toBe("23514");
-      await api().post(`/api/companies/${company.id}/deep-dive/offerings`).send({ name: "x", visibility: "shared" }).expect(400);
+      expect((await refused(db.insert(deepDiveOfferings).values({ companyId: company.id, recordCaseId: recordOf(company.id), name: "x", visibility: "shared" }))).code).toBe("23514");
+      await api().post(`/api/companies/${company.id}/deep-dive/offerings?${rq(company.id)}`).send({ name: "x", visibility: "shared" }).expect(400);
       await api().delete(`/api/deep-dive/processes/${randomUUID()}`).expect(404);
     });
 
     it("removes a company with both boards filled in", async () => {
       const company = await seedCompany("DBZ");
-      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units`).send({ name: "Top" }).expect(201)).body;
-      board = (await api().post(`/api/companies/${company.id}/deep-dive/people`).send({ name: "Lead", unitId: board.units[0].id }).expect(201)).body;
+      let board = (await api().post(`/api/companies/${company.id}/deep-dive/org-units?${rq(company.id)}`).send({ name: "Top" }).expect(201)).body;
+      board = (await api().post(`/api/companies/${company.id}/deep-dive/people?${rq(company.id)}`).send({ name: "Lead", unitId: board.units[0].id }).expect(201)).body;
       await api().patch(`/api/deep-dive/org-units/${board.units[0].id}`).send({ leadPersonId: board.people[0].id }).expect(200);
-      const lane = (await api().post(`/api/companies/${company.id}/deep-dive/offerings`).send({ name: "Lane" }).expect(201)).body.offerings[0];
-      await api().post(`/api/companies/${company.id}/deep-dive/processes`).send({ name: "A", offeringId: lane.id, runsPersonId: board.people[0].id }).expect(201);
-      const processes = (await api().post(`/api/companies/${company.id}/deep-dive/processes`).send({ name: "B" }).expect(201)).body.processes;
-      await api().post(`/api/companies/${company.id}/deep-dive/handoffs`).send({ fromProcessId: processes[0].id, toProcessId: processes[1].id, what: "x" }).expect(201);
+      const lane = (await api().post(`/api/companies/${company.id}/deep-dive/offerings?${rq(company.id)}`).send({ name: "Lane" }).expect(201)).body.offerings[0];
+      await api().post(`/api/companies/${company.id}/deep-dive/processes?${rq(company.id)}`).send({ name: "A", offeringId: lane.id, runsPersonId: board.people[0].id }).expect(201);
+      const processes = (await api().post(`/api/companies/${company.id}/deep-dive/processes?${rq(company.id)}`).send({ name: "B" }).expect(201)).body.processes;
+      await api().post(`/api/companies/${company.id}/deep-dive/handoffs?${rq(company.id)}`).send({ fromProcessId: processes[0].id, toProcessId: processes[1].id, what: "x" }).expect(201);
 
       await companyService(db).remove(company.id);
       expect(await db.select().from(deepDiveProcesses).where(eq(deepDiveProcesses.companyId, company.id))).toEqual([]);

@@ -3261,6 +3261,8 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./deep-dive-records.js";
+export * from "./deep-dive-drafts.js";
 export * from "./deep-dive-findings.js";
 export * from "./deep-dive-sessions.js";
 export * from "./deep-dive-boards.js";

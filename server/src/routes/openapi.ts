@@ -385,6 +385,9 @@ import {
   updateNotificationPreferencesSchema,
   decideDeepDiveFindingSchema,
   listDeepDiveFindingsQuerySchema,
+  logDeepDiveInterviewSchema,
+  proposeDeepDiveRecordSchema,
+  decideDeepDiveDraftSchema,
   proposeDeepDiveFindingSchema,
   setDeepDiveFindingVisibilitySchema,
   addDeepDiveSessionQuestionSchema,
@@ -17732,6 +17735,58 @@ registerCurrentRoute({
   tags: ["ai-connections"], summary: "Check the local operator's subscription sign-in without saving a connection",
   body: localAiConnectionSchema,
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// Deep Dive tiles and agent drafts (GRE-4430). Every draft route names the Deep
+// Dive with ?recordId=. Agents log interviews and propose rows as drafts; only a
+// person approves or rejects.
+const draftResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dives",
+  tags: ["deep-dive"],
+  summary: "List every client's Deep Dive, one tile each, with drafts and findings waiting for a person",
+  responses: draftResponses,
+});
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/drafts",
+  tags: ["deep-dive"],
+  summary: "List one Deep Dive's agent drafts (?recordId=, optional ?status=draft|approved|rejected)",
+  responses: draftResponses,
+});
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/deep-dive/drafts/{draftId}",
+  tags: ["deep-dive"],
+  summary: "Read one draft of this Deep Dive (?recordId=); another Deep Dive's draft is 404",
+  responses: draftResponses,
+});
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/drafts/interview-log",
+  tags: ["deep-dive"],
+  summary:
+    "Log an interview from a Notion transcript as a draft (?recordId=): every question answered (answer and verbatim quote), " +
+    "unclear or not answered, plus outside notes. Agents need a run id. draftId with expectedVersion revises an open draft",
+  body: logDeepDiveInterviewSchema,
+  responses: { 201: r.ok(), ...draftResponses, 409: r.conflict, 422: r.unprocessable },
+});
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/drafts/record-proposal",
+  tags: ["deep-dive"],
+  summary: "Propose a register row (risk, decision, evidence and so on) as a draft (?recordId=)",
+  body: proposeDeepDiveRecordSchema,
+  responses: { 201: r.ok(), ...draftResponses, 409: r.conflict, 422: r.unprocessable },
+});
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/deep-dive/drafts/{draftId}/decision",
+  tags: ["deep-dive"],
+  summary: "Approve or reject a draft against the version read (people only, ?recordId=)",
+  body: decideDeepDiveDraftSchema,
+  responses: { ...draftResponses, 409: r.conflict },
 });
 
 // Deep Dive findings (GRE-2367). Proposed by a person or an agent; only a

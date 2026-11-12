@@ -12,6 +12,7 @@ import { deepDiveTraceabilityService, type DeepDiveTraceKind } from "../services
 import { assertEntitled } from "../services/entitlements.js";
 import { logActivity } from "../services/index.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { resolveDeepDiveScope } from "../services/deep-dive-scope.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 // Deep Dive traceability (GRE-2371): Screen 8 of the GRE-2327 plan. GET reads
@@ -38,7 +39,7 @@ export function deepDiveTraceabilityRoutes(db: Db) {
     await assertEnabled();
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    return companyId;
+    return resolveDeepDiveScope(db, companyId, req.query.recordId);
   }
 
   async function itemInScope(req: Request, kind: DeepDiveTraceKind, param: string) {
@@ -66,13 +67,15 @@ export function deepDiveTraceabilityRoutes(db: Db) {
   const changed = (req: Request) => ({ changed: Object.keys(req.body ?? {}) });
 
   router.get("/companies/:companyId/deep-dive/traceability", async (req, res) => {
-    const companyId = await companyInScope(req);
-    res.json(await trace.chain(companyId));
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    res.json(await trace.chain(scope));
   });
 
   router.post("/companies/:companyId/deep-dive/commercials", validate(createDeepDiveCommercialSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const chain = await trace.createCommercial(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const chain = await trace.createCommercial(scope, req.body);
     await log(req, companyId, "deep_dive_traceability.commercial_added", companyId, { name: req.body.name });
     res.status(201).json(chain);
   });
@@ -92,8 +95,9 @@ export function deepDiveTraceabilityRoutes(db: Db) {
   });
 
   router.post("/companies/:companyId/deep-dive/roadmap", validate(createDeepDiveRoadmapItemSchema), async (req, res) => {
-    const companyId = await companyInScope(req);
-    const chain = await trace.createRoadmapItem(companyId, req.body);
+    const scope = await companyInScope(req);
+    const companyId = scope.companyId;
+    const chain = await trace.createRoadmapItem(scope, req.body);
     await log(req, companyId, "deep_dive_traceability.roadmap_item_added", companyId, { name: req.body.name });
     res.status(201).json(chain);
   });

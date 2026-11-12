@@ -12,6 +12,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
+import { cases } from "./cases.js";
 import { companies } from "./companies.js";
 
 // Deep Dive boards (GRE-2369, migration 0399). The organisation board holds
@@ -30,6 +31,8 @@ export const deepDiveOrgUnits = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     name: text("name").notNull(),
     unitType: text("unit_type").$type<"company" | "division" | "department" | "team">().notNull().default("team"),
     parentId: uuid("parent_id").references((): AnyPgColumn => deepDiveOrgUnits.id, { onDelete: "set null" }),
@@ -54,6 +57,8 @@ export const deepDivePeople = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     name: text("name").notNull(),
     role: text("role").notNull().default(""),
     side: text("side").$type<"client" | "greatstone" | "third_party">().notNull().default("client"),
@@ -108,6 +113,8 @@ export const deepDiveOfferings = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     name: text("name").notNull(),
     position: integer("position").notNull().default(0),
     visibility: text("visibility").$type<"internal" | "shared">().notNull().default("internal"),
@@ -126,6 +133,8 @@ export const deepDiveProcesses = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    // One client's Deep Dive (GRE-4430). Null only for rows older than per-client records.
+    recordCaseId: uuid("record_case_id").references((): AnyPgColumn => cases.id),
     name: text("name").notNull(),
     // The lane. Null: no offering names this process.
     offeringId: uuid("offering_id").references(() => deepDiveOfferings.id, { onDelete: "set null" }),

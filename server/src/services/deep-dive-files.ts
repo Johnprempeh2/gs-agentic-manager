@@ -1,9 +1,8 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agents, authUsers, cases, deepDiveItemFiles, pipelineCaseDocumentRequests, pipelineCaseEvidence } from "@greatstone/db";
 import {
   DEEP_DIVE_CASE_TYPES,
-  DEEP_DIVE_RECORD_KEY,
   type DeepDiveFilesResponse,
   type DeepDiveItemFileLink,
   type DeepDiveVisibility,
@@ -12,6 +11,7 @@ import { isUniqueViolation } from "../db-errors.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { pipelineCaseDocumentRequestsService } from "./pipeline-case-document-requests.js";
 import { pipelineCaseFilesService } from "./pipeline-case-files.js";
+import { loadDeepDiveRecord, type DeepDiveScope } from "./deep-dive-scope.js";
 
 // Deep Dive evidence and files (GRE-2395). One client file, many Deep Dive
 // items: a link row points an item at its client's evidence row or document
@@ -106,15 +106,21 @@ export function deepDiveFilesService(db: Db) {
     listLinks,
 
     /** The Evidence and files screen in one read: the record's client, its files and requests, and every link. */
-    async screen(companyId: string): Promise<DeepDiveFilesResponse> {
+    async screen(scope: DeepDiveScope): Promise<DeepDiveFilesResponse> {
+      const companyId = scope.companyId;
       const filesSvc = pipelineCaseFilesService(db);
+      // The record and its own items (children). Other Deep Dives of the same client stay out.
       const items = await db
-        .select({ id: cases.id, caseType: cases.caseType, key: cases.key, clientCaseId: cases.clientCaseId })
+        .select({ id: cases.id, clientCaseId: cases.clientCaseId })
         .from(cases)
-        .where(and(eq(cases.companyId, companyId), inArray(cases.caseType, DEEP_DIVE_TYPES)));
-      const record = items.find((item) => item.caseType === DEEP_DIVE_CASE_TYPES.record && item.key === DEEP_DIVE_RECORD_KEY);
+        .where(and(
+          eq(cases.companyId, companyId),
+          inArray(cases.caseType, DEEP_DIVE_TYPES),
+          or(eq(cases.id, scope.recordCaseId), eq(cases.parentCaseId, scope.recordCaseId)),
+        ));
+      const record = await loadDeepDiveRecord(db, companyId, scope.recordCaseId);
       const clients = await filesSvc.listClients(companyId, {});
-      const clientCaseId = record?.clientCaseId ?? null;
+      const clientCaseId = record.clientCaseId;
       const client = clients.find((entry) => entry.id === clientCaseId) ?? null;
       if (!client) return { client: null, clients, evidence: [], requests: [], links: [] };
       const [evidence, requests, links] = await Promise.all([
