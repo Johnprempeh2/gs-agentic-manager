@@ -29,6 +29,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ApiError } from "@/api/client";
+
+/** Say which field was refused instead of a bare "Validation error". */
+export function connectErrorText(error: Error): string {
+  const details = error instanceof ApiError ? (error.body as { details?: { message?: string }[] } | null)?.details : null;
+  return Array.isArray(details) && details[0]?.message ? details[0].message : error.message;
+}
 
 // Common IMAP settings. Users still confirm every field.
 const PRESETS: Record<string, { host: string; port: number; note: string }> = {
@@ -703,7 +710,7 @@ export function Mailboxes() {
           </div>
           {connect.error && (
             <p className="text-sm text-destructive" role="alert">
-              {connect.error.message}
+              {connectErrorText(connect.error)}
             </p>
           )}
           {missingForConnect.length > 0 ? (
@@ -749,7 +756,7 @@ export function Mailboxes() {
             ))}
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet. Sign in with Microsoft or Google above, or add one by hand, so agents can read and reply to email for you.</p>
+          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet. Sign in with Microsoft or Google above, or add one by hand, so agents can search and read email for you.</p>
         )}
       </section>
 
