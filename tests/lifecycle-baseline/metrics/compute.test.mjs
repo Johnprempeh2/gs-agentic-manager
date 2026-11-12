@@ -49,6 +49,31 @@ test("R1: an agent chat waiting on its user is covered; one on the agent's turn 
   assert.equal(computeStrandedTrees(chat("active")).total, 1);
 });
 
+test("R1: a human-owned unblock descriptor is live; an agent-owned note is not", () => {
+  const blocked = (owner) => base({ issues: [issue("root", {
+    status: "blocked",
+    unblockDescriptor: { owner, action: "Provide the decision." },
+  })] });
+
+  assert.equal(computeStrandedTrees(blocked("board")).total, 0);
+  assert.equal(computeStrandedTrees(blocked({ userId: "u1" })).total, 0);
+  assert.equal(computeStrandedTrees(blocked({ agentId: "a1" })).total, 1);
+});
+
+test("R1: an active routine is a live continuation for its parent issue", () => {
+  const snapshot = base({ issues: [issue("root", { status: "in_progress" })] });
+
+  assert.equal(computeStrandedTrees(snapshot).total, 1);
+  assert.equal(computeStrandedTrees({
+    ...snapshot,
+    routines: [{ parentIssueId: "root", status: "active" }],
+  }).total, 0);
+  assert.equal(computeStrandedTrees({
+    ...snapshot,
+    routines: [{ parentIssueId: "root", status: "paused" }],
+  }).total, 1);
+});
+
 test("R1: a paused agent's timer heartbeat is not a live path", () => {
   const snapshot = base({ issues: [issue("root")], agents: [{ id: "a1", status: "paused", timerHeartbeat: true }] });
   assert.equal(computeStrandedTrees(snapshot).total, 1);

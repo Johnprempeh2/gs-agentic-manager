@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { captureR1Snapshot, calculateR1, summariseR1, validateR1Snapshot } from "./r1-snapshot.mjs";
+import { R1_TABLE_COLUMNS, captureR1Snapshot, calculateR1, summariseR1, validateR1Snapshot } from "./r1-snapshot.mjs";
 
 const snapshotAt = "2026-10-29T12:00:00.000Z";
 const issue = { id: "root", companyId: "c1", identifier: "GRE-TEST", parentId: null, status: "blocked", assigneeAgentId: "a1", assigneeUserId: null, conversationUserId: null, conversationState: null, monitorNextCheckAt: null, monitorWakeRequestedAt: null, hiddenAt: null, updatedAt: "2026-10-29T10:00:00.000Z", tabledByUserId: null };
 const fixture = () => ({ snapshotAt, issues: [{ ...issue }], backlogParkers: [], runs: [], wakeRequests: [], interactions: [], approvals: [], recoveryActions: [], treeHolds: [], relations: [], agents: [{ companyId: "c1", id: "a1", status: "idle", timerHeartbeat: false }] });
+
+test("R1 source manifest projects unblock descriptors and active routine parents", () => {
+  assert.ok(R1_TABLE_COLUMNS.issues.includes("unblock_descriptor"));
+  assert.deepEqual(R1_TABLE_COLUMNS.routines, ["company_id", "parent_issue_id", "status"]);
+});
 
 test("R1 capture rejects a missing input or timestamp instead of silently treating it as zero", () => {
   const missing = fixture();
