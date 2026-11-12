@@ -227,6 +227,28 @@ When a sync pull request takes such a commit:
 
 Dry run (GRE-705, 5 Oct 2026), not on live: `cad26c6bf` (upstream `0294_chilly_marvel_apes`, one index on `tool_mcp_gateway_tokens`) on `main` at `6536cd3fc`. `generate` wrote `0295_glamorous_thaddeus_ross` and a journal entry with `idx` 295; its SQL matched upstream's except upstream's `IF NOT EXISTS`, so upstream's body was kept. `check:migrations` passed. On a scratch PostgreSQL restored from the newest live backup (`paperclip-20261005-013700.sql.gz`), `migrate` applied 2 pending migrations (our unreleased `0294` and the new `0295`), the index was present, and a second `migrate` said "No pending migrations".
 
+## Better Auth 1.7.16 upgrade
+
+Better Auth 1.7.3 and later identify accounts by `provider_id` and `account_id`.
+They no longer write the `issuer` column that 1.7.0–1.7.2 required. Migration
+`0422_better_auth_account_identity` (upstream `0465`) must run before the updated
+server starts. It makes `issuer` nullable, keeps its existing values, removes the
+old issuer index, and adds a unique index on the provider/account pair.
+
+Before the upgrade, check for duplicate provider/account pairs:
+
+```sql
+SELECT provider_id, account_id, count(*)
+FROM account
+GROUP BY provider_id, account_id
+HAVING count(*) > 1;
+```
+
+Resolve any duplicates before migration. Keep different users separate. A duplicate
+makes index creation fail rather than leave an ambiguous login identity.
+Do not restore the issuer `NOT NULL` constraint on rollback while new rows have
+null issuers. See the [Better Auth upgrade guide](https://better-auth.com/docs/guides/1-7-upgrade-guide).
+
 ## Cloud runtime identity singleton
 
 The private `instance_settings` row whose singleton key is
