@@ -1,9 +1,12 @@
-// Staging holds the edits (John, 7 Nov): within a few minutes of any merge to website main, the
-// website team agent puts main on staging (gre3833) with `npm run deploy:staging`. GSAM only
-// watches and hands the work over on a task, so the Netlify token never leaves the agent's
-// deploy environment (and never goes on GitHub). One open task at a time; a failure stays on
+// Staging holds the edits (John, 7 Nov): the website team agent puts main on staging (gre3833) with
+// `npm run deploy:staging`. GSAM only watches and hands the work over on a task, so the Netlify token never
+// leaves the agent's deploy environment (and never goes on GitHub). One open task at a time; a failure stays on
 // that task, and the watch raises no new one until it is closed.
-import { and, eq, like, notInArray } from "drizzle-orm";
+// Credits (John, 12 Nov): each staging upload is a 15-credit production deploy, so code merges no longer go
+// straight to staging. A Publish (a content release waiting) still goes at once; code alone goes at most twice a
+// day, in the 07:00 and 15:00 UK windows; a person can always ask the team for one. And never twice for the same
+// commit and release: on 8 Nov the watch raised 109 tasks and staging took commit 5a57691 75 times.
+import { and, desc, eq, like, notInArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { issues, websiteSite } from "@greatstone/db";
 import { logger } from "../../middleware/logger.js";
@@ -27,12 +30,37 @@ export const STAGING_WATCH_CALL_TIMEOUT_MS = 20_000;
 export const STAGING_DEPLOYS_PER_PAGE = 10;
 export const STAGING_DEPLOYS_CAP = 100;
 const CHECK_EVERY_MS = 2 * 60_000;
+/** UK hours at which code merges (with no content waiting) may go to staging: at most one task per window. */
+export const STAGING_WINDOWS_UK = [7, 15] as const;
+
+/** The start of the latest UK staging window at or before `now`. */
+export function latestStagingWindow(now: Date): Date {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(now).map((p) => [p.type, Number(p.value)]));
+  const wall = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  // ponytail: uses now's UK offset for the window; off by an hour only between midnight and 02:00 on a clock-change day.
+  const offset = wall - Math.floor(now.getTime() / 1000) * 1000;
+  const hour = [...STAGING_WINDOWS_UK].reverse().find((h) => parts.hour >= h);
+  const start = hour === undefined
+    ? Date.UTC(parts.year, parts.month - 1, parts.day - 1, STAGING_WINDOWS_UK[STAGING_WINDOWS_UK.length - 1])
+    : Date.UTC(parts.year, parts.month - 1, parts.day, hour);
+  return new Date(start - offset);
+}
+
+export function stagingWatchTaskTitle(sha: string, content: number | null) {
+  return `${STAGING_WATCH_TITLE} (${sha.slice(0, 7)}${content === null ? "" : `, content release ${content}`})`;
+}
 
 export interface StagingWatchDeps {
   mainCommit(): Promise<string>;
   stagedCommit(): Promise<string | null>;
   /** The watch's task that is not done or cancelled, if any. */
   openTask(): Promise<{ identifier: string | null } | null>;
+  /** Whether a watch task with exactly this title was ever raised, in any status. */
+  taskExists(title: string): Promise<boolean>;
+  /** When the newest watch task was raised, or null. */
+  lastTaskAt(): Promise<Date | null>;
   /** The content release staging's store points at (`current`, which GSAM's publish writes), or null. */
   storeRelease(): Promise<number | null>;
   /** The content release staging's pages were built with (their gsam-release mark), or null when they name none. */
@@ -90,9 +118,9 @@ export async function pagedStagedCommit(readPage: (page: number) => Promise<Para
 }
 
 /** One sweep: the check, then the alert after 3 failures in a row (one task), closed by the next success. */
-export async function stagingWatchSweep(deps: StagingWatchDeps, state: { failures: number }) {
+export async function stagingWatchSweep(deps: StagingWatchDeps, state: { failures: number }, now = new Date()) {
   try {
-    const result = await stagingWatchTick(deps);
+    const result = await stagingWatchTick(deps, now);
     state.failures = 0;
     const alert = await deps.openAlert();
     if (alert) await deps.closeAlert(alert.id);
@@ -107,13 +135,20 @@ export async function stagingWatchSweep(deps: StagingWatchDeps, state: { failure
   }
 }
 
-export async function stagingWatchTick(deps: StagingWatchDeps) {
+export async function stagingWatchTick(deps: StagingWatchDeps, now = new Date()) {
   const [main, staged, store, built] = await Promise.all([deps.mainCommit(), deps.stagedCommit(), deps.storeRelease(), deps.builtRelease()]);
   // Content waits while staging's pages were not built with the release its store holds (GRE-4664). Both come from
   // staging itself, so a finished deploy is its own record and a newer publish names the newer release.
   const content = store !== null && store !== built ? store : null;
   if (main === staged && content === null) return "current" as const;
   if (await deps.openTask()) return "busy" as const;
+  // The same commit and release never get a second task, whatever became of the first (8 Nov: 109 tasks).
+  if (await deps.taskExists(stagingWatchTaskTitle(main, content))) return "duplicate" as const;
+  // Code alone waits for the next UK window; a Publish (content waiting) goes now.
+  if (content === null) {
+    const last = await deps.lastTaskAt();
+    if (last && last >= latestStagingWindow(now)) return "waiting" as const;
+  }
   await deps.createTask(main, staged, content);
   return "created" as const;
 }
@@ -125,7 +160,7 @@ export function stagingWatchTaskDescription(sha: string, staged: string | null, 
     ...(content === null ? [] : [`GSAM content release ${content} was published to staging's store and waits for a staging rebuild (page edits from the Website module).`]),
     "",
     `In a clean checkout of ${WEBSITE_REPO} detached at origin main, run \`${env}npm run deploy:staging\` with GSAM_TASK_ID set to this task. No card is needed and it never touches the public site.`,
-    "Done when it succeeds (it also rebuilds the GSAM editor). If it fails, mark this task blocked with the error: the watch raises no new task while this one is open, so the failure stays in sight.",
+    "Done when it succeeds. If it fails, mark this task blocked with the error: the watch raises no new task while this one is open, so the failure stays in sight.",
   ].join("\n");
 }
 
@@ -170,6 +205,23 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
         .where(and(eq(issues.companyId, site.companyId), like(issues.title, `${STAGING_WATCH_TITLE}%`), notInArray(issues.status, ["done", "cancelled"])))
         .limit(1);
       return row ?? null;
+    },
+    async taskExists(title) {
+      const [row] = await db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(and(eq(issues.companyId, site.companyId), eq(issues.title, title)))
+        .limit(1);
+      return Boolean(row);
+    },
+    async lastTaskAt() {
+      const [row] = await db
+        .select({ createdAt: issues.createdAt })
+        .from(issues)
+        .where(and(eq(issues.companyId, site.companyId), like(issues.title, `${STAGING_WATCH_TITLE}%`)))
+        .orderBy(desc(issues.createdAt))
+        .limit(1);
+      return row?.createdAt ?? null;
     },
     async openAlert() {
       const [row] = await db
@@ -219,7 +271,7 @@ function defaultDeps(db: Db, site: typeof websiteSite.$inferSelect): StagingWatc
     async createTask(sha, staged, content) {
       const team = await websiteTeamAgent(db, site.companyId, site.propertyId);
       await issueService(db).create(site.companyId, {
-        title: `${STAGING_WATCH_TITLE} (${sha.slice(0, 7)}${content === null ? "" : `, content release ${content}`})`,
+        title: stagingWatchTaskTitle(sha, content),
         description: stagingWatchTaskDescription(sha, staged, content),
         status: "todo",
         priority: "high",
@@ -241,7 +293,7 @@ export async function runStagingWatch(db: Db, now = Date.now()) {
   const [site] = await db.select().from(websiteSite).where(eq(websiteSite.netlifySiteId, "3b1e97e6-e184-4251-badd-deed532be3ab")).limit(1);
   if (!site || site.archivedAt) return;
   try {
-    const result = await stagingWatchSweep(defaultDeps(db, site), sweepState);
+    const result = await stagingWatchSweep(defaultDeps(db, site), sweepState, new Date(now));
     if (result === "created") logger.info({ siteId: site.id }, "website staging watch handed main to the website team");
   } catch (err) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "website staging watch could not check");
