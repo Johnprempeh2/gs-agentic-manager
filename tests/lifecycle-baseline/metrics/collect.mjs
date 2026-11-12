@@ -42,7 +42,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
       execution_run_id as "executionRunId", execution_policy as "executionPolicy", updated_at as "updatedAt", completed_at as "completedAt",
-      tabled_by_user_id as "tabledByUserId"
+      tabled_by_user_id as "tabledByUserId", unblock_descriptor as "unblockDescriptor"
     from issues where true ${scope("company_id")}`;
   // Who last put each backlog issue there: tabling, a status change or creation.
   const backlogParkers = await tx`
@@ -92,6 +92,9 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const agents = await tx`
     select id, name, status, coalesce((runtime_config->'heartbeat'->>'enabled')::boolean, false) as "timerHeartbeat"
     from agents where true ${scope("company_id")}`;
+  const routines = await tx`
+    select parent_issue_id as "parentIssueId", status from routines
+    where parent_issue_id is not null ${scope("company_id")}`;
   const retryExhaustions = await tx`
     select e.run_id as "runId", e.created_at as "createdAt" from heartbeat_run_events e
     where e.message like 'Bounded retry exhausted%' and e.created_at >= ${since} ${scope("e.company_id")}`;
@@ -120,7 +123,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       payload->'heartbeatSkip'->>'requestedReason' as "requestedReason"
     from agent_wakeup_requests
     where status = 'skipped' and reason = 'issue_rewake_throttled' and requested_at >= ${since} ${scope("company_id")}`;
-  return { now, issues, backlogParkers, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, repairEscalations, repairRuns, throttledWakes };
+  return { now, issues, backlogParkers, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, routines, repairEscalations, repairRuns, throttledWakes };
 });
 await sql.end();
 

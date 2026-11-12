@@ -1,7 +1,7 @@
 import { computeStrandedTrees } from "./compute.mjs";
 
 export const R1_TABLE_COLUMNS = Object.freeze({
-  issues: ["id", "company_id", "identifier", "parent_id", "status", "assignee_agent_id", "assignee_user_id", "conversation_user_id", "conversation_state", "monitor_next_check_at", "monitor_wake_requested_at", "hidden_at", "updated_at", "tabled_by_user_id"],
+  issues: ["id", "company_id", "identifier", "parent_id", "status", "assignee_agent_id", "assignee_user_id", "conversation_user_id", "conversation_state", "monitor_next_check_at", "monitor_wake_requested_at", "hidden_at", "updated_at", "tabled_by_user_id", "unblock_descriptor"],
   activity_log: ["company_id", "entity_type", "entity_id", "actor_type", "action", "details", "created_at"],
   heartbeat_runs: ["company_id", "id", "status", "context_snapshot", "native_issue_id", "created_at", "started_at", "last_output_at", "finished_at"],
   agent_wakeup_requests: ["company_id", "status", "payload"],
@@ -12,6 +12,7 @@ export const R1_TABLE_COLUMNS = Object.freeze({
   issue_tree_holds: ["company_id", "root_issue_id", "status"],
   issue_relations: ["company_id", "issue_id", "related_issue_id", "type"],
   agents: ["company_id", "id", "status", "runtime_config"],
+  routines: ["company_id", "parent_issue_id", "status"],
 });
 
 const rowQueries = {
@@ -19,7 +20,8 @@ const rowQueries = {
     assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
     conversation_user_id as "conversationUserId", conversation_state as "conversationState",
     monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt",
-    hidden_at as "hiddenAt", updated_at as "updatedAt", tabled_by_user_id as "tabledByUserId"
+    hidden_at as "hiddenAt", updated_at as "updatedAt", tabled_by_user_id as "tabledByUserId",
+    unblock_descriptor as "unblockDescriptor"
     from public.issues where company_id = $1`,
   backlogParkers: `select distinct on (a.entity_id) a.company_id as "companyId", a.entity_id as "issueId", a.actor_type as "actorType"
     from public.activity_log a join public.issues i on i.id::text = a.entity_id
@@ -50,6 +52,8 @@ const rowQueries = {
     from public.issue_relations where company_id = $1 and type = 'blocks'`,
   agents: `select company_id as "companyId", id, status, coalesce((runtime_config->'heartbeat'->>'enabled')::boolean, false) as "timerHeartbeat"
     from public.agents where company_id = $1`,
+  routines: `select company_id as "companyId", parent_issue_id as "parentIssueId", status
+    from public.routines where company_id = $1 and parent_issue_id is not null`,
 };
 
 const references = {
@@ -58,10 +62,11 @@ const references = {
   interactions: ["issueId"], approvals: ["issueId"], recoveryActions: ["sourceIssueId"],
   treeHolds: ["rootIssueId"], relations: ["blockerIssueId", "blockedIssueId"],
   backlogParkers: ["issueId"],
+  routines: ["parentIssueId"],
 };
 
 const requiredColumns = {
-  issues: ["id", "companyId", "identifier", "parentId", "status", "assigneeAgentId", "assigneeUserId", "conversationUserId", "conversationState", "monitorNextCheckAt", "monitorWakeRequestedAt", "hiddenAt", "updatedAt", "tabledByUserId"],
+  issues: ["id", "companyId", "identifier", "parentId", "status", "assigneeAgentId", "assigneeUserId", "conversationUserId", "conversationState", "monitorNextCheckAt", "monitorWakeRequestedAt", "hiddenAt", "updatedAt", "tabledByUserId", "unblockDescriptor"],
   backlogParkers: ["companyId", "issueId", "actorType"],
   runs: ["companyId", "id", "status", "issueId", "taskId", "nativeIssueId", "createdAt", "startedAt", "lastOutputAt", "finishedAt"],
   wakeRequests: ["companyId", "status", "issueId", "taskId", "contextIssueId", "contextTaskId"],
@@ -71,6 +76,7 @@ const requiredColumns = {
   treeHolds: ["companyId", "rootIssueId", "status"],
   relations: ["companyId", "blockerIssueId", "blockedIssueId"],
   agents: ["companyId", "id", "status", "timerHeartbeat"],
+  routines: ["companyId", "parentIssueId", "status"],
 };
 
 export function validateR1Snapshot(snapshot, companyId) {

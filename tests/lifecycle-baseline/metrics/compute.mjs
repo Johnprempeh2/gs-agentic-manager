@@ -128,6 +128,9 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     const next = ms(issue.monitorNextCheckAt);
     if (next != null && next > nowMs - graceMs) addLive([issue.id], "monitor:scheduled");
   }
+  for (const routine of snapshot.routines ?? []) {
+    if (routine.status === "active") addLive([routine.parentIssueId], "routine:active");
+  }
 
   const agents = new Map((snapshot.agents ?? []).map((agent) => [agent.id, agent]));
   for (const issue of issues) {
@@ -173,7 +176,12 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
   }
   // An agent chat in `waiting` is on its user's turn, so the user owns it.
   const waitsOnUser = (issue) => Boolean(issue.conversationUserId) && issue.conversationState === "waiting";
-  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || waitsOnUser(issue) || isHeld(issue)).map((issue) => issue.id));
+  const waitsOnHumanUnblockOwner = (issue) => issue.unblockDescriptor?.owner === "board"
+    || Boolean(issue.unblockDescriptor?.owner?.userId);
+  const waitsOnScheduledUnblockDate = (issue) => Boolean(issue.assigneeAgentId)
+    && /^\d{4}-\d{2}-\d{2}$/.test(issue.unblockDescriptor?.expectedBy ?? "")
+    && issue.unblockDescriptor.expectedByWokenFor !== issue.unblockDescriptor.expectedBy;
+  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || waitsOnUser(issue) || waitsOnHumanUnblockOwner(issue) || waitsOnScheduledUnblockDate(issue) || isHeld(issue)).map((issue) => issue.id));
   // A parent waits on its open children and a blocked issue on its blockers:
   // either is covered once what it waits on is covered. Iterate to a fixed point.
   for (let changed = true; changed;) {

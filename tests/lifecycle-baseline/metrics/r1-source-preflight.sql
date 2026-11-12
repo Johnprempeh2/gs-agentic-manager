@@ -9,7 +9,7 @@ DO $preflight$
 DECLARE missing text;
 BEGIN
   WITH required(table_name, column_name) AS (VALUES
-    ('issues','id'), ('issues','company_id'), ('issues','identifier'), ('issues','parent_id'), ('issues','status'), ('issues','assignee_agent_id'), ('issues','assignee_user_id'), ('issues','conversation_user_id'), ('issues','conversation_state'), ('issues','monitor_next_check_at'), ('issues','monitor_wake_requested_at'), ('issues','hidden_at'), ('issues','updated_at'), ('issues','tabled_by_user_id'),
+    ('issues','id'), ('issues','company_id'), ('issues','identifier'), ('issues','parent_id'), ('issues','status'), ('issues','assignee_agent_id'), ('issues','assignee_user_id'), ('issues','conversation_user_id'), ('issues','conversation_state'), ('issues','monitor_next_check_at'), ('issues','monitor_wake_requested_at'), ('issues','hidden_at'), ('issues','updated_at'), ('issues','tabled_by_user_id'), ('issues','unblock_descriptor'),
     ('activity_log','company_id'), ('activity_log','entity_type'), ('activity_log','entity_id'), ('activity_log','actor_type'), ('activity_log','action'), ('activity_log','details'), ('activity_log','created_at'),
     ('heartbeat_runs','company_id'), ('heartbeat_runs','id'), ('heartbeat_runs','status'), ('heartbeat_runs','context_snapshot'), ('heartbeat_runs','native_issue_id'), ('heartbeat_runs','created_at'), ('heartbeat_runs','started_at'), ('heartbeat_runs','last_output_at'), ('heartbeat_runs','finished_at'),
     ('agent_wakeup_requests','company_id'), ('agent_wakeup_requests','status'), ('agent_wakeup_requests','payload'),
@@ -19,7 +19,8 @@ BEGIN
     ('issue_recovery_actions','company_id'), ('issue_recovery_actions','source_issue_id'), ('issue_recovery_actions','resolved_at'), ('issue_recovery_actions','status'), ('issue_recovery_actions','cause'), ('issue_recovery_actions','evidence'),
     ('issue_tree_holds','company_id'), ('issue_tree_holds','root_issue_id'), ('issue_tree_holds','status'),
     ('issue_relations','company_id'), ('issue_relations','issue_id'), ('issue_relations','related_issue_id'), ('issue_relations','type'),
-    ('agents','company_id'), ('agents','id'), ('agents','status'), ('agents','runtime_config'))
+    ('agents','company_id'), ('agents','id'), ('agents','status'), ('agents','runtime_config'),
+    ('routines','company_id'), ('routines','parent_issue_id'), ('routines','status'))
   SELECT string_agg(format('%I.%I', r.table_name, r.column_name), ', ')
   INTO missing FROM required r
   LEFT JOIN information_schema.columns c ON c.table_schema = 'public'
@@ -74,7 +75,8 @@ FROM pg_roles WHERE rolname = current_user;
 WITH names(name) AS (VALUES
   ('public.issues'), ('public.activity_log'), ('public.heartbeat_runs'), ('public.agent_wakeup_requests'),
   ('public.issue_thread_interactions'), ('public.issue_approvals'), ('public.approvals'),
-  ('public.issue_recovery_actions'), ('public.issue_tree_holds'), ('public.issue_relations'), ('public.agents'))
+  ('public.issue_recovery_actions'), ('public.issue_tree_holds'), ('public.issue_relations'), ('public.agents'),
+  ('public.routines'))
 SELECT count(*) AS required_tables,
        count(*) FILTER (WHERE has_table_privilege(current_user, name, 'SELECT')) AS selectable_tables,
        count(*) FILTER (WHERE has_table_privilege(current_user, name, 'INSERT')

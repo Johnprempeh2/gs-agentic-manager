@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { R1_TABLE_COLUMNS, captureR1Snapshot, calculateR1, summariseR1, validateR1Snapshot } from "./r1-snapshot.mjs";
 
 const snapshotAt = "2026-10-29T12:00:00.000Z";
-const issue = { id: "root", companyId: "c1", identifier: "GRE-TEST", parentId: null, status: "blocked", assigneeAgentId: "a1", assigneeUserId: null, conversationUserId: null, conversationState: null, monitorNextCheckAt: null, monitorWakeRequestedAt: null, hiddenAt: null, updatedAt: "2026-10-29T10:00:00.000Z", tabledByUserId: null };
-const fixture = () => ({ snapshotAt, issues: [{ ...issue }], backlogParkers: [], runs: [], wakeRequests: [], interactions: [], approvals: [], recoveryActions: [], treeHolds: [], relations: [], agents: [{ companyId: "c1", id: "a1", status: "idle", timerHeartbeat: false }] });
+const issue = { id: "root", companyId: "c1", identifier: "GRE-TEST", parentId: null, status: "blocked", assigneeAgentId: "a1", assigneeUserId: null, conversationUserId: null, conversationState: null, monitorNextCheckAt: null, monitorWakeRequestedAt: null, hiddenAt: null, updatedAt: "2026-10-29T10:00:00.000Z", tabledByUserId: null, unblockDescriptor: null };
+const fixture = () => ({ snapshotAt, issues: [{ ...issue }], backlogParkers: [], runs: [], wakeRequests: [], interactions: [], approvals: [], recoveryActions: [], treeHolds: [], relations: [], agents: [{ companyId: "c1", id: "a1", status: "idle", timerHeartbeat: false }], routines: [] });
 
 test("R1 source manifest projects unblock descriptors and active routine parents", () => {
   assert.ok(R1_TABLE_COLUMNS.issues.includes("unblock_descriptor"));
@@ -36,6 +36,7 @@ test("R1 capture rejects missing projected columns in each nonempty input", () =
     treeHolds: { companyId: "c1", rootIssueId: "root", status: "active" },
     relations: { companyId: "c1", blockerIssueId: "root", blockedIssueId: "root" },
     agents: { companyId: "c1", id: "a1", status: "idle", timerHeartbeat: false },
+    routines: { companyId: "c1", parentIssueId: "root", status: "active" },
   })) {
     for (const column of Object.keys(row)) {
       const incomplete = { ...row };

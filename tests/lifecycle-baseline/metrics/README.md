@@ -47,8 +47,14 @@ is covered when any of these holds:
   - a monitor whose next check is in the future or overdue by less than the
     grace period (the server's `hasScheduledIssueMonitorPath` uses "in the
     future");
+  - an active routine whose `parent_issue_id` is the issue (the server treats
+    that routine as owning the next continuation);
   - an assignee agent with a timer heartbeat that can be invoked;
 - it is assigned to a human (humans act without being woken);
+- its unblock descriptor is owned by the board or a named user (the server's
+  human-wait path rechecks these waits), or it has an `expectedBy` date whose
+  one waiting-date wake has not fired; an agent-owned descriptor without that
+  scheduled wake is not live because the agent cannot wake itself;
 - an active tree hold sits on it or an ancestor (a human deliberately stopped it);
 - an open child is covered (the parent waits on its children); or
 - an open blocker is covered (followed through chains).
