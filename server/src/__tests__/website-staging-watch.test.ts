@@ -5,9 +5,11 @@ import {
   STAGING_WATCH_CALL_TIMEOUT_MS,
   STAGING_WATCH_FAILURES_BEFORE_ALERT,
   StagingWatchError,
+  latestStagingWindow,
   pagedStagedCommit,
   stagingWatchSweep,
   stagingWatchTaskDescription,
+  stagingWatchTaskTitle,
   stagingWatchTick,
   watchCall,
   type StagingWatchDeps,
@@ -18,6 +20,8 @@ function deps(over: Partial<StagingWatchDeps>): StagingWatchDeps {
     mainCommit: async () => "b".repeat(40),
     stagedCommit: async () => "a".repeat(40),
     openTask: async () => null,
+    taskExists: async () => false,
+    lastTaskAt: async () => null,
     storeRelease: async () => null,
     builtRelease: async () => null,
     createTask: vi.fn(async () => undefined),
@@ -84,6 +88,45 @@ describe("website staging watch", () => {
     expect(unnamed.createTask).toHaveBeenCalledWith("b".repeat(40), "b".repeat(40), 3);
     const empty = deps({ stagedCommit: async () => "b".repeat(40), builtRelease: async () => 3 });
     expect(await stagingWatchTick(empty)).toBe("current");
+  });
+
+  it("never raises a second task for a commit and release that already had one (8 Nov: 109 tasks, 75 deploys)", async () => {
+    // Staging's pages never showed the release its store held, so every finished task was raised again.
+    const titles: string[] = [];
+    const d = deps({
+      stagedCommit: async () => "b".repeat(40),
+      storeRelease: async () => 7,
+      builtRelease: async () => 6,
+      taskExists: async (title) => titles.includes(title),
+      createTask: vi.fn(async (sha: string, _staged: string | null, content: number | null) => { titles.push(stagingWatchTaskTitle(sha, content)); }),
+    });
+    expect(await stagingWatchTick(d)).toBe("created");
+    for (let i = 0; i < 5; i += 1) expect(await stagingWatchTick(d)).toBe("duplicate");
+    expect(d.createTask).toHaveBeenCalledTimes(1);
+    expect(titles).toEqual([`Put website main on staging (bbbbbbb, content release 7)`]);
+  });
+
+  it("puts code on staging at most once per UK window (07:00 and 15:00), but a Publish goes at once", async () => {
+    const at = (iso: string) => new Date(iso);
+    let last: Date | null = at("2026-11-12T07:05:00Z"); // 12 Nov is GMT, so UK 07:05
+    const d = deps({ lastTaskAt: async () => last });
+    expect(await stagingWatchTick(d, at("2026-11-12T11:00:00Z"))).toBe("waiting");
+    expect(await stagingWatchTick(d, at("2026-11-12T14:59:00Z"))).toBe("waiting");
+    expect(await stagingWatchTick(d, at("2026-11-12T15:00:00Z"))).toBe("created");
+    last = at("2026-11-12T15:00:00Z");
+    expect(await stagingWatchTick(d, at("2026-11-13T06:59:00Z"))).toBe("waiting");
+    expect(await stagingWatchTick(d, at("2026-11-13T07:01:00Z"))).toBe("created");
+    expect(d.createTask).toHaveBeenCalledTimes(2);
+    const publish = deps({ lastTaskAt: async () => at("2026-11-12T11:00:00Z"), storeRelease: async () => 8, builtRelease: async () => 7 });
+    expect(await stagingWatchTick(publish, at("2026-11-12T11:30:00Z"))).toBe("created");
+  });
+
+  it("finds the latest UK window in GMT and in BST", () => {
+    expect(latestStagingWindow(new Date("2026-11-12T10:00:00Z")).toISOString()).toBe("2026-11-12T07:00:00.000Z");
+    expect(latestStagingWindow(new Date("2026-11-12T16:30:00Z")).toISOString()).toBe("2026-11-12T15:00:00.000Z");
+    expect(latestStagingWindow(new Date("2026-11-12T05:00:00Z")).toISOString()).toBe("2026-11-11T15:00:00.000Z");
+    expect(latestStagingWindow(new Date("2026-07-01T07:30:00Z")).toISOString()).toBe("2026-07-01T06:00:00.000Z");
+    expect(latestStagingWindow(new Date("2026-07-01T05:30:00Z")).toISOString()).toBe("2026-06-30T14:00:00.000Z");
   });
 
   it("raises no second task while one is open (single flight, a failure stays on its task)", async () => {
