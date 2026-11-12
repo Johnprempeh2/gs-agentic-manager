@@ -82,7 +82,7 @@ John must make or identify a dedicated login with `CONNECT` to `paperclip`, sche
 
 | Table | Columns read | Reason |
 |---|---|---|
-| `issues` | `id`, `company_id`, `identifier`, `parent_id`, `status`, `assignee_agent_id`, `assignee_user_id`, `conversation_user_id`, `conversation_state`, `monitor_next_check_at`, `monitor_wake_requested_at`, `hidden_at`, `updated_at`, `tabled_by_user_id` | Tree, owner, monitor and activity state |
+| `issues` | `id`, `company_id`, `identifier`, `parent_id`, `status`, `assignee_agent_id`, `assignee_user_id`, `conversation_user_id`, `conversation_state`, `monitor_next_check_at`, `monitor_wake_requested_at`, `hidden_at`, `updated_at`, `tabled_by_user_id`, `unblock_descriptor` | Tree, owner, monitor, human wait and activity state |
 | `activity_log` | `company_id`, `entity_type`, `entity_id`, `actor_type`, `action`, `details`, `created_at` | Human-parked backlog blockers |
 | `heartbeat_runs` | `company_id`, `id`, `status`, `context_snapshot`, `native_issue_id`, `created_at`, `started_at`, `last_output_at`, `finished_at` | Live runs and historical tree activity |
 | `agent_wakeup_requests` | `company_id`, `status`, `payload` | Queued, claimed and deferred wakes |
@@ -92,6 +92,7 @@ John must make or identify a dedicated login with `CONNECT` to `paperclip`, sche
 | `issue_tree_holds` | `company_id`, `root_issue_id`, `status` | Deliberate hold |
 | `issue_relations` | `company_id`, `issue_id`, `related_issue_id`, `type` | Blocker coverage |
 | `agents` | `company_id`, `id`, `status`, `runtime_config` | Timer heartbeat path |
+| `routines` | `company_id`, `parent_issue_id`, `status` | Active routine continuation path |
 
 The run query has **no time cutoff**. It reads every retained run linked to a current Greatstone issue, including runs older than seven days that can move a tree's last activity time. The issue query reads all current company issues. The activity query reads the latest relevant backlog transition. The source inventory must establish the full seven-day interval and older relevant runs. A missing table or selected column fails at SQL read; a missing projected field, foreign-company row or foreign issue reference fails validation. Missing coverage fails before connecting. Failure is never `R1 = 0`.
 
