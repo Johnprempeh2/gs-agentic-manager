@@ -196,11 +196,11 @@ export function DeepDiveRegisters() {
             const proposal = draft.payload as DeepDiveRecordProposal;
             return (
               <DraftCard key={draft.id} draft={draft}>
-                <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[minmax(0,12rem)_1fr]">
+                <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
                   {Object.entries(proposal.values).map(([column, value]) => (
                     <div key={column} className="contents">
                       <dt className="text-xs text-muted-foreground">{column}</dt>
-                      <dd className="break-words">{value}</dd>
+                      <dd className="break-words sm:col-span-2">{value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -253,7 +253,7 @@ function Workstreams() {
               {name}
               <button
                 type="button"
-                className="rounded-full px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="rounded-full px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
                 aria-label={`Remove ${name}`}
                 onClick={() => save.mutate(fields.workstreams.filter((w) => w !== name))}
               >
@@ -302,7 +302,7 @@ export function PortalHeader() {
                 end={tab.path === ""}
                 className={({ isActive }) =>
                   cn(
-                    "inline-flex border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    "inline-flex border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
                     isActive ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
                   )
                 }

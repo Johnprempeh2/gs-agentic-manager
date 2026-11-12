@@ -29,7 +29,7 @@ export function DeepDiveTile({
     <Link
       to={to}
       className={cn(
-        "flex min-h-32 flex-col gap-2 rounded-lg border border-border bg-card p-4 text-card-foreground shadow-xs transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "flex min-h-32 flex-col gap-2 rounded-lg border border-border bg-card p-4 text-card-foreground shadow-xs transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
         className,
       )}
     >
