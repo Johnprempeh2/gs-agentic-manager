@@ -2941,6 +2941,13 @@
       "when": 1794470400000,
       "tag": "0421_deep_dive_per_client",
       "breakpoints": true
+    },
+    {
+      "idx": 422,
+      "version": "7",
+      "when": 1794556800000,
+      "tag": "0422_better_auth_account_identity",
+      "breakpoints": true
     }
   ]
 }
