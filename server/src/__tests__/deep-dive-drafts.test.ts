@@ -220,7 +220,14 @@ describeEmbeddedPostgres("Deep Dive per client and agent drafts (GRE-4430)", () 
       await api().get(`/api/companies/${company.id}/deep-dive/organisation`).expect(400);
 
       // The tiles show both clients, each with its own waiting work.
-      const tiles = (await api().get(`/api/companies/${company.id}/deep-dives`).expect(200)).body.deepDives;
+      const listed = (await api().get(`/api/companies/${company.id}/deep-dives`).expect(200)).body;
+      const tiles = listed.deepDives;
+      // Only client journeys (pipelines with a Deep Dive stage) can start a Deep Dive.
+      expect(listed.clients.map((c: { name: string }) => c.name).sort()).toEqual(["Demo client A", "Demo client B"]);
+      const [sales] = await db.insert(pipelines).values({ companyId: company.id, key: "sales", name: "Sales" }).returning();
+      const [lead] = await db.insert(pipelineStages).values({ pipelineId: sales!.id, key: "lead", name: "Lead", kind: "working", position: 0 }).returning();
+      await db.insert(pipelineCases).values({ companyId: company.id, pipelineId: sales!.id, stageId: lead!.id, caseKey: randomUUID(), title: "Not a client yet" });
+      expect((await api().get(`/api/companies/${company.id}/deep-dives`).expect(200)).body.clients).toHaveLength(2);
       expect(tiles.map((t: { clientName: string; draftsWaiting: number }) => [t.clientName, t.draftsWaiting]).sort()).toEqual([
         ["Demo client A", 1],
         ["Demo client B", 0],
