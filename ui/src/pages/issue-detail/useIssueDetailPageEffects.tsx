@@ -1,6 +1,8 @@
 import type { useNavigationType } from "@/lib/router";
 import { Settings as ChatSettings } from "lucide-react";
 import { agentDetailHref } from "../agent-detail-navigation";
+import { ConversationHeaderActions } from "@/components/MessagesPane";
+import { agentConversationKey } from "@/lib/conversations";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useCallback, useLayoutEffect, useRef } from "react";
 import { Link } from "@/lib/router";
@@ -161,12 +163,25 @@ export function useIssueDetailPageEffects({
   // A board question chat (GRE-1186) is a plain conversation: no task side panel or artifacts rail.
   const questionsOnly = Boolean(conversation?.questionsOnly || issue?.originKind === "strategy_board_question");
   const conversationAgent = conversation?.agent ?? agents?.find(agent => agent.id === issue?.conversationAgentId);
+  const inMessages = Boolean(conversation) && !questionsOnly;
   useEffect(() => {
     if (conversationAgent) {
-      setBreadcrumbs([{
+      const crumb = {
         label: conversationAgent.name,
         leading: <AgentAvatar agent={conversationAgent} size={24} />,
         leadingKey: `agent:${conversationAgent.id}`,
+      };
+      // In Messages the header carries status, pin and profile, and a phone's
+      // back arrow returns to the list.
+      setBreadcrumbs(inMessages ? [
+        { label: "Messages", href: "/messages" },
+        {
+          ...crumb,
+          trailing: <ConversationHeaderActions conversationKey={agentConversationKey(conversationAgent.id)} />,
+          trailingKey: `conversation:${conversationAgent.id}`,
+        },
+      ] : [{
+        ...crumb,
         trailing: <Button variant="ghost" size="icon-xs" asChild aria-label={`Configure ${conversationAgent.name}`}><Link to={agentDetailHref(conversationAgent.id, "runtime")}><ChatSettings /></Link></Button>,
         trailingKey: `configure:${conversationAgent.id}`,
       }]);
@@ -185,6 +200,7 @@ export function useIssueDetailPageEffects({
     ]);
   }, [
     conversationAgent,
+    inMessages,
     breadcrumbTitle,
     breadcrumbIdentifier,
     hasLiveRuns,

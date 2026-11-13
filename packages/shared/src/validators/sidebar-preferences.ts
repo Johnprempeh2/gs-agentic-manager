@@ -30,6 +30,8 @@ export const sidebarLayoutSchema = z.object({
   hidden: z.array(sidebarKeySchema).max(100).optional(),
   pinned: z.array(sidebarKeySchema).max(100).optional(),
   collapsed: z.record(sidebarKeySchema, z.boolean()).optional(),
+  /** Team chats pinned to the sidebar and the top of Messages (`chat:<id>`); agent chats pin with a star. */
+  pinnedChats: z.array(z.string().regex(/^chat:[0-9a-f-]{36}$/i)).max(50).optional(),
 });
 
 export type SidebarLayout = z.infer<typeof sidebarLayoutSchema>;

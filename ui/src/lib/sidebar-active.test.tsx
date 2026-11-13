@@ -28,7 +28,8 @@ describe("sidebarActiveCandidates", () => {
   });
 
   it("covers chats and project pages, and leaves every other page to its own row", () => {
-    expect(sidebarActiveCandidates("/chats/everest", "")).toEqual(["chat:everest"]);
+    expect(sidebarActiveCandidates("/chats/everest", "")).toEqual(["chat:everest", "item:messages"]);
+    expect(sidebarActiveCandidates("/messages/c1", "")).toEqual(["chat:c1", "item:messages"]);
     expect(sidebarActiveCandidates("/projects/client-portal/tree", "")).toEqual(["project:client-portal", "item:projects"]);
     expect(sidebarActiveCandidates("/activity/timeline", "")).toBeNull();
   });

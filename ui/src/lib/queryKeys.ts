@@ -3,6 +3,8 @@ export const queryKeys = {
     all: ["team-chats"] as const,
     list: (companyId: string) => ["team-chats", "list", companyId] as const,
     detail: (chatId: string) => ["team-chats", "detail", chatId] as const,
+    /** Agent chats for Messages: under "team-chats" so every chat invalidation reaches them too. */
+    agentList: (companyId: string) => ["team-chats", "agent-chats", companyId] as const,
   },
   agentChats: {
     detail: (companyId: string | null, userId: string | null, agentId: string | undefined) =>

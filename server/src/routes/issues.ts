@@ -41,7 +41,7 @@ import { quietClientsService } from "../services/quiet-clients.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
-import { isTeamChat, teamChatService } from "../services/team-chats.js";
+import { chatStats, isTeamChat, teamChatService } from "../services/team-chats.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import {
@@ -187,6 +187,7 @@ import {
   type IssueRelationIssueSummary,
   type IssueReviewPolicy,
   type IssueThreadInteractionCanonicalResolverPolicy,
+  type AgentChatSummary,
   type IssueComment,
   type IssueCommentPresentation,
   type IssueQueuedCommentQueue,
@@ -19613,6 +19614,33 @@ export function issueRoutes(
       return;
     }
     res.json(bundle);
+  });
+
+  // The reader's agent chats for the Messages list: newest message, preview
+  // and unread count per agent. Board question chats stay on the board.
+  router.get("/companies/:companyId/chats", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type !== "board" || !req.actor.userId) throw forbidden("Board user access required");
+    const userId = req.actor.userId;
+    const rows = (await db
+      .select({ id: issueRows.id, agentId: issueRows.conversationAgentId, originKind: issueRows.originKind })
+      .from(issueRows)
+      .where(and(eq(issueRows.companyId, companyId), eq(issueRows.conversationUserId, userId), isNull(issueRows.hiddenAt))))
+      .filter((row) => row.agentId && !isBoardQuestionChat({ conversationAgentId: row.agentId, originKind: row.originKind }));
+    const stats = await chatStats(db, rows.map((row) => row.id), userId);
+    const summaries: AgentChatSummary[] = rows.map((row) => {
+      const stat = stats.get(row.id);
+      return {
+        agentId: row.agentId!,
+        issueId: row.id,
+        lastMessageAt: stat?.lastMessageAt ?? null,
+        lastMessagePreview: stat?.lastMessagePreview ?? null,
+        lastMessageFromMe: stat?.lastMessageFromMe ?? false,
+        unreadCount: stat?.unreadCount ?? 0,
+      };
+    });
+    res.json(summaries);
   });
 
   // Resolving an unused chat is read-only. POST is used only by first send/upload.

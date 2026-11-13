@@ -20,8 +20,11 @@ export function sidebarActiveCandidates(path: string, hash: string, issue?: Side
   }
   if (/^\/decisions\/focus\/?$/.test(path)) return ["item:decisions", "item:my-tasks"];
 
+  // A chat lights its pinned row, else "All messages".
   const chat = path.match(/^\/chats\/([^/]+)/);
-  if (chat) return [`chat:${decodeURIComponent(chat[1]!)}`];
+  if (chat) return [`chat:${decodeURIComponent(chat[1]!)}`, "item:messages"];
+  const teamChat = path.match(/^\/messages\/([^/]+)/);
+  if (teamChat) return [`chat:${decodeURIComponent(teamChat[1]!)}`, "item:messages"];
 
   const task = path.match(/^\/issues\/([^/]+)/);
   if (task && task[1] !== "new") {

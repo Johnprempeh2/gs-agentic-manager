@@ -34,9 +34,23 @@ export interface TeamChatSummary {
   title: string;
   members: TeamChatMember[];
   lastMessageAt: string | null;
+  /** The newest message as one line of plain text (teamChatSnippet). */
+  lastMessagePreview?: string | null;
+  /** The reader wrote the newest message (the list shows "You: "). */
+  lastMessageFromMe?: boolean;
   unreadCount: number;
   /** The reader muted this chat: no alerts except when @mentioned. */
   muted: boolean;
+}
+
+/** One agent chat in the Messages list: the reader's conversation with one agent. */
+export interface AgentChatSummary {
+  agentId: string;
+  issueId: string;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastMessageFromMe: boolean;
+  unreadCount: number;
 }
 
 const memberIds = {

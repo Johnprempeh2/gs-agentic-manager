@@ -66,6 +66,7 @@ const Issues = lazyPage(() => import("./pages/Issues"), "Issues");
 const Search = lazyPage(() => import("./pages/Search"), "Search");
 const AgentChat = lazyPage(() => import("./pages/AgentChat"), "AgentChat");
 const TeamChat = lazyPage(() => import("./pages/TeamChat"), "TeamChat");
+const Messages = lazyPage(() => import("./pages/Messages"), "Messages");
 const IssueChatLongThreadPerf = lazyPage(() => import("./pages/IssueChatLongThreadPerf"), "IssueChatLongThreadPerf");
 const Routines = lazyPage(() => import("./pages/Routines"), "Routines");
 const Learnings = lazyPage(() => import("./pages/Pipelines"), "Learnings");
@@ -339,6 +340,7 @@ function boardRoutes() {
       <Route path="issues/done" element={<Navigate to="/issues" replace />} />
       <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="chats/:agentRef" element={<AgentChat />} />
+      <Route path="messages" element={<Messages />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
       <Route path="issues/new" element={<NewTaskRoute />} />
       <Route path="issues/:issueId" element={<TaskDefaultView task={<IssueDetail />} loadTask={loadIssueDetailPage} taskLoaded={isIssueDetailPageLoaded} />} />

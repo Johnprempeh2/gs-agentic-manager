@@ -1453,6 +1453,11 @@ describe("IssueDetail", () => {
     await flushReact();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockIssuesApi.markRead).toHaveBeenCalledWith(canonical.id);
+    // Messages: the thread header is under Messages, so a phone's back arrow returns to the list.
+    expect(mockSetBreadcrumbs).toHaveBeenLastCalledWith([
+      { label: "Messages", href: "/messages" },
+      expect.objectContaining({ label: agent.name, trailingKey: `conversation:${agent.id}` }),
+    ]);
   });
 
   describe("idle polling", () => {

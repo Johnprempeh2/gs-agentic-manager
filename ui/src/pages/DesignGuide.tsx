@@ -176,6 +176,8 @@ import { BrandMark, BrandStoneIcon } from "@/components/BrandMark";
 import { BrandLockup } from "@/components/BrandLockup";
 import { GreatstoneLogo } from "@/components/GreatstoneLogo";
 import { EverestOrbButton } from "@/components/EverestOrb";
+import { ConversationAvatar, ConversationList, TypingDots } from "@/components/ConversationList";
+import type { Conversation } from "@/lib/conversations";
 import { BrandBuildingIcon, BrandThinkingIcon } from "@/components/BrandLoading";
 import { BrandTideHero } from "@/components/BrandTideHero";
 import { DashboardHero } from "@/components/DashboardHero";
@@ -520,7 +522,14 @@ function AgentChatPickerExample() {
   </div>;
 }
 
+const designGuideConversations: Conversation[] = [
+  { key: "agent:everest", kind: "agent", name: "Everest", href: "/design-guide", agent: { id: "everest", name: "Everest" }, issueId: "i1", lastMessageAt: new Date().toISOString(), lastMessagePreview: "Three decisions wait on you", lastMessageFromMe: false, unreadCount: 2, muted: false, workingOn: 1, typing: false },
+  { key: "chat:ops", kind: "group", name: "Ops room", href: "/design-guide", issueId: "c1", lastMessageAt: new Date().toISOString(), lastMessagePreview: "The vendor call moved to Thursday", lastMessageFromMe: false, unreadCount: 0, muted: false, workingOn: 0, typing: true },
+  { key: "chat:dm", kind: "direct", name: "Sam Okafor", href: "/design-guide", issueId: "c2", lastMessageAt: new Date(Date.now() - 86_400_000).toISOString(), lastMessagePreview: "Thanks, I will review it tonight.", lastMessageFromMe: true, unreadCount: 0, muted: true, workingOn: 0, typing: false },
+];
+
 export function DesignGuide() {
+  const [conversationQuery, setConversationQuery] = useState("");
   const toastActions = useOptionalToastActions();
   const confirmAction = useConfirm();
   const [wizardStep, setWizardStep] = useState(0);
@@ -586,7 +595,8 @@ export function DesignGuide() {
                 "InlineBanner", "BuiltInAgentGate", "BuiltInLifecycleChip", "CollectionToolbar",
                 "IssueRow", "ContextualSidebarFrame", "BrandMark", "BrandLockup", "BrandLoading",
                 "BrandTideHero", "DashboardHero", "SidebarBrandSignature", "GreatstoneLogo", "EverestOrb",
-                "FollowTaskButton", "FollowRollupSummary", "SidebarFollowing",
+                "FollowTaskButton", "FollowRollupSummary", "SidebarFollowing", "ConversationList", "ConversationAvatar",
+                "TypingDots", "MessagesPane", "NewMessageDialog", "SidebarChats",
               ].map((name) => (
                 <Badge key={name} variant="ghost" className="font-mono text-(length:--text-nano)">
                   {name}
@@ -678,10 +688,10 @@ export function DesignGuide() {
         </SubSection>
         <SubSection title="Everest orb">
           <p className="max-w-prose text-sm text-muted-foreground">
-            Bottom right of every page. The count is what needs you; the lime ring turns while
-            Everest is working. Glow, bob and ring stop under reduced motion. It rises above any
-            element marked data-orb-avoid (chat composers). On phones it never floats: EverestTab
-            docks it into the bottom tab bar.
+            Bottom right of every page. The count is unread messages across every conversation, and
+            a click opens Messages. The lime ring turns while Everest is working. Glow, bob and ring
+            stop under reduced motion. It rises above any element marked data-orb-avoid (chat
+            composers). On phones it never floats: EverestTab docks it into the bottom tab bar.
           </p>
           <div className="flex flex-wrap items-center gap-8 p-2">
             <EverestOrbButton preview name="Everest" count={0} working={false} />
@@ -1971,6 +1981,49 @@ export function DesignGuide() {
             <Button size="sm">Comment</Button>
           </div>
         </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  MESSAGES                                                     */}
+      {/* ============================================================ */}
+      <Section title="Messages">
+        <SubSection title="ConversationList">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            The left pane of Messages: search, then one row per conversation with avatar, name, time,
+            a one-line preview and the unread count. A green dot means the agent is working, a pulsing
+            one and Typing mean it is replying here. Order comes from orderConversations: Everest, pins, newest.
+          </p>
+          <div className="gs-sidebar-glass h-96 max-w-sm">
+            <ConversationList
+              rows={designGuideConversations}
+              activeKey="chat:ops"
+              query={conversationQuery}
+              onQueryChange={setConversationQuery}
+              isPinned={(row) => row.key === "chat:ops"}
+              newMessage={<Button className="h-11 gap-2 rounded-full px-4"><Plus className="size-4" aria-hidden="true" />New message</Button>}
+            />
+          </div>
+        </SubSection>
+        <SubSection title="ConversationAvatar and TypingDots">
+          <div className="flex items-center gap-4">
+            {designGuideConversations.slice(0, 3).map((row) => <ConversationAvatar key={row.key} row={row} />)}
+            <ConversationAvatar row={designGuideConversations[1]!} size={32} />
+            <ConversationAvatar row={designGuideConversations[1]!} size={24} />
+            <span className="flex items-center gap-1.5 text-sm text-foreground"><TypingDots /> Typing</span>
+          </div>
+        </SubSection>
+        <SubSection title="Bubbles inside Messages">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Inside [data-messages-hub] my messages are lime with void text and everyone else sits in a
+            glass bubble beside their avatar. The existing thread components (TaskChatBubble,
+            TeamChatThread) are unchanged; the hub restyles them through tokens, so approval cards,
+            attachments and run status render as they always do.
+          </p>
+          <div data-messages-hub="" className="flex max-w-xl flex-col gap-2">
+            <div data-testid="team-chat-message" className="self-start rounded-2xl px-3.5 py-2 text-sm">Two of three quotes are in.</div>
+            <div className="gs-human-bubble self-end rounded-2xl px-3.5 py-2 text-sm">Thanks, compare them for me?</div>
+          </div>
+        </SubSection>
       </Section>
 
       {/* ============================================================ */}

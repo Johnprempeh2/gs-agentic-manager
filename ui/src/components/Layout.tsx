@@ -43,6 +43,7 @@ import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
 import { SecondarySidebar } from "./SecondarySidebar";
+import { MessagesPane } from "./MessagesPane";
 import { ContextualSidebarFrame } from "./ContextualSidebarFrame";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
 import { useDialogActions } from "../context/DialogContext";
@@ -126,6 +127,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const companyPathSegments = shellRoute.companySegments;
   const isTaskDetailRoute = shellRoute.isTaskDetail;
   const isMobileChatRoute = shellRoute.isMobileChat;
+  const isMessagesRoute = shellRoute.isMessages;
   const useStreamlinedTaskDetailShell = isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
@@ -753,7 +755,17 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </SecondarySidebar>
         ) : null}
 
-        <div className={cn("flex min-w-0 flex-col print:block print:h-auto", isMobile ? "w-full" : "h-full flex-1")}>
+        {/* Messages: the conversation list floats beside the open thread, like a messenger. */}
+        {!isMobile && isMessagesRoute ? (
+          <div className="flex h-full w-80 shrink-0 flex-col py-2 pr-1 print:hidden" data-testid="messages-list-pane">
+            <MessagesPane className="gs-sidebar-glass" />
+          </div>
+        ) : null}
+
+        <div
+          data-messages-hub={isMessagesRoute ? "" : undefined}
+          className={cn("flex min-w-0 flex-col print:block print:h-auto", isMobile ? "w-full" : "h-full flex-1")}
+        >
           <div
             className={cn(
               "print:hidden",

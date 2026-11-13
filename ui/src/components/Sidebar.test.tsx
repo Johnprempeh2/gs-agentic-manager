@@ -154,9 +154,9 @@ vi.mock("./SidebarReleaseFooter", () => ({
   SidebarReleaseFooter: () => <div data-testid="sidebar-release-footer" />,
 }));
 
-vi.mock("./SidebarAgentChats", () => ({
-  SidebarAgentChats: ({ inline }: { inline?: boolean }) => (
-    <section aria-label="Chats" data-inline={String(Boolean(inline))}>
+vi.mock("./SidebarChats", () => ({
+  SidebarChats: () => (
+    <section aria-label="Chats">
       <a href="/chats/everest">Everest</a>
     </section>
   ),
@@ -680,7 +680,7 @@ describe("Sidebar", () => {
     expect(top?.textContent).toBe("New TaskSearch");
     expect(textButton("Deliverables")).toBeTruthy();
     const chats = container.querySelector('[data-sidebar-section="start"]');
-    expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
+    expect(chats?.querySelector('section[aria-label="Chats"]')).not.toBeNull();
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
     expect(sectionLabels("Company")).toEqual(["GS Studio"]);
 

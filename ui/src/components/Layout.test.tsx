@@ -136,6 +136,14 @@ vi.mock("./KeyboardShortcutsCheatsheet", () => ({
   OPEN_SHORTCUTS_EVENT: "gsam:open-shortcuts",
 }));
 
+vi.mock("./EverestOrb", () => ({
+  EverestOrb: () => null,
+}));
+
+vi.mock("./MessagesPane", () => ({
+  MessagesPane: () => <div>Messages list</div>,
+}));
+
 vi.mock("./ToastViewport", () => ({
   ToastViewport: () => null,
 }));

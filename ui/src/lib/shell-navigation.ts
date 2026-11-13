@@ -11,6 +11,8 @@ export interface ShellRouteClassification {
   isTaskDetail: boolean;
   /** A full-screen chat on a phone: no bottom nav, the composer docks at the bottom. */
   isMobileChat: boolean;
+  /** Messages: the list, a team chat or an agent chat; desktop shows the list beside the thread. */
+  isMessages: boolean;
   builtInContextualSurface: Exclude<ContextualSidebarSurface, `plugin:${string}`> | null;
 }
 
@@ -52,6 +54,7 @@ export function classifyShellRoute(
     companySegments,
     isTaskDetail,
     isMobileChat: isTaskDetail || isBoardAgentChat || isTeamChat,
+    isMessages: root === "messages" || (root === "chats" && companySegments.length >= 2),
     builtInContextualSurface: isCompanySettings
       ? "settings"
       : root === "apps" || root === "tools"

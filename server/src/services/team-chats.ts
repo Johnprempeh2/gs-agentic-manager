@@ -68,6 +68,44 @@ function authorTypeOf(row: { authorType: string | null; authorAgentId: string | 
   return row.authorUserId ? ("user" as const) : ("system" as const);
 }
 
+export interface ChatStat {
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastMessageFromMe: boolean;
+  unreadCount: number;
+}
+
+/**
+ * Per chat issue, for one reader: the newest message (time, one-line preview,
+ * whether the reader wrote it) and how many messages from others arrived since
+ * they last read it. Shared by team chats and the Messages list of agent chats.
+ */
+export async function chatStats(db: Db, issueIds: string[], userId: string): Promise<Map<string, ChatStat>> {
+  if (!issueIds.length) return new Map();
+  const stats = await db.execute(sql`
+    select c.issue_id, max(c.created_at) as last_at,
+      count(*) filter (
+        where c.created_at > coalesce(r.last_read_at, to_timestamp(0))
+          and c.author_user_id is distinct from ${userId}
+      )::int as unread,
+      (array_agg(left(c.body, 400) order by c.created_at desc))[1] as last_body,
+      (array_agg(coalesce(c.author_user_id = ${userId}, false) order by c.created_at desc))[1] as last_mine
+    from issue_comments c
+    left join issue_read_states r on r.issue_id = c.issue_id and r.user_id = ${userId}
+    where c.issue_id in (${sql.join(issueIds.map((id) => sql`${id}::uuid`), sql`, `)}) and c.deleted_at is null
+    group by c.issue_id
+  `);
+  const rows = (Array.isArray(stats) ? stats : (stats as { rows?: unknown[] }).rows ?? []) as Array<{
+    issue_id: string; last_at: string | Date | null; unread: number; last_body: string | null; last_mine: boolean | null;
+  }>;
+  return new Map(rows.map((row) => [row.issue_id, {
+    lastMessageAt: row.last_at ? new Date(row.last_at).toISOString() : null,
+    lastMessagePreview: row.last_body ? teamChatSnippet(row.last_body) : null,
+    lastMessageFromMe: row.last_mine === true,
+    unreadCount: Number(row.unread ?? 0),
+  }]));
+}
+
 export function teamChatService(
   db: Db,
   options: { push?: Pick<ReturnType<typeof pushNotificationService>, "sendToUser">; now?: () => number } = {},
@@ -184,19 +222,7 @@ export function teamChatService(
       .from(issueParticipants)
       .where(inArray(issueParticipants.issueId, ids));
     const nameOf = await names(memberRows);
-    const stats = await db.execute<{ issue_id: string; last_at: string | null; unread: number }>(sql`
-      select c.issue_id, max(c.created_at) as last_at,
-        count(*) filter (
-          where c.created_at > coalesce(r.last_read_at, to_timestamp(0))
-            and c.author_user_id is distinct from ${userId}
-        )::int as unread
-      from issue_comments c
-      left join issue_read_states r on r.issue_id = c.issue_id and r.user_id = ${userId}
-      where c.issue_id in (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) and c.deleted_at is null
-      group by c.issue_id
-    `);
-    const statRows = (Array.isArray(stats) ? stats : (stats as { rows?: unknown[] }).rows ?? []) as Array<{ issue_id: string; last_at: string | Date | null; unread: number }>;
-    const byIssue = new Map(statRows.map((row) => [row.issue_id, row]));
+    const byIssue = await chatStats(db, ids, userId);
     return chats
       .map((chat) => {
         const stat = byIssue.get(chat.id);
@@ -209,8 +235,10 @@ export function teamChatService(
           kind: isDirect(chat) ? ("direct" as const) : ("group" as const),
           title: chat.title,
           members,
-          lastMessageAt: stat?.last_at ? new Date(stat.last_at).toISOString() : null,
-          unreadCount: Number(stat?.unread ?? 0),
+          lastMessageAt: stat?.lastMessageAt ?? null,
+          lastMessagePreview: stat?.lastMessagePreview ?? null,
+          lastMessageFromMe: stat?.lastMessageFromMe ?? false,
+          unreadCount: stat?.unreadCount ?? 0,
           muted: memberRows.some((row) => row.issueId === chat.id && row.type === "user" && row.id === userId && row.mutedAt !== null),
         };
       })

@@ -4,7 +4,7 @@ import type { Agent } from "@greatstone/shared";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import { AgentChatPicker } from "@/components/AgentChatPicker";
-export { SidebarAgentChats as ChatEntrySidebar } from "@/components/SidebarAgentChats";
+export { SidebarChats as ChatEntrySidebar } from "@/components/SidebarChats";
 import { useSidebar } from "@/context/SidebarContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useNavigate } from "@/lib/router";
