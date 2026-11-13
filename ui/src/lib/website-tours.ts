@@ -104,7 +104,7 @@ export const WEBSITE_EDITOR_TOUR: TourDefinition = {
   steps: [
     {
       title: "The page editor",
-      body: "The chat with the page's agent is on the left and the page is on the right. What you save here goes to the draft, never straight to the public site.",
+      body: "The chat with the page's agent sits beside the page (under it on a phone). What you save here goes to the draft, never straight to the public site.",
     },
     {
       target: "Page",

@@ -550,7 +550,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
             onValueChange={(v) => navigate(`/agents/${v}`)}
           />
         </Tabs>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="gs-toolbar-cluster flex items-center gap-0.5" role="group" aria-label="Agent view">
               <Button
                 type="button"
@@ -620,8 +620,9 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 )
               }
             >
-              <Download className="h-3.5 w-3.5 mr-1.5" />
-              Download as spreadsheet
+              <Download className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Download as spreadsheet</span>
+              <span className="sr-only sm:hidden">Download as spreadsheet</span>
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => setTeamsDialogOpen(true)}>

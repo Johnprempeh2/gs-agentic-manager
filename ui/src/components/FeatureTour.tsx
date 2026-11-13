@@ -13,11 +13,19 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
+/** The top of the phone tab bar when it is showing, else the bottom of the screen. */
+function phoneSheetBottom() {
+  const nav = document.querySelector('nav[aria-label="Mobile navigation"]');
+  const top = nav?.getBoundingClientRect().top;
+  return top && top > 0 ? Math.min(window.innerHeight, top) : window.innerHeight;
+}
+
 /**
  * The first visible element for a step, or null when the page does not show it.
  * A step names a `data-tour` anchor, or the `data-testid` or exact `aria-label` a page
  * already has, so tours can point at stable ids without touching pages other people are changing.
  */
+
 export function findTourTarget(target: string): HTMLElement | null {
   const selector = `[data-tour="${target}"], [data-testid="${target}"], [aria-label="${target}"]`;
   for (const el of document.querySelectorAll<HTMLElement>(selector)) {
@@ -168,14 +176,15 @@ export function FeatureTour({
     return () => el.removeAttribute("data-tour-active");
   }, [step, reducedMotion]);
 
-  // On a phone the card sits along the bottom of the screen, like a sheet. A
+  // On a phone the card sits along the bottom of the screen, like a sheet,
+  // above the bottom tab bar so it never covers it. A
   // general card on a wider screen hangs from the top centre, under the page bar.
   const general = !step?.el;
   const anchorRef = useMemo(() => ({
     current: {
       getBoundingClientRect: () =>
         isPhone || !step
-          ? new DOMRect(16, window.innerHeight - 16, window.innerWidth - 32, 0)
+          ? new DOMRect(16, phoneSheetBottom() - 16, window.innerWidth - 32, 0)
           : step.el
             ? tourCardAnchor(step.el.getBoundingClientRect(), window.innerHeight)
             : new DOMRect(window.innerWidth / 2, 72, 0, 0),

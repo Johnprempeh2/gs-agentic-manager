@@ -564,8 +564,8 @@ export function Mailboxes() {
   ].filter((item): item is string => item !== null);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <header className="flex items-start justify-between gap-3">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold">
             <Mail className="size-5" aria-hidden="true" /> Mailboxes
@@ -577,7 +577,7 @@ export function Mailboxes() {
           </p>
         </div>
         {!adding && !signingIn && (
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
             <Button variant="outline" onClick={() => setSigningIn("microsoft")}>
               <LogIn className="size-4" aria-hidden="true" /> Sign in with Microsoft
             </Button>
