@@ -214,7 +214,10 @@ describe("Sidebar", () => {
   }
 
   function textButton(text: string) {
-    return [...container.querySelectorAll("button")].find((node) => node.textContent?.trim() === text);
+    return [...container.querySelectorAll("button")].find((node) =>
+      node.textContent?.trim() === text
+        || [...node.querySelectorAll("span")].some((label) => label.textContent?.trim() === text),
+    );
   }
 
   function menuItem(text: string) {
@@ -527,10 +530,10 @@ describe("Sidebar", () => {
     });
     const root = await renderSidebar();
 
-    expect(textButton("Desk")).toBeTruthy();
+    expect(textButton("Desk")?.textContent).toContain("1");
     await click(textButton("Desk"));
     expect(document.body.querySelector('a[href="/desk"]')).not.toBeNull();
-    expect(document.body.querySelector('a[href="/desk#desk-needs-me"]')).not.toBeNull();
+    expect(document.body.querySelector('a[href="/desk#desk-needs-me"]')?.textContent).toContain("1");
 
     flushSync(() => {
       root.unmount();
@@ -648,6 +651,36 @@ describe("Sidebar", () => {
   });
 
   describe("customise mode", () => {
+    it("keeps a group when its anchor is pinned", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      mockSidebarPrefs.layout = { pinned: ["agents"] };
+      const root = await renderSidebar();
+
+      expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
+      expect(textButton("Team")).toBeTruthy();
+      await click(textButton("Team"));
+      expect(document.body.querySelector('a[href="/scorecard"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("keeps a group when its anchor is hidden", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      mockSidebarPrefs.layout = { hidden: ["agents"] };
+      const root = await renderSidebar();
+
+      expect(container.querySelector('a[href="/agents"]')).toBeNull();
+      expect(textButton("Team")).toBeTruthy();
+      await click(textButton("Team"));
+      expect(document.body.querySelector('a[href="/scorecard"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
     it("stays out of the way until asked for, then swaps links for editable rows", async () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
       const root = await renderSidebar();

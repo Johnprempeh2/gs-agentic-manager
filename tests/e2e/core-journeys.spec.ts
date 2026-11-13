@@ -131,10 +131,10 @@ test("waiting work shows in Decisions with the one count, and the Inbox Blocked 
   await open(page, `/${company.issuePrefix}/desk#desk-needs-me`);
   const decisions = page.locator('[data-desk-section="desk-needs-me"]');
   await expect(decisions.getByText(/Approve the press release/).first()).toBeVisible({ timeout: 30_000 });
-  // The section's number is the sidebar's Decisions badge: one count.
+  // The section's number is the grouped Desk badge: one count.
   const count = (await decisions.locator("[data-desk-section-count]").textContent())?.trim() ?? "";
   expect(Number(count)).toBeGreaterThanOrEqual(1);
-  await expect(page.locator('a[href$="/desk#desk-needs-me"]').first()).toContainText(count);
+  await expect(page.getByRole("button", { name: /^Desk/ }).first()).toContainText(count);
 
   // The Inbox holds updates, not decisions: Mine carries no "needs you" number.
   await open(page, `/${company.issuePrefix}/inbox/mine`);

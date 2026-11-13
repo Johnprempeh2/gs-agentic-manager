@@ -101,6 +101,7 @@ import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
 import { useCommerceSite } from "../hooks/useCommerceSite";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -145,6 +146,7 @@ interface SidebarGroupEntry {
   label: string;
   icon: LucideIcon;
   to: string;
+  badge?: number;
 }
 
 function SidebarNavGroup({
@@ -152,15 +154,18 @@ function SidebarNavGroup({
   entries,
   icon: Icon,
   label,
+  badge,
 }: {
   active: boolean;
   entries: SidebarGroupEntry[];
   icon: LucideIcon;
   label: string;
+  badge?: number;
 }) {
   const { collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
   const [open, setOpen] = useState(false);
+  const hasBadge = badge != null && badge > 0;
   if (entries.length === 0) return null;
 
   return (
@@ -168,7 +173,7 @@ function SidebarNavGroup({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={rail ? label : undefined}
+          aria-label={rail ? `${label}${hasBadge ? `, ${badge} decisions` : ""}` : undefined}
           aria-expanded={open}
           data-tour={label === "Desk" ? "nav-decisions" : label === "Build" ? "nav-tutorials" : undefined}
           onPointerEnter={() => { if (rail) setOpen(true); }}
@@ -180,8 +185,18 @@ function SidebarNavGroup({
               : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           )}
         >
-          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="relative shrink-0">
+            <Icon className="h-4 w-4" aria-hidden="true" />
+            {rail && hasBadge ? (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary shadow-(--shadow-sidebar-icon-badge)" aria-hidden="true" />
+            ) : null}
+          </span>
           <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "min-w-0 flex-1 truncate text-left"}>{label}</span>
+          {!rail && hasBadge ? (
+            <Badge variant="ghost" className="ml-auto px-1.5 leading-none bg-primary text-primary-foreground">
+              {badge}
+            </Badge>
+          ) : null}
           {rail ? null : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
         </button>
       </DropdownMenuTrigger>
@@ -193,7 +208,12 @@ function SidebarNavGroup({
               <DropdownMenuItem key={entry.id} asChild>
                 <Link to={entry.to} className="flex items-center gap-2">
                   <EntryIcon className="size-4" aria-hidden="true" />
-                  <span>{entry.label}</span>
+                  <span className="min-w-0 flex-1">{entry.label}</span>
+                  {entry.badge != null && entry.badge > 0 ? (
+                    <Badge variant="ghost" className="ml-auto px-1.5 leading-none bg-primary text-primary-foreground">
+                      {entry.badge}
+                    </Badge>
+                  ) : null}
                 </Link>
               </DropdownMenuItem>
             );
@@ -578,17 +598,34 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     skills: { label: "Build", icon: Boxes, items: ["skills", "connectors", "routines", "workflows", "releases", "activity"] },
   } as const;
   const absorbed = new Set<string>(Object.values(groups).flatMap((group) => group.items.slice(1)));
-  const shownTopLevel = (id: string) => shown(id) && !absorbed.has(id);
+  const shownTopLevel = (id: string) => {
+    const group = groups[id as keyof typeof groups];
+    return group ? group.items.some(shown) : shown(id) && !absorbed.has(id);
+  };
   const renderItem = (id: string) => {
     const group = groups[id as keyof typeof groups];
     if (!group) return items[id]!.node;
     const entries = group.items.flatMap((entryId) => {
       const entry = items[entryId];
-      if (!entry?.to || hidden.has(entryId) || (pinnedSet.has(entryId) && entryId !== id)) return [];
-      return [{ id: entryId, label: entry.label, icon: entry.icon, to: entry.to }];
+      if (!entry?.to || hidden.has(entryId) || pinnedSet.has(entryId)) return [];
+      return [{
+        id: entryId,
+        label: entry.label,
+        icon: entry.icon,
+        to: entry.to,
+        badge: entryId === "decisions" ? attentionCount : undefined,
+      }];
     });
     const active = entries.some((entry) => currentPath === entry.to || currentPath.startsWith(`${entry.to}/`));
-    return <SidebarNavGroup active={active} entries={entries} icon={group.icon} label={group.label} />;
+    return (
+      <SidebarNavGroup
+        active={active}
+        badge={id === "my-tasks" ? attentionCount : undefined}
+        entries={entries}
+        icon={group.icon}
+        label={group.label}
+      />
+    );
   };
   const sectionOrder = useSidebarSectionOrder(SIDEBAR_SECTION_IDS);
   const sectionsById = new Map(layout.resolved.sections.map((section) => [section.id, section]));
