@@ -14,20 +14,19 @@ interface SidebarContextValue {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   isMobile: boolean;
-  // Back-compat collapse API. The global navigation is permanently expanded;
-  // these values remain for callers that have not removed old requests.
+  // Desktop rail state. The user's choice is remembered between sessions.
   collapsed: boolean;
   setCollapsed: (next: boolean) => void;
   toggleCollapsed: () => void;
-  // Retained compatibility value; always false now that the rail is retired.
+  // Forced route states can lock the rail so a user toggle cannot override it.
   collapseLocked: boolean;
-  // Retained compatibility value; the retired rail can no longer peek.
+  // Fine-pointer devices can temporarily peek the full sidebar from the rail.
   peeking: boolean;
   setPeeking: (next: boolean) => void;
-  // Legacy requests remain observable without affecting the global nav.
+  // A route can force the compact rail for focused surfaces.
   forceCollapsed: boolean;
   setForceCollapsed: (next: boolean) => void;
-  // Route-requested collapse retained for integration compatibility.
+  // A route can request a compact default until the user saves a preference.
   routeRequestsCollapsed: boolean;
   setRouteRequestsCollapsed: (next: boolean) => void;
 }
