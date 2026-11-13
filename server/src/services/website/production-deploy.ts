@@ -14,6 +14,15 @@ import type { secretService } from "../secrets.js";
 export const PRODUCTION_WORKFLOW = "deploy-production.yml";
 export const TICKET_LIFETIME_MS = 15 * 60 * 1000;
 const TIMEOUT_MS = 15_000;
+// Netlify reads can stall while a sleeping site or its database wakes (credits fix, 12 Nov): allow longer, retry once.
+const NETLIFY_TIMEOUT_MS = 30_000;
+export async function retryOnce<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch {
+    return read();
+  }
+}
 
 export type ProductionTokens = { netlifySiteId: string; netlifyToken: string; githubToken: string; storeName: string };
 
@@ -83,13 +92,13 @@ export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fet
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const netlify = async <T>(path: string): Promise<T> => {
-    const res = await fetchImpl(`https://api.netlify.com/api/v1${path}`, { headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const res = await retryOnce(() => fetchImpl(`https://api.netlify.com/api/v1${path}`, { headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(NETLIFY_TIMEOUT_MS) }));
     if (!res.ok) throw new Error(`Netlify answered ${res.status}`);
     return res.json() as Promise<T>;
   };
   /** A store's `current` pointer: the content release and its sha256. */
   const pointer = async (siteId: string) => {
-    const res = await fetchImpl(netlifyBlobUrl(siteId, tokens.storeName, "current"), { headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const res = await retryOnce(() => fetchImpl(netlifyBlobUrl(siteId, tokens.storeName, "current"), { headers: { authorization: `Bearer ${tokens.netlifyToken}` }, signal: AbortSignal.timeout(NETLIFY_TIMEOUT_MS) }));
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Netlify answered ${res.status} for a content pointer`);
     const body = await res.json() as { release?: unknown; sha256?: unknown };
