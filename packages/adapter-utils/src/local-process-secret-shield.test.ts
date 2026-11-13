@@ -15,6 +15,7 @@ import {
 } from "./local-process-sandbox.js";
 import { wrapLocalAcpAgentCommand } from "./acpx-engine/execute.js";
 import { runChildProcess, runningProcesses, signalRunningProcess } from "./server-utils.js";
+import { killProcessIfPresent } from "./test-support/process-cleanup.js";
 
 // GRE-1094: local agent runs must not read ~/gs-memory/secrets or the
 // server's /proc/<pid>/environ. The bwrap cases need a working bubblewrap:
@@ -356,7 +357,7 @@ describe("agent secret shield", () => {
         // The leftover lives on for the run-end cleanup to stop.
         expect((await hostPidsWithToken(token)).length).toBeGreaterThan(0);
       } finally {
-        for (const pid of await hostPidsWithToken(token)) process.kill(pid, "SIGKILL");
+        for (const pid of await hostPidsWithToken(token)) killProcessIfPresent(pid);
       }
     }, 20_000);
 

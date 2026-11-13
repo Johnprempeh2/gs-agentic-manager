@@ -25,6 +25,7 @@ import { agentRunWritesRevoked } from "../agent-run-cancellation.js";
 import { isUuidLike, normalizeAgentApiKeyScope, type DeploymentMode } from "@greatstone/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
+import { localAgentProcessBoundary, type LocalAgentProcessBoundary } from "./local-agent-process-boundary.js";
 import { captureRunIdentity } from "../services/run-identity.js";
 import { boardAuthService } from "../services/board-auth.js";
 import { agentQaLoginService, type QaLoginStanding } from "../services/agent-qa-logins.js";
@@ -239,6 +240,7 @@ export function narrowForQaLogin<T extends { companyId: string }>(
 interface ActorMiddlewareOptions {
   deploymentMode: DeploymentMode;
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
+  localAgentProcessBoundary?: LocalAgentProcessBoundary | null;
 }
 
 const publicRoutineWebhookPath = /^\/api\/routine-triggers\/public\/[a-f0-9]{24}\/fire\/?$/i;
@@ -310,6 +312,9 @@ function attachUnauthenticatedRunIdHeader(req: Request, runIdHeader: string | un
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
   const qaLogins = agentQaLoginService(db);
+  const localBoundary = opts.deploymentMode === "local_trusted"
+    ? opts.localAgentProcessBoundary === undefined ? localAgentProcessBoundary() : opts.localAgentProcessBoundary
+    : null;
   return async (req, _res, next) => {
     req.actor =
       opts.deploymentMode === "local_trusted"
@@ -401,6 +406,10 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             return;
           }
         }
+      }
+      if (req.actor.source === "local_implicit"
+        && !(await localBoundary?.grantsImplicitBoard(req.socket))) {
+        req.actor = { type: "none", source: "none" };
       }
       attachUnauthenticatedRunIdHeader(req, runIdHeader);
       next();
