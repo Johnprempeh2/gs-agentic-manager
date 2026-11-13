@@ -16,7 +16,6 @@ import {
   ShoppingBag,
   GitBranch,
   Package,
-  Settings,
   FolderOpen,
   Unplug,
   MessagesSquare,
@@ -24,7 +23,6 @@ import {
   LayoutGrid,
   UserCheck,
   Users,
-  Rocket,
   CreditCard,
   FileCheck2,
   Link2,
@@ -49,8 +47,6 @@ import {
   CalendarDays,
   Trophy,
   Newspaper,
-  GraduationCap,
-  Sparkles,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
@@ -73,7 +69,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
@@ -120,17 +116,15 @@ import {
   setSidebarItemHidden,
   setSidebarItemPinned,
   setSidebarSectionOpen,
+  CUSTOMISE_SIDEBAR_EVENT,
 } from "../lib/sidebar-layout";
 import { Link, useLocation } from "@/lib/router";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
-import { BrandLockup, ProductMark } from "./BrandLockup";
+import { GreatstoneLogo } from "./GreatstoneLogo";
 import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
-import { useCanRelease } from "../hooks/useReleases";
 import { useHasBillingAccount } from "../hooks/useBillingAccount";
-import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
-import { useWhatsNewUnseen } from "../lib/whats-new";
 
 /** One sidebar destination. `node` is null while its feature switch is off: it then shows nowhere. */
 interface SidebarItemDef {
@@ -175,7 +169,7 @@ function SidebarNavGroup({
           type="button"
           aria-label={rail ? `${label}${hasBadge ? `, ${badge} decisions` : ""}` : undefined}
           aria-expanded={open}
-          data-tour={label === "Desk" ? "nav-decisions" : label === "Build" ? "nav-tutorials" : undefined}
+          data-tour={label === "Desk" ? "nav-decisions" : undefined}
           onPointerEnter={() => { if (rail) setOpen(true); }}
           onMouseEnter={(event) => { if (rail) event.stopPropagation(); }}
           className={cn(
@@ -421,14 +415,21 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: teamChatEnabled } = useTeamChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const { collapsed, peeking, collapseLocked, toggleCollapsed, isMobile } = useSidebar();
+  const { collapsed, peeking, collapseLocked, toggleCollapsed, setCollapsed, isMobile } = useSidebar();
   const rail = collapsed && !peeking;
   const [customising, setCustomising] = useState(false);
   // The icon rail has no room to rearrange; customising needs the full width.
   const customise = customising && !rail;
+  // "Customise menu" in the account menu: open the full sidebar and start.
+  useEffect(() => {
+    const start = () => {
+      if (collapsed && !collapseLocked) setCollapsed(false);
+      setCustomising(true);
+    };
+    window.addEventListener(CUSTOMISE_SIDEBAR_EVENT, start);
+    return () => window.removeEventListener(CUSTOMISE_SIDEBAR_EVENT, start);
+  }, [collapsed, collapseLocked, setCollapsed]);
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  // Releasing is the board's decision (GRE-119): agents never see the page.
-  const { canRelease } = useCanRelease(selectedCompanyId);
   // Client instances only (GRE-1370): the link shows when the instance has a billing account.
   const hasBillingAccount = useHasBillingAccount();
   // Organisation memory is per company: the link shows only once it is switched on.
@@ -438,7 +439,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const { liveAgents } = useLiveAgents(selectedCompanyId);
-  const whatsNewUnseen = useWhatsNewUnseen();
   const liveRunCount = liveAgents.length;
   const liveIssueIds = new Set(
     liveAgents.flatMap((agent) => agent.runs.flatMap((run) => run.issueId ? [run.issueId] : [])),
@@ -572,11 +572,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     cases: gated(showCases, link("/cases", "Cases", Layers)),
     website: gated(showWebsite, link("/website", "Website", Globe, { tourId: "nav-website" })),
     activity: link("/activity", "Audit", History),
-    releases: gated(canRelease, link("/releases", "Releases", Rocket)),
     billing: gated(hasBillingAccount, link("/billing", "Billing", CreditCard)),
-    settings: link("/company/settings", "Settings", Settings),
-    "whats-new": link("/whats-new", "What's new", Sparkles, whatsNewUnseen ? { textBadge: "New", textBadgeTone: "amber" } : undefined),
-    tutorials: link("/tutorials", "Tutorials", GraduationCap, { tourId: "nav-tutorials" }),
+    // Settings, Releases, Tutorials and What's new live in the account menu
+    // (bottom left, sidebar v2), so they are not repeated here.
     "design-guide": link("/design-guide", "Design guide", Palette),
   };
   const available = (id: string) => Boolean(items[id]?.node);
@@ -717,17 +715,22 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         primarySidebarStyles.surface,
       )}
     >
-      {/* Top bar: company name, aligned with top sections and borderless.
-          Search lives in the nav list so the workspace name keeps the width. */}
-      <div className={cn("flex h-(--sz-60px) shrink-0 items-center gap-1 px-3", rail && "flex-col justify-center gap-0 px-2")}>
-        {rail ? <ProductMark className="h-6 w-auto flex-none" /> : <BrandLockup className="h-5 w-auto flex-none text-sidebar-foreground" />}
+      {/* Top bar: the Greatstone logo at its true aspect, the collapse toggle
+          beside it ([ on the keyboard). The rail keeps the 3D stone only. */}
+      <div
+        className={cn("flex shrink-0 items-center gap-1 px-4 pt-3 pb-2", rail && "flex-col justify-center gap-2 px-2")}
+        data-slot="sidebar-brand-header"
+      >
+        <GreatstoneLogo variant={rail ? "stone" : "full"} />
         {collapseLocked || isMobile ? null : (
           <button
             type="button"
             data-slot="icon-button"
             onClick={toggleCollapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={cn("ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", rail && "ml-0 size-6")}
+            aria-keyshortcuts="["
+            title={collapsed ? "Expand sidebar ([)" : "Collapse sidebar ([)"}
+            className={cn("ml-auto flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", rail && "ml-0")}
           >
             {collapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
           </button>
@@ -736,7 +739,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
 
       <nav className={primarySidebarStyles.nav} aria-label="Main">
         <div className={primarySidebarStyles.group}>
-          <SidebarCompanyMenu />
           {(() => {
             const newTaskButton = (
               <button
@@ -876,16 +878,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           itemClassName="rounded-lg border border-border p-3"
           missingBehavior="placeholder"
         />
-        {rail || customise ? null : (
-          <button
-            type="button"
-            onClick={() => setCustomising(true)}
-            className="mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-(length:--text-compact) font-medium text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
-          >
-            <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Customise sidebar</span>
-          </button>
-        )}
         <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
     </aside>

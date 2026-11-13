@@ -3131,6 +3131,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             {showComposer ? (
               <div
                 data-testid="task-chat-composer-dock"
+                data-orb-avoid
                 className={cn(
                   "sticky",
                   // Mobile mirrors the flag-off thread's dock: lifted above the

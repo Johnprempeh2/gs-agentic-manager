@@ -698,10 +698,13 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile ? (
           <div
             className={cn(
-              "gs-rail dark fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out print:hidden",
+              // The same floating glass as desktop, inset clear of the notch and
+              // the home indicator (gs-sidebar-drawer). It follows the theme.
+              "gs-rail gs-sidebar-drawer fixed inset-y-0 left-0 z-drawer flex flex-col transition-transform duration-100 ease-out print:hidden",
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
+            <div className="gs-sidebar-glass w-60">
             <div className="flex flex-1 min-h-0 overflow-hidden">
               <div className="w-60 shrink-0 overflow-hidden">
                 {hasSecondarySidebar ? (
@@ -715,10 +718,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               deploymentMode={health?.deploymentMode}
               forceExpanded={replacesPrimarySidebar}
             />
+            </div>
           </div>
         ) : (
           <SidebarShell
-            className="gs-rail dark print:hidden"
+            className="gs-rail print:hidden"
             open={sidebarOpen}
             collapsed={replacesPrimarySidebar ? false : collapsed}
             peeking={replacesPrimarySidebar ? false : peeking}

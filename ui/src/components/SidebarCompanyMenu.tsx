@@ -4,7 +4,6 @@ import {
   Check,
   ChevronsUpDown,
   GripVertical,
-  LogOut,
   Plus,
   RefreshCw,
   UserPlus,
@@ -36,7 +35,6 @@ import { useDialogActions } from "@/context/DialogContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCompanyOrder } from "@/hooks/useCompanyOrder";
-import { useSignOut } from "@/hooks/useSignOut";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
 import { useSidebar } from "../context/SidebarContext";
@@ -47,6 +45,8 @@ import { PluginOrganizationSwitcher } from "./PluginOrganizationSwitcher";
 interface SidebarCompanyMenuProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** The trigger is a row in the account menu: company, then "Switch". */
+  inMenu?: boolean;
 }
 
 const TRIGGER_WORKSPACE_ICON_CLASS = "size-5 shrink-0 rounded-md text-(length:--text-micro)";
@@ -152,14 +152,14 @@ export function SidebarCompanyMenu(props: SidebarCompanyMenuProps = {}) {
   );
 }
 
-function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompanyMenuProps) {
+function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange, inMenu = false }: SidebarCompanyMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const { companies, selectedCompany, setSelectedCompanyId, companyListUnavailable, retryCompanies } =
     useCompany();
   const { openOnboarding } = useDialogActions();
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
-  const rail = collapsed && !peeking;
+  const rail = collapsed && !peeking && !inMenu;
   const location = useLocation();
   const navigate = useNavigate();
   const open = controlledOpen ?? internalOpen;
@@ -197,8 +197,6 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
   const currentName = selectedCompany?.name ?? null;
   // Managed hosts forbid local company creation. Their extension owns that action.
   const companyCreationManaged = Boolean(useCloudInstance());
-
-  const signOutMutation = useSignOut({ onSignedOut: closeNavigationChrome });
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) setIsEditingOrder(false);
@@ -255,6 +253,22 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
+        {inMenu ? (
+          <button
+            type="button"
+            className="flex h-(--profile-popover-row-height) w-full min-w-0 items-center gap-(--profile-popover-row-gap) rounded-lg px-2.5 text-left text-(length:--text-compact) font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={currentName ? `Switch ${switcherNoun}, now ${currentName}` : `Select ${switcherNoun}`}
+          >
+            {selectedCompany ? <WorkspaceIcon company={selectedCompany} /> : null}
+            <span className="min-w-0 flex-1 truncate" title={currentName ?? undefined}>
+              {currentName ?? `Select ${switcherNoun}`}
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+              Switch
+              <ChevronsUpDown className="size-3.5" aria-hidden="true" />
+            </span>
+          </button>
+        ) : (
         <Button
           variant="ghost"
           // The nav icon column sits at nav px-3 + item mx-2 + item px-2.
@@ -290,9 +304,11 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
           </span>
           {!rail && <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />}
         </Button>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
+        side={inMenu ? "right" : undefined}
         sideOffset={8}
         className="ml-2 w-(--organization-popover-width) max-w-(--sz-calc-24) overflow-hidden rounded-xl border-border bg-popover p-0 shadow-(--shadow-profile-popover)"
       >
@@ -389,20 +405,6 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
                   {currentName ? `Invite people to ${currentName}` : "Invite people"}
                 </span>
               </Link>
-            </DropdownMenuItem>
-          ) : null}
-          {session?.session ? (
-            <DropdownMenuItem
-              className={ORGANIZATION_ACTION_CLASS}
-              onClick={() => signOutMutation.mutate()}
-              disabled={isEditingOrder || signOutMutation.isPending}
-            >
-              <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
-                <LogOut className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {signOutMutation.isPending ? "Signing out..." : "Sign out"}
-              </span>
             </DropdownMenuItem>
           ) : null}
         </div>

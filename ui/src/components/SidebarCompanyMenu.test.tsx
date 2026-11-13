@@ -287,7 +287,7 @@ describe("SidebarCompanyMenu", () => {
     });
   });
 
-  it("shows the requested company actions and signs out through the dropdown", async () => {
+  it("shows the requested company actions and leaves sign-out to the account menu", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -324,21 +324,8 @@ describe("SidebarCompanyMenu", () => {
     expect(document.body.textContent).toContain("Create organisation");
     expect(document.body.textContent).toContain("Invite people to Acme Labs");
     expect(document.body.textContent).not.toContain("Company settings");
-    expect(document.body.textContent).toContain("Sign out");
-
-    const signOutButton = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-      .find((element) => element.textContent?.includes("Sign out"));
-    expect(signOutButton).toBeTruthy();
-
-    act(() => {
-      signOutButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(mockAuthApi.signOut).toHaveBeenCalledTimes(1);
-    expect(mockNavigateTopLevel).not.toHaveBeenCalled();
-    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
-    expect(document.body.textContent).not.toContain("Organisations");
+    // Sidebar v2: sign-out lives once, in the account menu (bottom left).
+    expect(document.body.textContent).not.toContain("Sign out");
 
     act(() => {
       root.unmount();
@@ -552,32 +539,26 @@ describe("SidebarCompanyMenu", () => {
     });
   });
 
-  describe("in Paperclip Cloud", () => {
-    it("closes the menu and enters the Cloud logout flow without local sign-out", async () => {
-      const { root } = renderMenu({ cloud: true });
-      await flushReact();
-      await flushReact();
-      await openMenu("Open Acme Labs organisation switcher");
-
-      const signOutItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-        .find((element) => element.textContent?.includes("Sign out"));
-      expect(signOutItem).toBeTruthy();
-
-      act(() => {
-        signOutItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      });
-      await flushReact();
-
-      expect(mockAuthApi.signOut).not.toHaveBeenCalled();
-      expect(mockNavigateTopLevel).toHaveBeenCalledOnce();
-      expect(mockNavigateTopLevel).toHaveBeenCalledWith("/cloud/logout");
-      expect(document.body.textContent).not.toContain("Organisations");
-
-      act(() => {
-        root.unmount();
-      });
+  it("renders as the Switch row inside the account menu", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SidebarCompanyMenu inMenu />
+        </QueryClientProvider>,
+      );
     });
+    await flushReact();
+    await flushReact();
 
+    const row = container.querySelector('button[aria-label="Switch organisation, now Acme Labs"]');
+    expect(row?.textContent).toContain("Acme Labs");
+    expect(row?.textContent).toContain("Switch");
+    act(() => root.unmount());
+  });
+
+  describe("in Paperclip Cloud", () => {
     it("keeps company navigation without local creation when a managed host has no switcher plugin", async () => {
       const { root } = renderMenu({ cloud: true });
       await flushReact();

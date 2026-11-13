@@ -17,13 +17,12 @@ const MIN_SIDEBAR_WIDTH = 208;
 const MAX_SIDEBAR_WIDTH = 420;
 const SIDEBAR_WIDTH_STEP = 16;
 
-// Collapsed icon rail. Width is chosen so the icon is *centered* in the rail,
-// which keeps the active/hover highlight symmetric around it (PAP-10676):
-// the icon's left edge sits at nav px-3 (12) + item px-3 (12) = 24px, so a
-// matching 24px trailing margin (12 item px-3 + 12 nav px-3) yields
-// 24 + 16 (icon) + 24 = 64. The icon's left edge is unchanged from the expanded
-// layout, so icons stay pixel-identical across states.
-export const SIDEBAR_RAIL_WIDTH = 64;
+// Collapsed icon rail. The glass panel floats inside an 8px inset on the left
+// and top/bottom and a 4px one on the right. Inside the glass the icon's left
+// edge sits at nav px-3 (12) + item mx-2 (8) + px-2 (8) = 28px, so a 72px panel
+// centres the 16px icon (28 + 16 + 28) and keeps the highlight symmetric
+// (PAP-10676): 8 + 72 + 4 = 84. Icons stay pixel-identical across states.
+export const SIDEBAR_RAIL_WIDTH = 84;
 
 function clampSidebarWidth(width: number) {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
@@ -198,14 +197,13 @@ export function SidebarShell({
     <div className={cn("relative h-full shrink-0", className)} style={reservedStyle}>
       <div
         className={cn(
-          "absolute inset-y-0 left-0 flex flex-col overflow-hidden",
+          // The padding is the float inset around the liquid-glass panel.
+          "absolute inset-y-0 left-0 flex flex-col py-2 pl-2 pr-1",
           // Open/close is instant (PAP-10676): no width transition so the rail and
           // expanded states snap without any sliding motion.
           // Overlay styling only while the panel is wider than its reserved
           // spacer (i.e. peeking) so it floats above content without reflow.
-          isOverlay
-            ? "z-chrome border-r border-border gs-glass-chrome shadow-lg"
-            : "z-page",
+          isOverlay ? "z-chrome" : "z-page",
         )}
         style={panelStyle}
         data-sidebar-overlay={isOverlay ? "" : undefined}
@@ -214,7 +212,7 @@ export function SidebarShell({
         onFocusCapture={onPanelFocusCapture}
         onBlurCapture={onPanelBlurCapture}
       >
-        {children}
+        <div className="gs-sidebar-glass" data-slot="sidebar-glass">{children}</div>
       </div>
       {canResize ? (
         <div

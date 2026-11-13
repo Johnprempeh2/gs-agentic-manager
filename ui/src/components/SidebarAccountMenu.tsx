@@ -2,10 +2,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
+  ChevronsUpDown,
   Flag,
   GraduationCap,
   LogOut,
+  Rocket,
   Settings,
+  SlidersHorizontal,
+  Sparkles,
   type LucideIcon,
   UserRound,
   UserRoundPen,
@@ -17,10 +21,15 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useSignOut } from "@/hooks/useSignOut";
 import { useSidebar } from "../context/SidebarContext";
+import { useCompany } from "../context/CompanyContext";
+import { useCanRelease } from "../hooks/useReleases";
+import { openSidebarCustomise } from "../lib/sidebar-layout";
+import { useWhatsNewUnseen } from "../lib/whats-new";
+import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
+import { cn } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 
@@ -42,6 +51,7 @@ interface MenuActionProps {
   onClick?: () => void;
   href?: string;
   external?: boolean;
+  tag?: string;
 }
 
 function deriveInitials(name: string) {
@@ -75,6 +85,7 @@ function MenuAction({
   onClick,
   href,
   external = false,
+  tag,
 }: MenuActionProps) {
   const className =
     "flex h-(--profile-popover-row-height) w-full items-center gap-(--profile-popover-row-gap) rounded-lg px-2.5 text-left text-(length:--text-compact) font-medium leading-(--profile-popover-label-line-height) text-foreground transition-colors hover:bg-accent";
@@ -85,6 +96,11 @@ function MenuAction({
         <Icon className="size-4" />
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {tag ? (
+        <span className="shrink-0 rounded-full bg-status-warning-soft px-1.5 py-0.5 text-(length:--text-micro) font-semibold text-status-warning-foreground">
+          {tag}
+        </span>
+      ) : null}
     </>
   );
 
@@ -120,6 +136,10 @@ export function SidebarAccountMenu({
   const isCloud = Boolean(useCloudInstance());
   const [internalOpen, setInternalOpen] = useState(false);
   const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
+  const { selectedCompany, selectedCompanyId } = useCompany();
+  // Releasing is the board's decision (GRE-119): agents never see the page.
+  const { canRelease } = useCanRelease(selectedCompanyId);
+  const whatsNewUnseen = useWhatsNewUnseen();
   const rail = collapsed && !peeking && !forceExpanded;
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -149,30 +169,39 @@ export function SidebarAccountMenu({
   }
 
   return (
-    <div className="bg-sidebar px-3 py-2 shadow-(--glass-highlight)">
-      <div className={cn("flex items-center gap-0.5", !rail && "px-2")}>
+    <div className="shrink-0 border-t border-sidebar-border px-2 py-2" data-slot="sidebar-account">
+      <div className="flex items-center gap-0.5">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
               className={cn(
-                "flex min-w-0 items-center gap-2.5 rounded-lg text-left text-(length:--text-compact) font-medium text-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                rail ? "w-full px-3 py-2" : "flex-1 px-2 py-1.5",
+                "flex min-w-0 items-center gap-2.5 rounded-xl text-left text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                rail ? "w-full justify-center py-2" : "flex-1 px-2 py-1.5",
               )}
               aria-label="Open account menu"
+              data-tour="account-menu"
             >
               <Avatar size="sm">
                 {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              <span className={cn("min-w-0 flex-1 truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>{displayName}</span>
+              <span className={rail ? "sr-only" : "min-w-0 flex-1"}>
+                <span className="block truncate text-(length:--text-compact) font-semibold">{displayName}</span>
+                {selectedCompany ? (
+                  <span className="block truncate text-xs text-muted-foreground" data-slot="account-company">
+                    {selectedCompany.name}
+                  </span>
+                ) : null}
+              </span>
+              {rail ? null : <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
             </button>
           </PopoverTrigger>
           <PopoverContent
-            side="top"
-            align="start"
+            side={rail ? "right" : "top"}
+            align={rail ? "end" : "start"}
             sideOffset={10}
-            className="min-h-(--profile-popover-min-height) w-(--profile-popover-width) max-w-(--sz-calc-24) overflow-hidden rounded-xl border-border bg-popover p-0 shadow-(--shadow-profile-popover)"
+            className="max-h-(--radix-popover-content-available-height) w-(--profile-popover-width) max-w-(--sz-calc-24) overflow-y-auto rounded-xl border-border bg-popover p-0 shadow-(--shadow-profile-popover)"
           >
             <div className="flex h-(--profile-popover-header-height) shrink-0 items-center gap-2.5 px-3.5">
               <Avatar className="size-9">
@@ -189,38 +218,38 @@ export function SidebarAccountMenu({
               </div>
             </div>
 
-            <div className="flex flex-1 flex-col gap-0.5 border-t border-border px-2.5 pb-2.5 pt-2">
-              <MenuAction
-                label="Settings"
-                icon={Settings}
-                href="/company/settings"
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="View profile"
-                icon={UserRound}
-                href={profileHref}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Edit profile"
-                icon={UserRoundPen}
-                href={PROFILE_SETTINGS_PATH}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Notifications"
-                icon={Bell}
-                href="/notifications"
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
-                label="Tutorials"
-                icon={GraduationCap}
-                href="/tutorials"
-                onClick={closeNavigationChrome}
-              />
+            <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-2" data-slot="account-menu-company">
+              <SidebarCompanyMenu inMenu />
+            </div>
+            <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-2">
+              <MenuAction label="Your profile" icon={UserRound} href={profileHref} onClick={closeNavigationChrome} />
+              <MenuAction label="Edit profile" icon={UserRoundPen} href={PROFILE_SETTINGS_PATH} onClick={closeNavigationChrome} />
+              <MenuAction label="Notifications" icon={Bell} href="/notifications" onClick={closeNavigationChrome} />
               <ThemeToggle variant="compact-menu-action" onAfterToggle={() => setOpen(false)} />
+              <MenuAction
+                label="Customise menu"
+                icon={SlidersHorizontal}
+                onClick={() => {
+                  setOpen(false);
+                  openSidebarCustomise();
+                }}
+              />
+            </div>
+            <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-2">
+              <MenuAction label="Company settings" icon={Settings} href="/company/settings" onClick={closeNavigationChrome} />
+              {canRelease ? (
+                <MenuAction label="Releases" icon={Rocket} href="/releases" onClick={closeNavigationChrome} />
+              ) : null}
+              <MenuAction label="Tutorials" icon={GraduationCap} href="/tutorials" onClick={closeNavigationChrome} />
+              <MenuAction
+                label="What's new"
+                icon={Sparkles}
+                href="/whats-new"
+                onClick={closeNavigationChrome}
+                tag={whatsNewUnseen ? "New" : undefined}
+              />
+            </div>
+            <div className="flex flex-col gap-0.5 border-t border-border px-2.5 pb-2.5 pt-2">
               {deploymentMode === "authenticated" ? (
                 <button
                   type="button"

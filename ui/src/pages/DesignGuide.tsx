@@ -174,6 +174,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { BrandMark, BrandStoneIcon } from "@/components/BrandMark";
 import { BrandLockup } from "@/components/BrandLockup";
+import { GreatstoneLogo } from "@/components/GreatstoneLogo";
+import { EverestOrbButton } from "@/components/EverestOrb";
 import { BrandBuildingIcon, BrandThinkingIcon } from "@/components/BrandLoading";
 import { BrandTideHero } from "@/components/BrandTideHero";
 import { DashboardHero } from "@/components/DashboardHero";
@@ -583,7 +585,7 @@ export function DesignGuide() {
                 "PropertiesPanel", "Sidebar", "CommandPalette", "EnvironmentVariablesEditor",
                 "InlineBanner", "BuiltInAgentGate", "BuiltInLifecycleChip", "CollectionToolbar",
                 "IssueRow", "ContextualSidebarFrame", "BrandMark", "BrandLockup", "BrandLoading",
-                "BrandTideHero", "DashboardHero", "SidebarBrandSignature",
+                "BrandTideHero", "DashboardHero", "SidebarBrandSignature", "GreatstoneLogo", "EverestOrb",
                 "FollowTaskButton", "FollowRollupSummary", "SidebarFollowing",
               ].map((name) => (
                 <Badge key={name} variant="ghost" className="font-mono text-(length:--text-nano)">
@@ -651,6 +653,39 @@ export function DesignGuide() {
             <BrandMark variant="outline" className="h-10 w-auto" />
             <BrandLockup className="h-6 text-base" />
             <SidebarBrandSignature />
+          </div>
+        </SubSection>
+        <SubSection title="Greatstone logo (sidebar header)">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            GreatstoneLogo uses the master assets, never redrawn: the 3D stone beside the wordmark
+            when the sidebar is open, the stone alone on the rail. Both keep their true aspect. In
+            daylight the wordmark prints as ink.
+          </p>
+          <div className="flex flex-wrap items-center gap-6">
+            <GreatstoneLogo />
+            <GreatstoneLogo variant="stone" />
+          </div>
+        </SubSection>
+        <SubSection title="Sidebar glass">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            gs-sidebar-glass: the floating, frosted sidebar panel. Text stays solid on it; the tint
+            carries a near-opaque base so every text token clears 4.5:1 over the emerald behind it.
+          </p>
+          <div className="gs-sidebar-glass max-w-64 gap-1 p-3">
+            <p className="text-sm font-medium text-sidebar-foreground">Desk</p>
+            <p className="text-sm text-muted-foreground">Muted label</p>
+          </div>
+        </SubSection>
+        <SubSection title="Everest orb">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Bottom right of every page. The count is what needs you; the lime ring turns while
+            Everest is working. Glow, bob and ring stop under reduced motion. It rises above any
+            element marked data-orb-avoid (chat composers) and clears the phone home indicator.
+          </p>
+          <div className="flex flex-wrap items-center gap-8 p-2">
+            <EverestOrbButton preview name="Everest" count={0} working={false} />
+            <EverestOrbButton preview name="Everest" count={7} working={false} />
+            <EverestOrbButton preview name="Everest" count={3} working />
           </div>
         </SubSection>
         <SubSection title="Working states">

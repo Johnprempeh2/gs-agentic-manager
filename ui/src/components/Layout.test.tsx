@@ -430,7 +430,7 @@ describe("Layout", () => {
       [...container.querySelectorAll<HTMLElement>("div")].find(
         (el) =>
           el.className.includes("inset-y-0") &&
-          el.className.includes("overflow-hidden"),
+          el.className.includes("pl-2"),
       );
     const hover = (el: HTMLElement) => {
       // React derives onMouseEnter from a mouseover crossing in from outside.
@@ -490,7 +490,7 @@ describe("Layout", () => {
     const panel = [...container.querySelectorAll<HTMLElement>("div")].find(
       (el) =>
         el.className.includes("inset-y-0") &&
-        el.className.includes("overflow-hidden"),
+        el.className.includes("pl-2"),
     );
     expect(panel).toBeTruthy();
     await act(async () => {

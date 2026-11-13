@@ -50,9 +50,9 @@ export const WELCOME_TOUR: TourDefinition = {
       body: "Commerce holds what the website sells: the catalogue of products, and the quotes, orders and invoices that come from it.",
     },
     {
-      target: "nav-tutorials",
-      title: "Tours like this one",
-      body: "Tutorials lists every tour, so you can replay any of them. On most pages, Show me around at the top opens that page's own tour.",
+      target: "account-menu",
+      title: "Your account menu",
+      body: "Your name, bottom left, opens your account menu: switch company, your profile, the theme, customise the menu, settings, and Tutorials, which lists every tour so you can replay any of them.",
     },
   ],
 };
