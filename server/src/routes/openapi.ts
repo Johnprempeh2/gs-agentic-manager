@@ -56,6 +56,7 @@ import {
   updateIssueWorkProductSchema,
   createDeliverableSchema,
   markDeliverableSchema,
+  moveDeliverableSchema,
   createGeneratedImageSchema,
   createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
@@ -5403,6 +5404,15 @@ registry.registerPath({
   summary: "Public, no sign-in: the client accepts the published deliverable; a receipt email is sent. 409 when already accepted",
   request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/move",
+  tags: ["issues"],
+  summary: "Move every version of a deliverable to another project. People only: agents get 403. Logged as issue.deliverable_moved",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }), body: jsonBody(moveDeliverableSchema) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

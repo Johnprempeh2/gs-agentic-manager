@@ -150,7 +150,11 @@ export const deliverablesQuerySchema = z.object({
 
 export type CreateDeliverable = z.infer<typeof createDeliverableSchema>;
 export type MarkDeliverable = z.infer<typeof markDeliverableSchema>;
+/** POST /api/companies/:companyId/deliverables/:id/move — people only (Ben, 10 Nov). */
+export const moveDeliverableSchema = z.object({ projectId: z.string().guid() });
+
 export type UpdateDeliverable = z.infer<typeof updateDeliverableSchema>;
+export type MoveDeliverable = z.infer<typeof moveDeliverableSchema>;
 export type DeliverablesQuery = z.infer<typeof deliverablesQuerySchema>;
 
 export const DELIVERABLE_COMMENT_QUOTE_MAX = 1_000;

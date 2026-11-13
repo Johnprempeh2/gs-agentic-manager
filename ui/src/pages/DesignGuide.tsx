@@ -7,6 +7,7 @@ import { STUDIO_GENERATE_CLASS, STUDIO_PROMPT_CLASS, StudioComposer } from "@/co
 import { STUDIO_GALLERY_CLASS, STUDIO_MEDIA_CLASS, StudioEmptyGallery, StudioMediaAction, StudioMediaCard } from "@/components/StudioMediaCard";
 import { StudioModeTile } from "@/components/StudioModeTile";
 import { ConfidentialityBadge, LinkStatusBadges, SiteThumbnail } from "@/components/deliverables/DeliverableBadges";
+import { ProjectDeliverablesDesignExamples } from "@/components/deliverables/ProjectDeliverablesDesignExamples";
 import { ExpectedList } from "@/components/ClientJourneyStages";
 import { WebhookUrlWarning } from "@/components/routine-triggers/WebhookUrlWarning";
 import { SetupWizardNavigation, SetupWizardFooter } from "../components/SetupWizard";
@@ -2722,6 +2723,10 @@ export function DesignGuide() {
             />
           </div>
         </SubSection>
+      </Section>
+
+      <Section title="Project deliverables and releases">
+        <ProjectDeliverablesDesignExamples />
       </Section>
 
       <Section title="AI Connections">

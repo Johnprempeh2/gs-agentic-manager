@@ -262,6 +262,11 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 **Files:** `ui/src/components/deliverables/DeliverableBadges.tsx`, `ExpectedList` in `ui/src/components/ClientJourneyStages.tsx`
 **Usage:** `ConfidentialityBadge` shows internal, client or public on a deliverable. `LinkStatusBadges` marks a link deliverable whose daily check failed ("Link broken") or that is password protected or unlisted. `SiteThumbnail` shows a live site's stored screenshot, or a placeholder with its initials and domain; it never frames the live site (GRE-405). `ExpectedList` shows what a stage expects against what is filed, with "Missing" in muted text rather than red.
 
+### Project deliverables and releases (DeliverableStageBadge, ProjectDeliverableCard, ProjectDeliverableFilters, DeliverableVersionTimeline, OldVersionBanner, DeliverableProjectAssignment)
+
+**Files:** `ui/src/components/deliverables/ProjectDeliverables.tsx`, `DeliverableVersionTimeline.tsx`, `DeliverableStageBadge` in `DeliverableBadges.tsx`
+**Usage:** The Deliverables tab on a project (Ben, 10 Nov). `DeliverableStageBadge` shows Draft, In review, Approved or Delivered in the status tokens. `ProjectDeliverableFilters` is the All / Delivered / Client-facing segmented control (44px on phones). `ProjectDeliverableCard` is a whole-card button on `gs-glass-card`: title, type, stage, Client-facing or Internal, "Release N", date and who. `DeliverableVersionTimeline` lists releases newest first (Current on the latest, Viewing on the one on screen) with who, the review note or summary, and View and Download. `OldVersionBanner` sits above an older release ("You're viewing Release 1. The latest is Release 3."). `DeliverableProjectAssignment` shows project and client and opens a confirm dialog to move the deliverable; the server refuses agents.
+
 ### Studio (StudioComposer, StudioModeTile, StudioMediaCard, StudioMediaAction, StudioEmptyGallery)
 
 **Files:** `ui/src/components/StudioComposer.tsx`, `StudioModeTile.tsx`, `StudioMediaCard.tsx`

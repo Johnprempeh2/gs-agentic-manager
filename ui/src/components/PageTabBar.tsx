@@ -6,6 +6,8 @@ import { useSidebar } from "../context/SidebarContext";
 export interface PageTabItem {
   value: string;
   label: ReactNode;
+  /** A count beside the label (a badge on desktop, "(n)" on phones). */
+  count?: number;
 }
 
 interface PageTabBarProps {
@@ -34,6 +36,7 @@ export function PageTabBar({ items, value, onValueChange, align = "center", aria
           {items.map((item) => (
             <option key={item.value} value={item.value}>
               {typeof item.label === "string" ? item.label : item.value}
+              {item.count !== undefined ? ` (${item.count})` : ""}
             </option>
           ))}
         </select>
@@ -54,6 +57,14 @@ export function PageTabBar({ items, value, onValueChange, align = "center", aria
       {items.map((item) => (
         <TabsTrigger key={item.value} value={item.value}>
           {item.label}
+          {item.count !== undefined ? (
+            <span
+              data-testid={`page-tab-count-${item.value}`}
+              className="ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+            >
+              {item.count}
+            </span>
+          ) : null}
         </TabsTrigger>
       ))}
     </TabsList>

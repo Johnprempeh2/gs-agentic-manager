@@ -8,11 +8,13 @@ import {
   deliverablesQuerySchema,
   HTML_ATTACHMENT_CSP,
   markDeliverableSchema,
+  moveDeliverableSchema,
   updateDeliverableCommentSchema,
   updateDeliverableSchema,
   type CreateDeliverableComment,
   type DeliverableCommentsResponse,
   type MarkDeliverable,
+  type MoveDeliverable,
   type SendDeliverableCommentsResponse,
   type UpdateDeliverable,
   type UpdateDeliverableComment,
@@ -181,6 +183,46 @@ export function deliverableRoutes(
       entityId: current.issue.id,
       details: { workProductId: current.id, key: current.key, ...patch },
     });
+    res.json(withAppUrl(req, updated));
+  });
+
+  // Move a deliverable to another project (Ben, 10 Nov). People only: an
+  // agent filing work under the wrong project is the problem this fixes, so
+  // agents may not do it. Recorded in the activity log with where it came from.
+  router.post("/companies/:companyId/deliverables/:id/move", validate(moveDeliverableSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "agent") throw forbidden("Only a person can move a deliverable to another project");
+    assertBoard(req);
+    const current = await svc.getDetail(companyId, req.params.id as string);
+    if (!current) throw notFound("Deliverable not found");
+    const { projectId } = req.body as MoveDeliverable;
+    const actor = getActorInfo(req);
+    const moved = await svc.moveToProject(companyId, current.id, { projectId, userId: actor.actorId });
+    if (moved) {
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.deliverable_moved",
+        entityType: "issue",
+        entityId: current.issue.id,
+        details: {
+          workProductId: current.id,
+          key: current.key,
+          title: current.title,
+          fromProjectId: moved.from?.id ?? null,
+          fromProjectName: moved.from?.name ?? null,
+          toProjectId: moved.to.id,
+          toProjectName: moved.to.name,
+        },
+      });
+    }
+    const updated = await svc.getDetail(companyId, current.id);
+    if (!updated) throw notFound("Deliverable not found");
     res.json(withAppUrl(req, updated));
   });
 
