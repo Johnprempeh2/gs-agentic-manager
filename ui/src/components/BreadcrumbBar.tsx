@@ -100,7 +100,7 @@ function MobileBackButton({ fallbackHref }: { fallbackHref: string }) {
     <Button
       variant="ghost"
       size="icon-sm"
-      className="-ml-2 mr-1 size-10 shrink-0"
+      className="-ml-3 mr-0.5 size-11 shrink-0"
       onClick={() => goBackOr(navigate, fallbackHref)}
       aria-label="Back"
     >
@@ -179,6 +179,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
           <span className="min-w-0 truncate" title={currentCrumb.label}>{currentCrumb.label}</span>
           <CrumbIdentifier identifier={currentCrumb.identifier} />
         </h1>
+        {currentCrumb.trailing ? <span className="flex shrink-0 items-center">{currentCrumb.trailing}</span> : null}
         {globalToolbarSlots}
       </div>
     );

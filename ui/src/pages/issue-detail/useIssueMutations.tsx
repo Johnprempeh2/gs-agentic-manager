@@ -327,6 +327,8 @@ export function useIssueMutations({
   const markIssueRead = useMutation({
     mutationFn: (id: string) => issuesApi.markRead(id),
     onSuccess: () => {
+      // Messages unread counts (agent chats sit under the team-chats key).
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamChats.all });
       if (selectedCompanyId) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.issues.listMineByMe(selectedCompanyId),

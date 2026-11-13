@@ -272,6 +272,32 @@ describeEmbeddedPostgres("team chats", () => {
     expect(after.body.find((c: TeamChatSummary) => c.id === chat.id).unreadCount).toBe(0);
   });
 
+  it("lists the reader's agent chats and team chats with a one-line preview of the newest message", async () => {
+    const { companyId, alice, carol, a, chat } = await seed();
+    await say(carol.actor, chat.id, "**Draft** is [ready](https://example.test) for review");
+    const team = await request(app(alice.actor)).get(`/api/companies/${companyId}/team-chats`);
+    const row = team.body.find((c: TeamChatSummary) => c.id === chat.id);
+    expect(row).toMatchObject({ lastMessagePreview: "Draft is ready for review", lastMessageFromMe: false });
+
+    const opened = await request(app(alice.actor)).post(`/api/companies/${companyId}/chats/${a.id}`).send({});
+    expect(opened.status).toBe(200);
+    const svc = issueService(ctx.db);
+    await svc.addComment(opened.body.id, "Morning, what is first?", { userId: alice.userId });
+    await svc.addComment(opened.body.id, "The launch plan.", { agentId: a.id });
+    await svc.addComment(opened.body.id, "Then the budget.", { agentId: a.id });
+    // Carol's own chat with the same agent is hers, never in Alice's list.
+    await request(app(carol.actor)).post(`/api/companies/${companyId}/chats/${a.id}`).send({});
+
+    const listed = await request(app(alice.actor)).get(`/api/companies/${companyId}/chats`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([expect.objectContaining({
+      agentId: a.id, issueId: opened.body.id, lastMessagePreview: "Then the budget.", lastMessageFromMe: false, unreadCount: 2,
+    })]);
+    await request(app(alice.actor)).post(`/api/issues/${opened.body.id}/read`).send({});
+    const read = await request(app(alice.actor)).get(`/api/companies/${companyId}/chats`);
+    expect(read.body[0].unreadCount).toBe(0);
+  });
+
   it("pushes DMs and @mentions to the person, at most once per chat per window", async () => {
     const { companyId, alice, carol, bob } = await seed();
     const sendToUser = vi.fn(async () => ({ targets: 1, delivered: 1 }));

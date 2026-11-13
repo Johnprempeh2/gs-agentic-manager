@@ -41,6 +41,9 @@ vi.mock("../api/decisionsFeed", () => ({
   decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
+// The Everest tab has its own tests (EverestOrb.test); with no lead it renders nothing.
+vi.mock("./EverestOrb", () => ({ EverestTab: () => null }));
+
 vi.mock("../hooks/useInboxBadge", () => ({
   useInboxBadge: () => ({ inbox: 0, failedRuns: 0 }),
 }));

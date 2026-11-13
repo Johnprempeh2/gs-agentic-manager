@@ -1637,6 +1637,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/crm-sync/conflicts/{conflictId}/accept-proposal",
   "POST /api/crm-sync/conflicts/{conflictId}/dismiss",
   "PATCH /api/intelligence/recommendations/{id}",
+  "GET /api/companies/{companyId}/chats",
   "GET /api/companies/{companyId}/team-chats",
   "POST /api/companies/{companyId}/team-chats",
   "POST /api/companies/{companyId}/team-chats/direct",
@@ -15949,6 +15950,14 @@ registerCurrentRoute({
 // messages use the issue comment routes. enableTeamChat gates every route.
 
 const teamChatResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/chats",
+  tags: ["team-chats"],
+  summary: "List the caller's agent chats with the newest message preview and unread counts",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
 
 registerCurrentRoute({
   method: "get",

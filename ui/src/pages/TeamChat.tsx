@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, BellOff, Bot, User, UserPlus, X } from "lucide-react";
+import { Bell, Bot, User, UserPlus, X } from "lucide-react";
 import type { IssueComment, TeamChatSummary } from "@greatstone/shared";
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { issuesApi } from "@/api/issues";
 import { teamChatsApi } from "@/api/teamChats";
+import { ConversationAvatar } from "@/components/ConversationList";
 import { FeatureTour } from "@/components/FeatureTour";
+import { ConversationHeaderActions } from "@/components/MessagesPane";
 import { NewTeamChatDialog, type NewTeamChatInput } from "@/components/NewTeamChatDialog";
 import { desktopAlertsPermission } from "@/components/team-chat/TeamChatAlerts";
 import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/TeamChatThread";
@@ -18,8 +20,10 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { useToastActions } from "@/context/ToastContext";
 import { ErrorState } from "@/components/ErrorState";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useLiveAgents } from "@/hooks/useLiveAgents";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { buildCompanyUserLabelMap, isAgentTaskTarget } from "@/lib/company-members";
+import { chatConversationKey } from "@/lib/conversations";
 import { TEAM_CHAT_TOUR } from "@/lib/feature-tours";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { usePageVisibility } from "@/lib/page-visibility";
@@ -68,11 +72,24 @@ export function TeamChat() {
     enabled: !!selectedCompanyId && adding,
   });
 
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
+  const typing = liveAgents.find((agent) => agent.runs.some((run) => run.issueId === chatId))?.agentName ?? null;
   const summary = chat.data;
   const label = summary ? teamChatLabel(summary, userId) : "Chat";
+  // The header is Messages' thread header: back to the list, face, status, pin and mute.
+  const kind = summary?.kind;
   useEffect(() => {
-    setBreadcrumbs([{ label: "Chats" }, { label }]);
-  }, [label, setBreadcrumbs]);
+    setBreadcrumbs([
+      { label: "Messages", href: "/messages" },
+      {
+        label,
+        leading: kind ? <ConversationAvatar row={{ kind, name: label }} size={32} /> : undefined,
+        leadingKey: kind ? `${kind}:${label}` : undefined,
+        trailing: <ConversationHeaderActions conversationKey={chatConversationKey(chatId)} />,
+        trailingKey: `conversation:${chatId}`,
+      },
+    ]);
+  }, [label, kind, chatId, setBreadcrumbs]);
 
   // Reading the chat clears its unread count; a chat left open in a hidden tab is not being read.
   const lastCommentId = comments.data?.at(-1)?.id;
@@ -141,68 +158,49 @@ export function TeamChat() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       {/* Desktop: the header also covers the page's top padding so messages never show above it. */}
       <header className="sticky top-0 z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="min-w-0 truncate text-xl font-bold">{label}</h1>
-          <div className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-pressed={summary.muted}
-              title={summary.muted ? "Muted: you hear only @mentions" : "Mute: alert only when you are @mentioned"}
-              className="gap-1.5 text-muted-foreground"
-              onClick={() =>
-                void teamChatsApi.setMuted(summary.id, !summary.muted).then(updateSummary).catch(() =>
-                  pushToast({ title: summary.muted ? "Could not turn alerts back on" : "Could not mute this chat", body: "Try again in a moment.", tone: "error" }),
-                )
-              }
-            >
-              {summary.muted ? <BellOff aria-hidden="true" className="size-4" /> : <Bell aria-hidden="true" className="size-4" />}
-              {summary.muted ? "Muted" : "Mute"}
-            </Button>
-            <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
-          </div>
+        <div className="flex items-start justify-between gap-2">
+          <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
+            {summary.members.map((member) => (
+              <li
+                key={`${member.type}:${member.id}`}
+                className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {member.type === "agent" ? <Bot aria-hidden="true" className="size-3" /> : <User aria-hidden="true" className="size-3" />}
+                <span>{member.id === userId ? "You" : member.name}</span>
+                {group && member.id !== userId && (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${member.name}`}
+                    className="-mr-1 rounded-full p-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: `Remove ${member.name} from this chat?`,
+                        description: "They stop seeing new messages here. You can add them back later.",
+                        confirmLabel: "Remove",
+                        tone: "destructive",
+                      });
+                      if (!confirmed) return;
+                      void teamChatsApi.removeMember(summary.id, member.type, member.id).then(updateSummary).catch(() =>
+                        pushToast({ title: `Could not remove ${member.name}`, body: "Try again in a moment.", tone: "error" }),
+                      );
+                    }}
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                )}
+              </li>
+            ))}
+            {group && (
+              <li>
+                <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => setAdding(true)}>
+                  <UserPlus aria-hidden="true" className="size-3" />
+                  Add
+                </Button>
+              </li>
+            )}
+          </ul>
+          <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
         </div>
-        <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
-          {summary.members.map((member) => (
-            <li
-              key={`${member.type}:${member.id}`}
-              className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
-            >
-              {member.type === "agent" ? <Bot aria-hidden="true" className="size-3" /> : <User aria-hidden="true" className="size-3" />}
-              <span>{member.id === userId ? "You" : member.name}</span>
-              {group && member.id !== userId && (
-                <button
-                  type="button"
-                  aria-label={`Remove ${member.name}`}
-                  className="-mr-1 rounded-full p-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
-                  onClick={async () => {
-                    const confirmed = await confirm({
-                      title: `Remove ${member.name} from this chat?`,
-                      description: "They stop seeing new messages here. You can add them back later.",
-                      confirmLabel: "Remove",
-                      tone: "destructive",
-                    });
-                    if (!confirmed) return;
-                    void teamChatsApi.removeMember(summary.id, member.type, member.id).then(updateSummary).catch(() =>
-                      pushToast({ title: `Could not remove ${member.name}`, body: "Try again in a moment.", tone: "error" }),
-                    );
-                  }}
-                >
-                  <X aria-hidden="true" className="size-3" />
-                </button>
-              )}
-            </li>
-          ))}
-          {group && (
-            <li>
-              <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={() => setAdding(true)}>
-                <UserPlus aria-hidden="true" className="size-3" />
-                Add
-              </Button>
-            </li>
-          )}
-        </ul>
         {group && <p className="text-xs text-muted-foreground">Agents here reply only when you @mention them.</p>}
         {alertsPermission === "default" && !alertsAsked && (
           <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -232,6 +230,7 @@ export function TeamChat() {
         <TeamChatThread
           comments={comments.data ?? []}
           currentUserId={userId}
+          typing={typing}
           agentMap={agentMap}
           senderName={senderName}
           companyId={selectedCompanyId}

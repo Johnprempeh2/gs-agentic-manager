@@ -28,6 +28,9 @@ import {
 } from "../../fixtures/paperclipData";
 import { chatAgents, chatIdentifier } from "./AgentChatSidebar";
 import { ChatEntryReviewProvider, ChatEntrySidebar, ChatEntryLanding, reviewRoster, type EntryScenario } from "../chat-entry/ChatEntryReview";
+import { asMessagesTeam, messagesHubInteractions, messagesHubResponse } from "../messages-hub/messagesHubFixtures";
+import { Messages } from "@/pages/Messages";
+import { TeamChat } from "@/pages/TeamChat";
 
 const agent = storybookAgents.find((agent) => agent.id === "agent-codex")!;
 const issue = {
@@ -208,6 +211,8 @@ export interface AgentChatPrototypeProps {
   contextInitiallyOpen?: boolean;
   taskComparison?: boolean;
   entryScenario?: EntryScenario;
+  /** Messages hub review: demo conversations, Everest as lead, and this page opened first. */
+  messagesPath?: string;
 }
 
 /** Production pages with an in-memory API. No alternate chat controller. */
@@ -216,6 +221,7 @@ export function AgentChatPrototype({
   contextInitiallyOpen = true,
   taskComparison = false,
   entryScenario,
+  messagesPath,
 }: AgentChatPrototypeProps) {
   const [ready, setReady] = useState(false);
   const navigate = useNavigate();
@@ -252,7 +258,8 @@ export function AgentChatPrototype({
     };
     let failSend = scenario === "error";
     let active = scenario === "working";
-    const fixtureAgents = (entryScenario ? reviewRoster(entryScenario) : chatAgents).map((a) => ({
+    const roster = entryScenario ? reviewRoster(entryScenario) : chatAgents;
+    const fixtureAgents = (messagesPath ? asMessagesTeam(roster) : roster).map((a) => ({
       ...a,
       status:
         scenario === "paused" && a.id === agent.id
@@ -336,6 +343,11 @@ export function AgentChatPrototype({
       );
       const path = url.pathname;
       if (!path.startsWith("/api/")) return originalFetch(input, init);
+      if (messagesPath) {
+        const hub = messagesHubResponse(path, chatIssueId);
+        if (hub) return hub;
+        if (path === `/api/issues/${issue.id}/interactions`) return Response.json(messagesHubInteractions(issue.id));
+      }
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
@@ -430,6 +442,7 @@ export function AgentChatPrototype({
       if (path === "/api/instance/settings/experimental")
         return Response.json({
           enableAgentChat: scenario !== "disabled",
+          enableTeamChat: Boolean(messagesPath),
           enableStreamlinedUi: true,
           enableClassicTaskInterface: false,
           enableExperimentalFileViewer: true,
@@ -547,22 +560,24 @@ export function AgentChatPrototype({
       }
       queryClient.clear();
     };
-  }, [scenario, taskComparison, entryScenario, queryClient]);
+  }, [scenario, taskComparison, entryScenario, messagesPath, queryClient]);
   useEffect(() => {
     if (ready && !initialRouteSet.current) {
       initialRouteSet.current = true;
       navigate(
-        `/PAP/${entryScenario === "first-use" ? "chats" : entryScenario === "paused" ? "chats/operations" : taskComparison ? `issues/${issue.id}` : "chats/agent-codex"}`,
+        messagesPath ? `/PAP/${messagesPath}` : `/PAP/${entryScenario === "first-use" ? "chats" : entryScenario === "paused" ? "chats/operations" : taskComparison ? `issues/${issue.id}` : "chats/agent-codex"}`,
         { replace: true },
       );
     }
-  }, [ready, navigate, taskComparison, entryScenario]);
+  }, [ready, navigate, taskComparison, entryScenario, messagesPath]);
   if (!ready) return null;
   const routes = (
       <Routes>
         <Route path="/:companyPrefix" element={<Layout sidebarSections={entryScenario ? <ChatEntrySidebar /> : undefined} />}>
           <Route path="chats" element={<ChatEntryLanding />} />
           <Route path="chats/:agentRef" element={<AgentChat />} />
+          <Route path="messages" element={<Messages />} />
+          <Route path="messages/:chatId" element={<TeamChat />} />
           <Route path="issues/:issueId" element={<IssueDetail />} />
           <Route path="agents" element={<Agents />} />
           {AGENT_FILTER_TABS.map((tab) => (

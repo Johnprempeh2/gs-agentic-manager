@@ -154,11 +154,23 @@ the void, emerald on paper) or, on the void-only surfaces, from `--gs-lime`.
 | DashboardHero | `DashboardHero.tsx` | Dashboard welcome band on the void; the tide is masked out of the copy zone and not drawn below 640px. |
 | SidebarBrandSignature | `SidebarBrandSignature.tsx` | Quiet lockup at the foot of the primary sidebar; stone only in the rail. |
 | GreatstoneLogo | `GreatstoneLogo.tsx` | Master assets (3D stone + wordmark), never redrawn, at true aspect. `variant` full (sidebar open) or stone (rail). Partner instances get their own lockup. Wordmark prints as ink in daylight. |
-| EverestOrb / EverestOrbButton | `EverestOrb.tsx` | Bottom-right launcher for Ask Everest: 3D stone, count of what needs you, lime ring turning while the lead runs, still under reduced motion. Mark composers with `data-orb-avoid` and the orb rises above them. `EverestOrbButton preview` renders it in flow. On phones the orb is not mounted; `EverestTab` is its tab in MobileBottomNav. |
+| EverestOrb / EverestOrbButton | `EverestOrb.tsx` | Bottom-right launcher for Messages: 3D stone, unread count across conversations, lime ring turning while the lead runs, still under reduced motion. Mark composers with `data-orb-avoid` and the orb rises above them. `EverestOrbButton preview` renders it in flow. On phones the orb is not mounted; `EverestTab` is its tab in MobileBottomNav. |
 
 The tide itself is `lib/greatstone-tide.ts` (`mountGreatstoneTide`): pauses when the
 tab is hidden or the host is off screen, parks under reduced motion, no-op without a
 canvas. Rule: at most one tide per viewport, and lime never behind copy.
+
+### Messages (ConversationList, ConversationAvatar, TypingDots, MessagesPane, NewMessageDialog, SidebarChats)
+
+| Component | File | Use |
+|-----------|------|-----|
+| ConversationList | `ConversationList.tsx` | Messenger list: search, rows (avatar, name, time, one-line preview, unread, pin, mute, working or typing dot), a floating New message slot. Presentational; order with `orderConversations` (lib/conversations). |
+| ConversationAvatar / TypingDots | `ConversationList.tsx` | Agent avatar, person initials or group mark in a glass disc (24, 32, 40); three dots that stop under reduced motion. |
+| MessagesPane / ConversationHeaderActions | `MessagesPane.tsx` | The list with data (`useConversations`) and New message; the thread header's status, pin, mute and profile (a breadcrumb trailing node). |
+| NewMessageDialog | `NewMessageDialog.tsx` | One search over agents and people, with New group on top. |
+| SidebarChats | `SidebarChats.tsx` | Sidebar Chats: Everest, pinned conversations, All messages with every unread. |
+
+Bubbles inside Messages are not new components: `[data-messages-hub]` restyles TaskChatBubble and TeamChatThread through tokens (`--gs-bubble-*` in greatstone-glass.css, audited by lib/messages-hub-contrast.test.ts).
 
 ### FilterBar
 

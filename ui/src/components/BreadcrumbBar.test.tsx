@@ -169,6 +169,30 @@ describe("BreadcrumbBar", () => {
     expect(navigateMock).toHaveBeenCalled();
   });
 
+  it("a phone chat in Messages has a back arrow to the list and keeps the header actions", async () => {
+    viewport.isMobile = true;
+    navigateMock.mockClear();
+    function ChatCrumbs() {
+      const { setBreadcrumbs } = useBreadcrumbs();
+      useEffect(() => {
+        setBreadcrumbs([
+          { label: "Messages", href: "/messages" },
+          { label: "Everest", trailing: <button type="button" aria-label="Pin Everest" />, trailingKey: "conversation:everest" },
+        ]);
+      }, [setBreadcrumbs]);
+      return <BreadcrumbBar taskDetailLayout />;
+    }
+    await act(async () => {
+      root.render(<BreadcrumbProvider><ChatCrumbs /></BreadcrumbProvider>);
+    });
+    expect(container.querySelector("h1")?.textContent).toBe("Everest");
+    expect(container.querySelector('button[aria-label="Pin Everest"]')).not.toBeNull();
+    const back = container.querySelector<HTMLButtonElement>('button[aria-label="Back"]');
+    act(() => back?.click());
+    // Opened straight from a link (no in-app history): back lands on the list.
+    expect(navigateMock).toHaveBeenCalledWith("/messages", { replace: true });
+  });
+
   it("renders a page toolbar in the same persistent row as the task breadcrumb", async () => {
     const onOpen = vi.fn();
     await act(async () => {

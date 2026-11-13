@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { ArrowDown, Bot, Loader2, PaperclipIcon, SendHorizontal } from "lucide-react";
 import type { Agent, IssueComment } from "@greatstone/shared";
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { TypingDots } from "@/components/ConversationList";
 import { deriveInitials } from "@/components/Identity";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "@/components/MarkdownEditor";
@@ -74,6 +75,8 @@ export interface TeamChatThreadProps {
   composerDisabledReason?: string | null;
   imageUploadHandler?: (file: File) => Promise<string>;
   onSend: (body: string) => Promise<void>;
+  /** An agent replying in this chat right now: a typing bubble at the end. */
+  typing?: string | null;
 }
 
 /**
@@ -92,6 +95,7 @@ export function TeamChatThread({
   composerDisabledReason = null,
   imageUploadHandler,
   onSend,
+  typing = null,
 }: TeamChatThreadProps) {
   const rows = useMemo(() => buildTeamChatRows(comments, currentUserId), [comments, currentUserId]);
   const { isMobile } = useSidebar();
@@ -177,6 +181,15 @@ export function TeamChatThread({
             />
           ),
         )}
+        {typing ? (
+          <li className="flex items-center gap-2" data-testid="team-chat-typing">
+            <span className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2.5 text-sm text-foreground" role="status">
+              <TypingDots />
+              <span className="sr-only">{typing} is typing</span>
+              <span aria-hidden="true" className="text-xs text-muted-foreground">{typing}</span>
+            </span>
+          </li>
+        ) : null}
       </ol>
       <div
         data-testid="team-chat-composer-dock"
@@ -357,7 +370,7 @@ function MessageBubble({
           missingBehavior="placeholder"
         />
       ) : null}
-      <div className={cn("mt-0.5 flex items-center justify-end gap-2 text-(length:--text-nano)", own ? "opacity-75" : "text-muted-foreground")}>
+      <div className={cn("mt-0.5 flex items-center justify-end gap-2 text-(length:--text-nano)", !own && "text-muted-foreground")}>
         {message.createdByRunId && message.authorAgentId ? (
           <Link
             to={`/agents/${message.authorAgentId}/runs/${message.createdByRunId}`}

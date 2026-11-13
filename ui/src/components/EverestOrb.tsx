@@ -2,9 +2,10 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useLiveAgents } from "../hooks/useLiveAgents";
-import { useDecisionsCount } from "../hooks/useDecisionsFeed";
-import { openAskEverest } from "../lib/ask-everest-events";
+import { useConversations } from "../hooks/useConversations";
+import { useLocation, useNavigate } from "../lib/router";
 import { getPartnerBranding } from "../lib/partner-branding";
+import { cn } from "../lib/utils";
 import { ProductMark } from "./BrandLockup";
 import { GREATSTONE_STONE_3D_SRC } from "./GreatstoneLogo";
 import { useLeadAgent } from "./MobileEverestButton";
@@ -57,29 +58,37 @@ function useOrbLift(): number {
   return lift;
 }
 
+/** Messages is open already (its list, a team chat or an agent chat). */
+export function isMessagesPath(pathname: string): boolean {
+  return /\/(messages|chats\/[^/]+)(\/|$)/.test(pathname);
+}
+
 /**
- * Everest, bottom right of every page: the glowing 3D stone with a count of
- * what needs you. The lime ring turns while the lead agent is running; the
- * glow, bob and ring stop under reduced motion. A click opens Ask Everest
- * over the page.
+ * Everest, bottom right of every page: the glowing 3D stone with the count of
+ * unread messages across every conversation. A click opens Messages, with
+ * Everest's thread at the top of the list. The lime ring turns while the lead
+ * agent is running; the glow, bob and ring stop under reduced motion. Hidden
+ * inside Messages, where it would only point at itself.
  */
 export function EverestOrb() {
   const { selectedCompanyId } = useCompany();
   const lead = useLeadAgent();
   const { liveAgents } = useLiveAgents(selectedCompanyId);
-  const needsYou = useDecisionsCount(selectedCompanyId);
+  const { unread } = useConversations();
   const lift = useOrbLift();
   const { isMobile } = useSidebar();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   // Phones dock Everest into the bottom tab bar (EverestTab) instead.
-  if (!lead || isMobile) return null;
+  if (!lead || isMobile || isMessagesPath(pathname)) return null;
 
   return (
     <EverestOrbButton
       name={lead.name}
-      count={needsYou}
+      count={unread}
       working={isLeadWorking(liveAgents, lead.id)}
       lift={lift}
-      onClick={() => openAskEverest()}
+      onClick={() => navigate("/messages")}
     />
   );
 }
@@ -105,9 +114,9 @@ export function EverestOrbButton({
 }) {
   const count = rawCount > 0 ? rawCount : 0;
   const label = [
-    `Ask ${name}`,
-    count > 0 ? `${count} ${count === 1 ? "thing needs" : "things need"} you` : null,
-    working ? "working now" : null,
+    "Open messages",
+    count > 0 ? `${count} unread` : null,
+    working ? `${name} working now` : null,
   ].filter(Boolean).join(", ");
 
   return (
@@ -115,7 +124,7 @@ export function EverestOrbButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      title={`Ask ${name}`}
+      title="Messages"
       className="gs-everest-orb print:hidden"
       data-testid={preview ? undefined : "everest-orb"}
       data-tour={preview ? undefined : "global-ask"}
@@ -132,31 +141,39 @@ export function EverestOrbButton({
 }
 
 /**
- * Everest on phones: a tab in the bottom tab bar (the whole cell is the
- * 44px+ target), so nothing floats over the page. The Decisions tab beside it
- * already carries the count, so the tab shows the stone and the ring only.
+ * Everest on phones: a tab in the bottom tab bar (the whole cell is the 44px+
+ * target), so nothing floats over the page. It opens Messages, where Everest
+ * is the first conversation, and carries the unread count.
  */
 export function EverestTab() {
   const { selectedCompanyId } = useCompany();
   const lead = useLeadAgent();
   const { liveAgents } = useLiveAgents(selectedCompanyId);
+  const { unread } = useConversations();
+  const navigate = useNavigate();
+  const here = isMessagesPath(useLocation().pathname);
   if (!lead) return null;
   const working = isLeadWorking(liveAgents, lead.id);
   return (
     <button
       type="button"
-      onClick={() => openAskEverest()}
-      aria-label={`Ask ${lead.name}${working ? ", working now" : ""}`}
+      onClick={() => navigate("/messages")}
+      aria-label={["Messages", unread > 0 ? `${unread} unread` : null, working ? `${lead.name} working now` : null].filter(Boolean).join(", ")}
       data-testid="everest-tab"
       data-tour="global-ask"
-      className="relative flex min-h-11 min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium text-muted-foreground transition-[color,transform] duration-(--motion-press) hover:text-foreground active:scale-95"
+      aria-current={here ? "page" : undefined}
+      className={cn(
+        "relative flex min-h-11 min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) hover:text-foreground active:scale-95",
+        here ? "text-foreground" : "text-muted-foreground",
+      )}
     >
       <span className="gs-everest-orb" data-variant="tab" data-working={working ? "true" : "false"} aria-hidden="true">
         {getPartnerBranding()
           ? <ProductMark className="h-1/2 w-auto" />
           : <img src={GREATSTONE_STONE_3D_SRC} alt="" className="gs-everest-orb-stone" />}
+        {unread > 0 ? <span className="gs-everest-orb-count">{unread > 99 ? "99+" : unread}</span> : null}
       </span>
-      <span className="truncate">{lead.name}</span>
+      <span className="truncate">Messages</span>
     </button>
   );
 }

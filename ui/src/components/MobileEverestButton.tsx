@@ -3,7 +3,6 @@ import { Link, useLocation } from "@/lib/router";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
-import type { Agent } from "@greatstone/shared";
 import { MessageCircle } from "lucide-react";
 import { agentRouteRef, cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { useSidebar } from "../context/SidebarContext";
@@ -54,7 +53,7 @@ export function useLeadAgent() {
 }
 
 /** Where "Ask Everest" goes: the lead agent's chat. */
-export function leadChatHref(lead: Pick<Agent, "id" | "name" | "urlKey">): string {
+export function leadChatHref(lead: Parameters<typeof agentRouteRef>[0]): string {
   return `/chats/${encodeURIComponent(agentRouteRef(lead))}`;
 }
 

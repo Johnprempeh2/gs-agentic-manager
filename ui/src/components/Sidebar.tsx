@@ -77,8 +77,7 @@ import { useSidebarLayout } from "../hooks/useSidebarLayout";
 import { SidebarNavExpandedProvider, SidebarNavItem } from "./SidebarNavItem";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
-import { SidebarAgentChats } from "./SidebarAgentChats";
-import { SidebarTeamChats } from "./SidebarTeamChats";
+import { SidebarChats } from "./SidebarChats";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarFollowing } from "./SidebarFollowing";
@@ -507,12 +506,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     chats: {
       label: "Chats",
       icon: MessageCircle,
-      node: showTeamChats || showAgentChats ? (
-        <>
-          {showTeamChats ? <SidebarTeamChats agentChatsFollow={showAgentChats} /> : null}
-          {showAgentChats ? <SidebarAgentChats inline /> : null}
-        </>
-      ) : null,
+      // Everest and pinned chats; everything else is in Messages (All messages).
+      node: showTeamChats || showAgentChats ? <SidebarChats /> : null,
     },
     calendar: link("/calendar", "Calendar", CalendarDays),
     // GRE-1477: CRM organisations, part of the pipelines module.
