@@ -42,9 +42,9 @@ describe("default sidebar layout", () => {
     expect(resolved.pinned).toEqual([]);
   });
 
-  it("slots the new sections into a section order saved before the reorganisation", () => {
+  it("preserves the relative order saved before the reorganisation", () => {
     expect(mergeSectionOrder(SIDEBAR_SECTION_IDS, ["company", "team", "work", "build"])).toEqual([
-      "start", "company", "work", "manage",
+      "start", "company", "manage", "work",
     ]);
   });
 });

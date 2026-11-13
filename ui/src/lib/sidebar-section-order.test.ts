@@ -13,6 +13,13 @@ describe("mergeSectionOrder", () => {
       .toEqual(["company", "work", "build", "team"]);
   });
 
+  it("migrates legacy section ids and keeps their first saved position", () => {
+    expect(mergeSectionOrder(
+      ["start", "company", "work", "manage"],
+      ["work", "today", "clients", "team", "help", "admin", "chats"],
+    )).toEqual(["work", "start", "company", "manage"]);
+  });
+
   it("places a new section in its default slot", () => {
     const withNew = ["work", "team", "insights", "build", "company"];
     expect(mergeSectionOrder(withNew, ["company", "build", "team", "work"]))

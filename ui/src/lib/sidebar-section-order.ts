@@ -1,3 +1,12 @@
+const LEGACY_SECTION_IDS: Readonly<Record<string, string>> = {
+  today: "start",
+  chats: "start",
+  clients: "company",
+  team: "manage",
+  help: "manage",
+  admin: "manage",
+};
+
 /**
  * Merge a user's saved section order with today's default order. Saved ids the
  * sidebar no longer has are dropped; sections added since the user last saved
@@ -6,7 +15,8 @@
  */
 export function mergeSectionOrder(defaults: readonly string[], stored: readonly string[]): string[] {
   const known = new Set(defaults);
-  const order = [...new Set(stored)].filter((id) => known.has(id));
+  const migrated = stored.map((id) => known.has(id) ? id : LEGACY_SECTION_IDS[id] ?? id);
+  const order = [...new Set(migrated)].filter((id) => known.has(id));
   defaults.forEach((id, index) => {
     if (order.includes(id)) return;
     const before = index === 0 ? -1 : order.indexOf(defaults[index - 1]!);
