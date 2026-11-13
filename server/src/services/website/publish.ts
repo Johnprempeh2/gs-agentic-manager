@@ -874,7 +874,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
           eq(websiteRelease.companyId, site.companyId),
           eq(websiteRelease.siteId, site.id),
           ne(websiteRelease.id, releaseId),
-          inArray(websiteRelease.status, ["pending", "switched", "staged"]),
+          inArray(websiteRelease.status, ["pending", "switched", "staged", "sent_live"]),
         ),
       );
   }
@@ -969,6 +969,54 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     if (!started) return busy(site);
     runInBackground(() => runPublish(site, releaseId, started.fence));
     return started.row;
+  }
+
+  /**
+   * Deploy straight to live (John, 13 Nov): the approved content as a new content release, uploaded beside staging's
+   * releases (media by hash, then `releases/<n>.json`) WITHOUT moving staging's `current`, so staging neither serves
+   * nor rebuilds it. The direct ticket names it; the website's deploy-site.mjs promotes it to the public site. Runs
+   * under the publish lease, start to finish, and answers with the number and sha256 the ticket signs.
+   */
+  async function stageForLive(site: SiteRow, person: WebsitePerson) {
+    if (!publishTarget(site).staged) throw conflict("Deploy straight to live is only for greatstoneint.com.", { code: "website_deploy_wrong_site" });
+    if (!site.netlifyTokenSecretId) throw unprocessable("This site has no Netlify token. Add it in the site settings first.", { code: "website_netlify_token_missing" });
+    const releaseId = randomUUID();
+    const started = await db.transaction(async (tx) => {
+      const fence = await takeLease(tx, site, releaseId, "publish");
+      if (fence === null) return null;
+      const number = await nextNumber(tx, site);
+      const [row] = await tx.insert(websiteRelease).values({
+        id: releaseId, companyId: site.companyId, siteId: site.id, number, kind: "publish", manifest: {}, status: "building",
+        requestedByUserId: person.userId, publishedByUserId: person.userId,
+      }).returning();
+      return row!;
+    });
+    if (!started) return busy(site);
+    let release = started;
+    try {
+      const built = await buildRelease(site, release.number);
+      release = await updateRelease(release, { manifest: built.manifest, checks: built.checks, releaseSha256: built.sha256 });
+      const failedChecks = built.checks.filter((c) => !c.ok);
+      if (failedChecks.length) {
+        release = await updateRelease(release, { status: "checks_failed", failedAt: new Date() });
+        throw unprocessable(`Nothing was deployed: ${failedChecks.map((c) => c.message).join(" ")}`, { code: "website_release_checks_failed" });
+      }
+      release = await updateRelease(release, { status: "uploading" });
+      const netlify = await netlifyFor(site);
+      for (const item of built.media) {
+        if (await netlify.blobExists(item.key)) continue;
+        await netlify.putBlob(item.key, await readAsset(site.companyId, item.objectKey), item.contentType);
+      }
+      const blobsKey = `releases/${release.number}.json`;
+      if (!(await netlify.blobExists(blobsKey))) await netlify.putBlob(blobsKey, built.file, "application/json");
+      release = await updateRelease(release, { status: "sent_live", blobsKey });
+      return { id: release.id, number: release.number, sha256: built.sha256 };
+    } catch (err) {
+      if (release.status !== "checks_failed") await updateRelease(release, { status: "failed", failedAt: new Date(), pendingReason: null }).catch(() => undefined);
+      throw err;
+    } finally {
+      await releaseLease(site, releaseId);
+    }
   }
 
   /** Reads the deploy's latest state from Netlify (a build may have finished since). */
@@ -1176,6 +1224,7 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     getRelease,
     listReleases,
     startPublish,
+    stageForLive,
     retryPlan,
     retry,
     rollbackPlan,

@@ -1199,7 +1199,7 @@ describe("full-screen editor (GRE-2296)", () => {
     await editor.save("req-1");
     expect(api.submitPage).not.toHaveBeenCalled();
     expect(api.approvePage).toHaveBeenCalledWith("co-1", "site-1", "page-1");
-    expect(text()).toContain("Approved. Publish puts it on staging, and Deploy puts it live.");
+    expect(text()).toContain("Approved. Publish to staging puts it on the test copy, and Deploy to live puts it on greatstoneint.com.");
   });
 
   it("Save and approve approves nothing when the save conflicts", async () => {

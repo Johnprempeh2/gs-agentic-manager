@@ -16717,6 +16717,15 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
+  path: `${siteParams}/production/deploy-direct`,
+  tags: ["website"],
+  summary: "John's Deploy straight to live (skip staging): makes a content release of the approved content and deploys main's head with it through the production workflow, with a direct-mode ticket (a signed-in person with an explicit website:deploy grant; never an agent or API key)",
+  body: z.object({ mainCommit: z.string(), confirm: z.literal("live") }),
+  responses: { ...websiteModuleResponses, 202: r.ok(), 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
   path: `${siteParams}/production/rollback`,
   tags: ["website"],
   summary: "John's Roll back: puts the previous live deploy of greatstoneint.com back through the production workflow (a signed-in person with an explicit website:deploy grant; never an agent or API key)",

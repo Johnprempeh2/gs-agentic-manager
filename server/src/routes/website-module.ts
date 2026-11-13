@@ -2,10 +2,10 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import publicImport from "../services/website/public-import-v1.json" with { type: "json" };
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { assets, companyMemberships, principalPermissionGrants, websiteProperties } from "@greatstone/db";
+import { assets, companyMemberships, principalPermissionGrants, websiteEntry, websitePage, websiteProperties } from "@greatstone/db";
 import {
   WEBSITE_MODULE_API_ROUTES,
   PUBLIC_NETLIFY_SITE_ID,
@@ -898,6 +898,17 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     return userId;
   }
 
+  /** Approved pages and entries not yet on a release: what Deploy straight to live sends with main's head. */
+  async function approvedContent(site: SiteRow) {
+    const pages = await db.select({ title: websitePage.title, slug: websitePage.slug }).from(websitePage)
+      .where(and(eq(websitePage.companyId, site.companyId), eq(websitePage.siteId, site.id), eq(websitePage.status, "approved"), isNull(websitePage.archivedAt)))
+      .orderBy(asc(websitePage.slug));
+    const entries = await db.select({ collection: websiteEntry.collection, key: websiteEntry.entryKey }).from(websiteEntry)
+      .where(and(eq(websiteEntry.companyId, site.companyId), eq(websiteEntry.siteId, site.id), eq(websiteEntry.status, "approved"), isNull(websiteEntry.archivedAt)))
+      .orderBy(asc(websiteEntry.collection), asc(websiteEntry.entryKey));
+    return { pages: pages.map((p) => `${p.title} (/${p.slug.replace(/^\//, "")})`), entries: entries.map((e) => `${e.collection}: ${e.key}`) };
+  }
+
   const runningRefusal = () => conflict("A Deploy or Roll back is already running. Wait for it to finish.", { code: "website_deploy_running" });
 
   router.get(WEBSITE_MODULE_API_ROUTES.production, async (req, res) => {
@@ -912,7 +923,7 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
       const status = await (await productionFor(site)).status();
       // The public half is not a secret, but only the person who sets up the GitHub side needs it.
       const publicKey = userId ? rawPublicKey(await deploySigningKey(secretService(db), site.companyId, userId)) : null;
-      const body: WebsiteProductionStatus = { ...status, canDeploy: Boolean(userId), publicKey };
+      const body: WebsiteProductionStatus = { ...status, direct: { ...status.direct, approved: await approvedContent(site) }, canDeploy: Boolean(userId), publicKey };
       res.json(body);
     } catch (err) {
       logger.warn({ siteId: site.id, err: err instanceof Error ? err.message : String(err) }, "Website production status unavailable");
@@ -935,10 +946,31 @@ export function websiteModuleRoutes(db: Db, options: WebsiteModuleRouteOptions =
     const pointer = await client.stagingPointer();
     if (!pointer || pointer.release !== req.body.stagingRelease) throw conflict("Staging changed since you opened this. Look at the new list, then Deploy again.", { code: "website_deploy_staging_moved" });
     const key = await deploySigningKey(secretService(db), site.companyId, userId);
-    const { id, ticket } = signDeployTicket(key, { action: "deploy", sha: req.body.stagingCommit, release: pointer.release, sha256: pointer.sha256 }, userId);
+    const { id, ticket } = signDeployTicket(key, { action: "deploy", mode: "staging", sha: req.body.stagingCommit, release: pointer.release, sha256: pointer.sha256 }, userId);
     await client.dispatch("deploy", id, ticket);
     await log(req, site.companyId, "website.production_deploy_started", "website_site", site.id, { request: id, commit: req.body.stagingCommit, release: pointer.release });
     res.status(202).json({ request: id });
+  });
+
+  // Deploy straight to live (John, 13 Nov): main's head and the approved content, skipping staging. Same person-only
+  // gate as Deploy; the live check and the automatic put-back still run in the workflow. Staging stays the default.
+  router.post(WEBSITE_MODULE_API_ROUTES.productionDeployDirect, validate(z.object({ mainCommit: z.string().regex(/^[0-9a-f]{40}$/), confirm: z.literal("live") })), async (req, res) => {
+    const site = await siteFor(req, res, "website:view");
+    if (!site) return;
+    const userId = await requireDeployer(req, site);
+    const client = await productionFor(site);
+    const status = await client.status();
+    if (status.runs.some((run) => run.status !== "completed")) throw runningRefusal();
+    if (!status.workflowReady) throw conflict("The production workflow is not set up in GitHub yet, so nothing was deployed.", { code: "website_deploy_not_set_up" });
+    if (!status.direct.supported) throw conflict("The website does not take Deploy straight to live yet (its update is waiting for John's review), so nothing was deployed.", { code: "website_direct_not_supported" });
+    const main = await client.mainHead();
+    if (main.sha !== req.body.mainCommit) throw conflict("main changed since you opened this. Look at the new list, then deploy again.", { code: "website_deploy_main_moved" });
+    const release = await publish.stageForLive(site, { userId });
+    const key = await deploySigningKey(secretService(db), site.companyId, userId);
+    const { id, ticket } = signDeployTicket(key, { action: "deploy", mode: "direct", sha: main.sha, release: release.number, sha256: release.sha256 }, userId);
+    await client.dispatch("direct", id, ticket);
+    await log(req, site.companyId, "website.production_direct_deploy_started", "website_site", site.id, { request: id, commit: main.sha, release: release.number });
+    res.status(202).json({ request: id, release: release.number });
   });
 
   router.post(WEBSITE_MODULE_API_ROUTES.productionRollback, validate(z.object({ deployId: z.string().regex(/^[0-9a-f]{24}$/) })), async (req, res) => {

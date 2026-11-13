@@ -186,7 +186,7 @@ export const WEBSITE_PAGES_TOUR: TourDefinition = {
     {
       target: "website-page-status",
       title: "Its state",
-      body: "Draft, In review, Approved, On staging or Live. Publish puts approved pages on staging; visitors only see a page once Deploy makes it Live.",
+      body: "Draft, In review, Approved, On staging or Live. Publish to staging puts approved pages on the test copy; visitors only see a page once Deploy to live puts it on greatstoneint.com.",
     },
     {
       target: "website-pages-edit",
@@ -252,7 +252,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
     {
       target: "website-collection-new",
       title: "Add one",
-      body: "A new entry starts as a draft. Send it for review, or, if you can approve, use Save and approve. Once it is approved, Publish puts it on staging and Deploy puts it on the live site.",
+      body: "A new entry starts as a draft. Send it for review, or, if you can approve, use Save and approve. Once it is approved, Publish to staging puts it on the test copy and Deploy to live puts it on greatstoneint.com.",
     },
   ],
 };
@@ -279,8 +279,8 @@ export const WEBSITE_RELEASES_TOUR: TourDefinition = {
     },
     {
       target: "website-publish",
-      title: "Publish",
-      body: "Puts every approved change on staging in one go. Deploy then takes staging to the live site. Each Publish costs credits, so it is for the site's owner to press, after the changes are approved.",
+      title: "Publish to staging",
+      body: "Puts every approved change on staging (the test copy) in one go. Deploy to live then takes staging to greatstoneint.com. Each Publish costs credits, so it is for the site's owner to press, after the changes are approved.",
     },
     {
       target: "website-release-row",
