@@ -499,7 +499,7 @@ function LiveEditorShell({
 
   return (
     <div className="fixed inset-0 z-dialog flex flex-col bg-background text-foreground">
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2 pt-(--sz-pad-safe-top)">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 pt-(--sz-pad-safe-top) md:flex-nowrap">
         <Link
           to={backTo}
           disableIssueQuicklook
@@ -509,7 +509,7 @@ function LiveEditorShell({
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
         </Link>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-(--sz-live-editor-title-phone) md:basis-0">
           <h1 className="truncate text-sm font-semibold">{title}</h1>
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
