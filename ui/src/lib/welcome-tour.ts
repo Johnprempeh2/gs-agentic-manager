@@ -39,10 +39,10 @@ export const WELCOME_TOUR: TourDefinition = {
       body: "When an agent needs your answer or your sign-off, it waits in Decisions. The number shows how many are waiting. Start each day here.",
     },
     {
-      // Website sits in Admin, which starts folded: point at the fold when the row is not showing.
-      target: ["nav-website", "Expand Admin"],
+      // Website sits in Work: point at the fold when the row is not showing.
+      target: ["nav-website", "Expand Work"],
       title: "The website",
-      body: "Website is in the Admin section of the sidebar. Open Admin if it is folded. It holds the sitemap, the pages and the page editor.",
+      body: "Website is in the Work section of the sidebar. Open Work if it is folded. It holds the sitemap, the pages and the page editor.",
     },
     {
       target: "nav-commerce",

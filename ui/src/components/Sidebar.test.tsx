@@ -319,6 +319,22 @@ describe("Sidebar", () => {
     });
   });
 
+  it("points the Website welcome step at Work when that section is folded", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableWebsiteView: true });
+    mockSidebarPrefs.layout = { collapsed: { work: true } };
+    const root = await renderSidebar();
+
+    const websiteStep = WELCOME_TOUR.steps.find((step) => step.title === "The website");
+    expect(websiteStep?.target).toEqual(["nav-website", "Expand Work"]);
+    expect(websiteStep?.body).toContain("Work section");
+    expect(findTourTarget("nav-website")).toBeNull();
+    expect(findTourTarget("Expand Work")).not.toBeNull();
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("shows Releases only to the board (GRE-122)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     const releasesLink = () =>
