@@ -51,6 +51,9 @@ import {
   Newspaper,
   GraduationCap,
   Sparkles,
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   DndContext,
@@ -75,7 +78,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
 import { useSidebarLayout } from "../hooks/useSidebarLayout";
-import { SidebarNavItem } from "./SidebarNavItem";
+import { SidebarNavExpandedProvider, SidebarNavItem } from "./SidebarNavItem";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
@@ -117,15 +120,14 @@ import {
   setSidebarItemPinned,
   setSidebarSectionOpen,
 } from "../lib/sidebar-layout";
-import { useLocation } from "@/lib/router";
+import { Link, useLocation } from "@/lib/router";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
-import { SidebarBrandSignature } from "./SidebarBrandSignature";
+import { BrandLockup, ProductMark } from "./BrandLockup";
 import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
 import { useCanRelease } from "../hooks/useReleases";
 import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
-import { SidebarAskEverest } from "./MobileEverestButton";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 import { useWhatsNewUnseen } from "../lib/whats-new";
 
@@ -136,6 +138,70 @@ interface SidebarItemDef {
   node: ReactNode | null;
   /** The route it opens, so a folded section can open while you are on one of its pages. */
   to?: string;
+}
+
+interface SidebarGroupEntry {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  to: string;
+}
+
+function SidebarNavGroup({
+  active,
+  entries,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  entries: SidebarGroupEntry[];
+  icon: LucideIcon;
+  label: string;
+}) {
+  const { collapsed, peeking } = useSidebar();
+  const rail = collapsed && !peeking;
+  const [open, setOpen] = useState(false);
+  if (entries.length === 0) return null;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={rail ? label : undefined}
+          aria-expanded={open}
+          data-tour={label === "Desk" ? "nav-decisions" : label === "Build" ? "nav-tutorials" : undefined}
+          onPointerEnter={() => { if (rail) setOpen(true); }}
+          onMouseEnter={(event) => { if (rail) event.stopPropagation(); }}
+          className={cn(
+            "gs-nav-item mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-(length:--text-compact) font-medium outline-none transition-colors pointer-coarse:py-1",
+            active
+              ? "gs-nav-item-active bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          )}
+        >
+          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "min-w-0 flex-1 truncate text-left"}>{label}</span>
+          {rail ? null : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-56">
+        <SidebarNavExpandedProvider>
+          {entries.map((entry) => {
+            const EntryIcon = entry.icon;
+            return (
+              <DropdownMenuItem key={entry.id} asChild>
+                <Link to={entry.to} className="flex items-center gap-2">
+                  <EntryIcon className="size-4" aria-hidden="true" />
+                  <span>{entry.label}</span>
+                </Link>
+              </DropdownMenuItem>
+            );
+          })}
+        </SidebarNavExpandedProvider>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 const ICON_BUTTON =
@@ -335,7 +401,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: teamChatEnabled } = useTeamChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
-  const { collapsed, peeking } = useSidebar();
+  const { collapsed, peeking, collapseLocked, toggleCollapsed, isMobile } = useSidebar();
   const rail = collapsed && !peeking;
   const [customising, setCustomising] = useState(false);
   // The icon rail has no room to rearrange; customising needs the full width.
@@ -504,6 +570,26 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const pinned = layout.resolved.pinned.filter(available);
   const pinnedSet = new Set(pinned);
   const shown = (id: string) => available(id) && !hidden.has(id) && !pinnedSet.has(id);
+  const groups = {
+    "my-tasks": { label: "Desk", icon: UserCheck, items: ["my-tasks", "decisions", "inbox", "dashboard"] },
+    organisations: { label: "Clients", icon: Building2, items: ["organisations", "pipelines"] },
+    deliverables: { label: "Deliverables", icon: FileCheck2, items: ["deliverables", "links", "artifacts"] },
+    agents: { label: "Team", icon: Users, items: ["agents", "scorecard", "weekly-report", "status", "conference-room"] },
+    skills: { label: "Build", icon: Boxes, items: ["skills", "connectors", "routines", "workflows", "releases", "activity"] },
+  } as const;
+  const absorbed = new Set<string>(Object.values(groups).flatMap((group) => group.items.slice(1)));
+  const shownTopLevel = (id: string) => shown(id) && !absorbed.has(id);
+  const renderItem = (id: string) => {
+    const group = groups[id as keyof typeof groups];
+    if (!group) return items[id]!.node;
+    const entries = group.items.flatMap((entryId) => {
+      const entry = items[entryId];
+      if (!entry?.to || hidden.has(entryId) || (pinnedSet.has(entryId) && entryId !== id)) return [];
+      return [{ id: entryId, label: entry.label, icon: entry.icon, to: entry.to }];
+    });
+    const active = entries.some((entry) => currentPath === entry.to || currentPath.startsWith(`${entry.to}/`));
+    return <SidebarNavGroup active={active} entries={entries} icon={group.icon} label={group.label} />;
+  };
   const sectionOrder = useSidebarSectionOrder(SIDEBAR_SECTION_IDS);
   const sectionsById = new Map(layout.resolved.sections.map((section) => [section.id, section]));
   const orderedSections = sectionOrder.order.flatMap((id) => sectionsById.get(id) ?? []);
@@ -511,7 +597,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Outside customise mode a section with nothing to show is left out entirely.
   const renderedSections = customise
     ? orderedSections
-    : orderedSections.filter((section) => section.items.some(shown));
+    : orderedSections.filter((section) => section.items.some(shownTopLevel));
 
   // Drag starts only from a grip. Touch waits a moment so a swipe still
   // scrolls the sidebar; the keyboard sensor lets a grip move with arrows.
@@ -561,7 +647,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   };
 
   const renderSectionBody = (sectionId: string, ids: string[]) => {
-    if (!customise) return ids.map((id) => <Fragment key={id}>{items[id]!.node}</Fragment>);
+    if (!customise) return ids.map((id) => <Fragment key={id}>{renderItem(id)}</Fragment>);
     if (ids.length === 0) return <EmptySectionDropZone sectionId={sectionId} />;
     return (
       <SortableContext items={ids.map((id) => `item:${id}`)} strategy={verticalListSortingStrategy}>
@@ -596,16 +682,24 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     >
       {/* Top bar: company name, aligned with top sections and borderless.
           Search lives in the nav list so the workspace name keeps the width. */}
-      <div className="flex h-(--sz-60px) shrink-0 items-center gap-1 px-3">
-        <SidebarCompanyMenu />
+      <div className={cn("flex h-(--sz-60px) shrink-0 items-center gap-1 px-3", rail && "flex-col justify-center gap-0 px-2")}>
+        {rail ? <ProductMark className="h-6 w-auto flex-none" /> : <BrandLockup className="h-5 w-auto flex-none text-sidebar-foreground" />}
+        {collapseLocked || isMobile ? null : (
+          <button
+            type="button"
+            data-slot="icon-button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn("ml-auto flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", rail && "ml-0 size-6")}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
+          </button>
+        )}
       </div>
 
       <nav className={primarySidebarStyles.nav} aria-label="Main">
         <div className={primarySidebarStyles.group}>
-          {/* Ben, 13 Oct: the first thing in the sidebar is asking Everest, in words. */}
-          <div className="mb-1">
-            <SidebarAskEverest rail={rail} />
-          </div>
+          <SidebarCompanyMenu />
           {(() => {
             const newTaskButton = (
               <button
@@ -688,7 +782,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
                     }}
                     menu={sectionMenu(section.id, section.label)}
                   >
-                    {renderSectionBody(section.id, section.items.filter(shown))}
+                    {renderSectionBody(section.id, section.items.filter(customise ? shown : shownTopLevel))}
                   </SidebarSection>
                 )}
               </SortableSidebarSection>
@@ -755,7 +849,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             <span className="truncate">Customise sidebar</span>
           </button>
         )}
-        <SidebarBrandSignature rail={rail} />
         <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
     </aside>

@@ -17,6 +17,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { FocusTitleTip } from "./FocusTitleTip";
 import { AskEverestPanel } from "./AskEverestPanel";
+import { EverestOrb } from "./EverestOrb";
 import { OnDemandCreateDialogs } from "./OnDemandDialogs";
 import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
 import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
@@ -84,6 +85,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     sidebarOpen,
     setSidebarOpen,
     toggleSidebar,
+    toggleCollapsed,
     collapsed,
     peeking,
     setPeeking,
@@ -331,6 +333,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   ]);
 
   const togglePanel = togglePanelVisible;
+  const toggleCollapse = useCallback(() => {
+    if (isMobile) toggleSidebar();
+    else toggleCollapsed();
+  }, [isMobile, toggleCollapsed, toggleSidebar]);
   const openSearch = useCallback(() => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "k",
@@ -442,7 +448,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     enabled: keyboardShortcutsEnabled,
     onNewIssue: () => openNewIssue(),
     onSearch: openSearch,
-    onToggleSidebar: toggleSidebar,
+    onToggleSidebar: toggleCollapse,
     onTogglePanel: togglePanel,
     onShowShortcuts: () => setShortcutsOpen(true),
     onGoToInbox: () => navigate("/inbox"),
@@ -794,7 +800,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                   : undefined
               }
               className={cn(
-                "flex-1 p-4 outline-none md:p-6 print:overflow-visible print:p-0",
+                "flex-1 p-4 pb-24 outline-none md:p-6 md:pb-24 print:overflow-visible print:p-0",
                 // The task thread owns its scrollable top spacing. Leaving the
                 // page shell's top padding in place creates a stationary dark
                 // strip below the breadcrumb while messages scroll behind it.
@@ -836,6 +842,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <CommandPalette />
       <FocusTitleTip />
       <AskEverestPanel />
+      <EverestOrb />
       <OnDemandCreateDialogs />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />

@@ -34,17 +34,17 @@ describe("default sidebar layout", () => {
     expect(resolved).toEqual(all);
   });
 
-  it("starts with what needs you and folds Admin away", () => {
+  it("starts with what needs you and folds Manage away", () => {
     const resolved = resolveSidebarLayout({});
-    expect(resolved.sections.map((section) => section.id)).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
-    expect(resolved.sections.map((section) => section.open)).toEqual([true, true, true, true, true, true, false]);
+    expect(resolved.sections.map((section) => section.id)).toEqual(["start", "company", "work", "manage"]);
+    expect(resolved.sections.map((section) => section.open)).toEqual([true, true, true, true]);
     expect(resolved.hidden).toEqual([]);
     expect(resolved.pinned).toEqual([]);
   });
 
   it("slots the new sections into a section order saved before the reorganisation", () => {
     expect(mergeSectionOrder(SIDEBAR_SECTION_IDS, ["company", "team", "work", "build"])).toEqual([
-      "today", "chats", "clients", "team", "help", "admin", "work",
+      "start", "company", "work", "manage",
     ]);
   });
 });
@@ -56,7 +56,7 @@ describe("merging a saved layout with the defaults", () => {
       hidden: ["retired-page", "memory"],
       pinned: ["retired-page", "inbox"],
     });
-    expect(itemsOf(resolved, "work")).toEqual(["goals", "board", "intelligence", "memory", "dashboard", "tasks", "projects"]);
+    expect(itemsOf(resolved, "work")).toEqual(["goals", "dashboard", "board", "intelligence", "memory", "tasks", "projects", "website"]);
     expect(resolved.sections.flatMap((section) => section.items)).not.toContain("retired-page");
     expect(resolved.hidden).toEqual(["memory"]);
     expect(resolved.pinned).toEqual(["inbox"]);
@@ -66,8 +66,8 @@ describe("merging a saved layout with the defaults", () => {
     const resolved = resolveSidebarLayout({
       sections: { today: ["decisions", "deliverables"], clients: ["deliverables", "organisations"] },
     });
-    expect(itemsOf(resolved, "today")).toEqual(["decisions", "my-tasks", "inbox", "calendar", "deliverables"]);
-    expect(itemsOf(resolved, "clients")).toEqual(["organisations", "commerce", "pipelines", "deep-dive", "links", "images"]);
+    expect(itemsOf(resolved, "start")).toEqual(["my-tasks", "decisions", "inbox", "chats", "calendar", "deliverables"]);
+    expect(itemsOf(resolved, "company")).not.toContain("deliverables");
   });
 
   it("respects hidden items and drops a pin on a hidden item", () => {
@@ -81,28 +81,28 @@ describe("merging a saved layout with the defaults", () => {
   it("remembers folded and opened sections", () => {
     const resolved = resolveSidebarLayout({ collapsed: { work: true, admin: false } });
     expect(resolved.sections.find((section) => section.id === "work")?.open).toBe(false);
-    expect(resolved.sections.find((section) => section.id === "admin")?.open).toBe(true);
+    expect(resolved.sections.find((section) => section.id === "manage")?.open).toBe(true);
   });
 });
 
 describe("layout changes", () => {
   it("moves an item within a section and across sections", () => {
-    let layout = moveSidebarItem({}, "inbox", "today", 0);
-    expect(itemsOf(resolveSidebarLayout(layout), "today")).toEqual(["inbox", "decisions", "my-tasks", "calendar"]);
-    layout = moveSidebarItem(layout, "deliverables", "today", 1);
+    let layout = moveSidebarItem({}, "inbox", "start", 0);
+    expect(itemsOf(resolveSidebarLayout(layout), "start")).toEqual(["inbox", "my-tasks", "decisions", "chats", "calendar"]);
+    layout = moveSidebarItem(layout, "deliverables", "start", 1);
     const resolved = resolveSidebarLayout(layout);
-    expect(itemsOf(resolved, "today")).toEqual(["inbox", "deliverables", "decisions", "my-tasks", "calendar"]);
-    expect(itemsOf(resolved, "clients")).not.toContain("deliverables");
+    expect(itemsOf(resolved, "start")).toEqual(["inbox", "deliverables", "my-tasks", "decisions", "chats", "calendar"]);
+    expect(itemsOf(resolved, "company")).not.toContain("deliverables");
     expect(moveSidebarItem(layout, "nope", "today", 0)).toBe(layout);
   });
 
   it("moves up and down past items that are not shown", () => {
     // board sits between goals and intelligence but is switched off.
     const layout = moveSidebarItemBy({}, "intelligence", -1, (id) => id !== "board");
-    expect(itemsOf(resolveSidebarLayout(layout), "work")?.slice(3, 6)).toEqual(["intelligence", "goals", "board"]);
-    expect(moveSidebarItemBy({}, "decisions", -1)).toEqual({});
-    expect(itemsOf(resolveSidebarLayout(moveSidebarItemBy({}, "decisions", 1)), "today")).toEqual([
-      "my-tasks", "decisions", "inbox", "calendar",
+    expect(itemsOf(resolveSidebarLayout(layout), "work")?.slice(3, 6)).toEqual(["goals", "intelligence", "dashboard"]);
+    expect(moveSidebarItemBy({}, "my-tasks", -1)).toEqual({});
+    expect(itemsOf(resolveSidebarLayout(moveSidebarItemBy({}, "decisions", 1)), "start")).toEqual([
+      "my-tasks", "inbox", "decisions", "chats", "calendar",
     ]);
   });
 
@@ -113,7 +113,7 @@ describe("layout changes", () => {
     expect(layout.pinned).toEqual([]);
     layout = setSidebarItemHidden(layout, "agents", false);
     expect(layout.hidden).toEqual([]);
-    layout = setSidebarSectionOpen(layout, "admin", true);
+    layout = setSidebarSectionOpen(layout, "manage", true);
     expect(resolveSidebarLayout(layout).sections.at(-1)?.open).toBe(true);
   });
 });

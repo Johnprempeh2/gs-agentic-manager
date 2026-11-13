@@ -35,13 +35,40 @@ interface SidebarContextValue {
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 
 const MOBILE_BREAKPOINT = 768;
+const COLLAPSED_STORAGE_KEY = "paperclip.sidebar.collapsed";
+const PEEK_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
+
+function readStoredCollapsed(): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (stored === "1") return true;
+    if (stored === "0") return false;
+  } catch {
+    // Storage can be unavailable in private contexts.
+  }
+  return null;
+}
+
+function writeStoredCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, value ? "1" : "0");
+  } catch {
+    // Keep the current-session state when storage is unavailable.
+  }
+}
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BREAKPOINT);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= MOBILE_BREAKPOINT);
 
+  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(() => readStoredCollapsed());
   const [routeRequestsCollapsed, setRouteRequestsCollapsed] = useState(false);
   const [forceCollapsed, setForceCollapsed] = useState(false);
+  const [rawPeeking, setRawPeeking] = useState(false);
+  const [pointerCanPeek, setPointerCanPeek] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia(PEEK_POINTER_QUERY).matches,
+  );
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
@@ -53,14 +80,28 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     return () => mql.removeEventListener("change", onChange);
   }, []);
 
-  // The icon rail has been retired. Keep the old API inert so routes and
-  // plugins compiled against it cannot collapse the global navigation.
-  const collapsed = false;
-  const collapseLocked = false;
-  const peeking = false;
-  const setCollapsed = useCallback((_next: boolean) => {}, []);
-  const toggleCollapsed = useCallback(() => {}, []);
-  const setPeeking = useCallback((_next: boolean) => {}, []);
+  useEffect(() => {
+    const media = window.matchMedia(PEEK_POINTER_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      setPointerCanPeek(event.matches);
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  const pinnedOrRequested = userCollapsed ?? routeRequestsCollapsed;
+  const collapsed = !isMobile && (forceCollapsed || pinnedOrRequested);
+  const collapseLocked = !isMobile && forceCollapsed;
+  const peeking = rawPeeking && collapsed && pointerCanPeek;
+  const setCollapsed = useCallback((next: boolean) => {
+    setUserCollapsed(next);
+    writeStoredCollapsed(next);
+  }, []);
+  const toggleCollapsed = useCallback(() => {
+    if (forceCollapsed) return;
+    setCollapsed(!pinnedOrRequested);
+  }, [forceCollapsed, pinnedOrRequested, setCollapsed]);
+  const setPeeking = useCallback((next: boolean) => setRawPeeking(next), []);
 
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
 
