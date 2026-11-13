@@ -51,10 +51,6 @@ function operatorEnvironment(): NodeJS.ProcessEnv {
     "GSAM_AGENT_ID",
     "GSAM_AGENT_KEY_ID",
     "GSAM_RUNNER_INSTANCE_ID",
-    "PAPERCLIP_RUN_ID",
-    "PAPERCLIP_AGENT_ID",
-    "PAPERCLIP_AGENT_KEY_ID",
-    "PAPERCLIP_RUNNER_INSTANCE_ID",
   ]) {
     delete env[key];
   }
