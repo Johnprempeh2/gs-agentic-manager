@@ -101,8 +101,8 @@ export function ProjectDeliverablesDesignExamples() {
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border">
+      <div className="grid min-w-0 gap-6 md:grid-cols-3">
+        <div className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border md:col-span-2">
           <OldVersionBanner shownVersion={shownVersion} latestVersion={3} onViewLatest={() => setShownId("v3")} />
           <div className="flex min-h-40 items-center justify-center bg-muted/40 p-6 text-sm text-muted-foreground">
             Release {shownVersion} preview
