@@ -680,7 +680,8 @@ export function DesignGuide() {
           <p className="max-w-prose text-sm text-muted-foreground">
             Bottom right of every page. The count is what needs you; the lime ring turns while
             Everest is working. Glow, bob and ring stop under reduced motion. It rises above any
-            element marked data-orb-avoid (chat composers) and clears the phone home indicator.
+            element marked data-orb-avoid (chat composers). On phones it never floats: EverestTab
+            docks it into the bottom tab bar.
           </p>
           <div className="flex flex-wrap items-center gap-8 p-2">
             <EverestOrbButton preview name="Everest" count={0} working={false} />

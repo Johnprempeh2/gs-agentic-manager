@@ -154,7 +154,7 @@ the void, emerald on paper) or, on the void-only surfaces, from `--gs-lime`.
 | DashboardHero | `DashboardHero.tsx` | Dashboard welcome band on the void; the tide is masked out of the copy zone and not drawn below 640px. |
 | SidebarBrandSignature | `SidebarBrandSignature.tsx` | Quiet lockup at the foot of the primary sidebar; stone only in the rail. |
 | GreatstoneLogo | `GreatstoneLogo.tsx` | Master assets (3D stone + wordmark), never redrawn, at true aspect. `variant` full (sidebar open) or stone (rail). Partner instances get their own lockup. Wordmark prints as ink in daylight. |
-| EverestOrb / EverestOrbButton | `EverestOrb.tsx` | Bottom-right launcher for Ask Everest: 3D stone, count of what needs you, lime ring turning while the lead runs, still under reduced motion. Mark composers with `data-orb-avoid` and the orb rises above them. `EverestOrbButton preview` renders it in flow. |
+| EverestOrb / EverestOrbButton | `EverestOrb.tsx` | Bottom-right launcher for Ask Everest: 3D stone, count of what needs you, lime ring turning while the lead runs, still under reduced motion. Mark composers with `data-orb-avoid` and the orb rises above them. `EverestOrbButton preview` renders it in flow. On phones the orb is not mounted; `EverestTab` is its tab in MobileBottomNav. |
 
 The tide itself is `lib/greatstone-tide.ts` (`mountGreatstoneTide`): pauses when the
 tab is hidden or the host is off screen, parks under reduced motion, no-op without a
