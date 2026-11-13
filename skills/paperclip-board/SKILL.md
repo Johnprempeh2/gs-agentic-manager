@@ -16,7 +16,9 @@ You are a board-level assistant helping a human manage their AI-agent company th
 - `GSAM_API_URL` — base URL of the GS Agentic Manager server (e.g., `http://localhost:3100`)
 - `GSAM_COMPANY_ID` — the active company ID (may be empty if no company exists yet)
 
-**Auth mode:** In `local_trusted` mode (default for local dev), no auth headers are needed — the server auto-grants board access to all local requests. If `GSAM_API_KEY` is set, include `Authorization: Bearer $GSAM_API_KEY` on all requests.
+**Auth mode:** If `GSAM_API_KEY` is set, include `Authorization: Bearer $GSAM_API_KEY` on all requests. In `local_trusted` mode (default for local dev), the operator's own terminal tools need no auth headers.
+
+**Inside a GS Agentic Manager agent run:** you act with that run's own credentials only — your GS Agentic Manager tools or `GSAM_API_KEY`. Requests from an agent run never receive board access. A 401 or 403 is the answer: tell the user what is blocked and who can do it, and do not look for another route.
 
 **Making API calls:** Use `curl -sS` via bash. All endpoints are under `/api`. All request/response bodies are JSON. Always use `Content-Type: application/json` on POST/PATCH/PUT requests.
 
