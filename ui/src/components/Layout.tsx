@@ -704,9 +704,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
-            <div className="gs-sidebar-glass w-60">
+            {/* w-72 on phones: 44px touch controls need the room (GRE phone audit). */}
+            <div className="gs-sidebar-glass w-72">
             <div className="flex flex-1 min-h-0 overflow-hidden">
-              <div className="w-60 shrink-0 overflow-hidden">
+              <div className="w-full min-w-0 overflow-hidden">
                 {hasSecondarySidebar ? (
                   <SecondarySidebar>{secondarySidebar}</SecondarySidebar>
                 ) : (

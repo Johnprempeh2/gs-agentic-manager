@@ -114,3 +114,25 @@ describe("Everest orb motion", () => {
     expect(orbBlock).toMatch(/\.gs-everest-orb\[data-working="true"\]::after \{ border-color: #c8ff00; \}/);
   });
 });
+
+describe("phone touch targets and the docked orb", () => {
+  const coarse = (() => {
+    const at = glassCss.indexOf("@media (pointer: coarse) {\n  .gs-sidebar-glass");
+    return glassCss.slice(at, glassCss.indexOf("\n}\n", at));
+  })();
+
+  it("gives every sidebar row and control a 44px floor on touch", () => {
+    expect(coarse).toMatch(/\.gs-sidebar-glass :is\(a, button\):not\(\.sr-only\) \{ min-height: 2\.75rem; \}/);
+    for (const control of ['[data-slot="icon-button"]', '[aria-label^="Drag to move"]', '[aria-label^="Hide "]', '[aria-label^="More options for"]']) {
+      expect(coarse).toContain(control);
+    }
+    expect(coarse).toContain("min-width: 2.75rem;");
+  });
+
+  it("docks the orb in the tab bar in the page flow, never fixed", () => {
+    const at = glassCss.indexOf('.gs-everest-orb[data-variant="tab"] {');
+    const rule = glassCss.slice(at, glassCss.indexOf("}", at));
+    expect(rule).toContain("position: relative;");
+    expect(rule).not.toContain("position: fixed");
+  });
+});

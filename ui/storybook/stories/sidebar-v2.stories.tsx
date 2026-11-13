@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { AskEverestPanel } from "@/components/AskEverestPanel";
 import { EverestOrb } from "@/components/EverestOrb";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { Sidebar } from "@/components/Sidebar";
 import { SidebarAccountMenu } from "@/components/SidebarAccountMenu";
 import { SidebarShell } from "@/components/SidebarShell";
@@ -65,9 +66,9 @@ function Stage({ mode }: { mode: Mode }) {
           <>
             <div className="fixed inset-0 z-drawer gs-scrim" />
             <div className="gs-rail gs-sidebar-drawer fixed inset-y-0 left-0 z-drawer flex flex-col">
-              <div className="gs-sidebar-glass w-60">
+              <div className="gs-sidebar-glass w-72">
                 <div className="flex min-h-0 flex-1 overflow-hidden">
-                  <div className="w-60 shrink-0 overflow-hidden"><Sidebar /></div>
+                  <div className="w-full min-w-0 overflow-hidden"><Sidebar /></div>
                 </div>
                 <SidebarAccountMenu deploymentMode="authenticated" />
               </div>
@@ -94,6 +95,7 @@ function Stage({ mode }: { mode: Mode }) {
       </main>
       <AskEverestPanel />
       <EverestOrb />
+      {isMobile ? <MobileBottomNav visible /> : null}
     </div>
   );
 }

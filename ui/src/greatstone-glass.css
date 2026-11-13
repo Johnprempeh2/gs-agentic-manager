@@ -1234,6 +1234,17 @@
   box-shadow: none;
 }
 
+/* Touch: every row and control in the sidebar is at least 44px, the iOS
+   minimum. Icon-only controls (data-slot="icon-button", grips, eyes) are
+   44px square. Covers rows added later too, so nothing slips under it. */
+@media (pointer: coarse) {
+  .gs-sidebar-glass :is(a, button):not(.sr-only) { min-height: 2.75rem; }
+  .gs-sidebar-glass button:is([data-slot="icon-button"], [aria-label^="Drag to move"], [aria-label^="Hide "], [aria-label^="More options for"], [aria-label^="Unpin "], [aria-label^="Show "], [aria-label="Email feedback to Greatstone"]) {
+    min-width: 2.75rem;
+  }
+  .gs-sidebar-glass a[aria-label="Email feedback to Greatstone"] { min-width: 2.75rem; }
+}
+
 /* Phone drawer: the same panel, clear of the notch and the home indicator. */
 .gs-sidebar-drawer {
   padding:
@@ -1340,16 +1351,19 @@
   50% { box-shadow: 0 0 0 9px rgb(200 255 0 / 0.05), 0 0 40px rgb(200 255 0 / 0.38), 0 14px 30px rgb(0 0 0 / 0.45); }
 }
 
-/* Phones: smaller, above the bottom nav (which already includes the home
-   indicator inset in --sz-calc-14). */
-@media (width < 48rem) {
-  .gs-everest-orb {
-    width: 3rem;
-    height: 3rem;
-    right: calc(env(safe-area-inset-right) + 0.75rem);
-    bottom: max(calc(var(--sz-calc-14) + 0.75rem), var(--orb-lift, 0px));
-  }
+/* Phones: the orb docks into the bottom tab bar as its own tab, so it can
+   never float over a page control or a composer (phone audit, 13 Nov). */
+.gs-everest-orb[data-variant="tab"] {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  width: 2rem;
+  height: 2rem;
+  cursor: inherit;
+  box-shadow: 0 0 0 3px rgb(200 255 0 / 0.07), 0 0 14px rgb(200 255 0 / 0.25);
+  animation: none;
 }
+.gs-everest-orb[data-variant="tab"]::after { inset: -3px; border-width: 1.5px; }
 
 @media (prefers-reduced-motion: reduce) {
   .gs-everest-orb,

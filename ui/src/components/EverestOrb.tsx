@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useCompany } from "../context/CompanyContext";
+import { useSidebar } from "../context/SidebarContext";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { openAskEverest } from "../lib/ask-everest-events";
@@ -68,7 +69,9 @@ export function EverestOrb() {
   const { liveAgents } = useLiveAgents(selectedCompanyId);
   const needsYou = useDecisionsCount(selectedCompanyId);
   const lift = useOrbLift();
-  if (!lead) return null;
+  const { isMobile } = useSidebar();
+  // Phones dock Everest into the bottom tab bar (EverestTab) instead.
+  if (!lead || isMobile) return null;
 
   return (
     <EverestOrbButton
@@ -124,6 +127,36 @@ export function EverestOrbButton({
         ? <ProductMark className="h-1/2 w-auto" />
         : <img src={GREATSTONE_STONE_3D_SRC} alt="" aria-hidden="true" className="gs-everest-orb-stone" />}
       {count > 0 ? <span className="gs-everest-orb-count" aria-hidden="true">{count > 99 ? "99+" : count}</span> : null}
+    </button>
+  );
+}
+
+/**
+ * Everest on phones: a tab in the bottom tab bar (the whole cell is the
+ * 44px+ target), so nothing floats over the page. The Decisions tab beside it
+ * already carries the count, so the tab shows the stone and the ring only.
+ */
+export function EverestTab() {
+  const { selectedCompanyId } = useCompany();
+  const lead = useLeadAgent();
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
+  if (!lead) return null;
+  const working = isLeadWorking(liveAgents, lead.id);
+  return (
+    <button
+      type="button"
+      onClick={() => openAskEverest()}
+      aria-label={`Ask ${lead.name}${working ? ", working now" : ""}`}
+      data-testid="everest-tab"
+      data-tour="global-ask"
+      className="relative flex min-h-11 min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium text-muted-foreground transition-[color,transform] duration-(--motion-press) hover:text-foreground active:scale-95"
+    >
+      <span className="gs-everest-orb" data-variant="tab" data-working={working ? "true" : "false"} aria-hidden="true">
+        {getPartnerBranding()
+          ? <ProductMark className="h-1/2 w-auto" />
+          : <img src={GREATSTONE_STONE_3D_SRC} alt="" className="gs-everest-orb-stone" />}
+      </span>
+      <span className="truncate">{lead.name}</span>
     </button>
   );
 }
