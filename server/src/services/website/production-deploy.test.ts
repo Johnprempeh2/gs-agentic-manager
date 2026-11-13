@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rollbackTarget, toProductionRun } from "./production-deploy.js";
+import { retryOnce, rollbackTarget, toProductionRun } from "./production-deploy.js";
 
 describe("production deploy helpers", () => {
   it("rolls back to the newest other production deploy that was published, never a draft, a failure or the live one", () => {
@@ -20,5 +20,13 @@ describe("production deploy helpers", () => {
     expect(toProductionRun({ id: 7, display_title: `Website rollback ${id}`, status: "in_progress", conclusion: null, created_at: "t", html_url: "u" }))
       .toEqual({ id: 7, action: "rollback", request: id, status: "in_progress", conclusion: null, createdAt: "t", url: "u" });
     expect(toProductionRun({ id: 8, display_title: "Deploy production", status: "completed", created_at: "t", html_url: "u" })).toBeNull();
+  });
+  it("retries a Netlify read once, so a site waking from sleep does not block Deploy", async () => {
+    let calls = 0;
+    await expect(retryOnce(async () => { calls += 1; if (calls === 1) throw new Error("aborted"); return "ok"; })).resolves.toBe("ok");
+    expect(calls).toBe(2);
+    let always = 0;
+    await expect(retryOnce(async () => { always += 1; throw new Error("down"); })).rejects.toThrow("down");
+    expect(always).toBe(2);
   });
 });
