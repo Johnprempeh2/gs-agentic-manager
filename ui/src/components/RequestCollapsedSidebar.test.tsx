@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
@@ -74,24 +73,25 @@ describe("RequestCollapsedSidebar", () => {
     localStorage.clear();
   });
 
-  it("records the legacy route request without collapsing the global navigation", async () => {
+  it("uses the route request as the collapsed default", async () => {
     active = await render(true);
     expect(capturedValue?.routeRequestsCollapsed).toBe(true);
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
   });
 
-  it("keeps the global navigation expanded when old pin APIs are called", async () => {
+  it("lets a saved user choice override the route request", async () => {
     active = await render(true);
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
 
-    flushSync(() => capturedValue?.setCollapsed(true));
+    act(() => capturedValue?.setCollapsed(false));
     expect(capturedValue?.routeRequestsCollapsed).toBe(true);
     expect(capturedValue?.collapsed).toBe(false);
+    expect(localStorage.getItem("paperclip.sidebar.collapsed")).toBe("0");
   });
 
   it("clears the request on unmount, restoring the global default", async () => {
     active = await render(true);
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
 
     // Navigate away: the route (and its <RequestCollapsedSidebar/>) unmounts.
     await act(async () => active!.root.render(<Harness onRoute={false} />));
@@ -99,13 +99,13 @@ describe("RequestCollapsedSidebar", () => {
     expect(capturedValue?.collapsed).toBe(false);
   });
 
-  it("clears the request without persisting a retired collapsed pin", async () => {
+  it("keeps a saved collapsed choice after the route request clears", async () => {
     active = await render(true);
-    flushSync(() => capturedValue?.setCollapsed(true));
-    expect(localStorage.getItem("paperclip.sidebar.collapsed")).toBeNull();
+    act(() => capturedValue?.setCollapsed(true));
+    expect(localStorage.getItem("paperclip.sidebar.collapsed")).toBe("1");
 
     await act(async () => active!.root.render(<Harness onRoute={false} />));
     expect(capturedValue?.routeRequestsCollapsed).toBe(false);
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
   });
 });
