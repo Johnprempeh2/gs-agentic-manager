@@ -54,6 +54,7 @@ import {
   workItemIcon,
   type WebsiteTab,
 } from "./WebsiteHub";
+import { publishLabel } from "../../lib/website-status";
 
 // The Website Home (John, 24 Oct 2026): the admin's at-a-glance screen. The
 // live site leads as the hero; then what needs a person, one tile per part of
@@ -378,7 +379,7 @@ function Hero({
           </Button>
           <Button type="button" variant="outline" onClick={() => onOpenTab("releases")}>
             <Send />
-            Publish
+            {site ? publishLabel(site) : "Publish"}
           </Button>
           {siteLink ? (
             <Button asChild variant="ghost">

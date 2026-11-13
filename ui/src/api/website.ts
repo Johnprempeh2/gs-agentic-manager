@@ -150,6 +150,9 @@ export const websiteModuleApi = {
   /** John's Deploy of what staging serves; refused if staging moved since the panel read it. */
   deploy: (companyId: string, siteId: string, stagingCommit: string, stagingRelease: number) =>
     api.post<{ request: string }>(`${sitePath(companyId, siteId)}/production/deploy`, { stagingCommit, stagingRelease }),
+  /** John's Deploy straight to live (skip staging): main's head with the approved content. */
+  deployDirect: (companyId: string, siteId: string, mainCommit: string) =>
+    api.post<{ request: string; release: number }>(`${sitePath(companyId, siteId)}/production/deploy-direct`, { mainCommit, confirm: "live" }),
   /** Puts the previous live deploy back. */
   rollbackLive: (companyId: string, siteId: string, deployId: string) =>
     api.post<{ request: string }>(`${sitePath(companyId, siteId)}/production/rollback`, { deployId }),

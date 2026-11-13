@@ -42,7 +42,7 @@ export function reviewCountText(pages: number, entries: number) {
 
 function resultText(result: WebsiteReviewApproveResult) {
   const approved = reviewCountText(result.approvedPageIds.length, result.approvedEntryIds.length);
-  const head = `Approved ${approved}. Publish puts them on staging, and Deploy puts them live.`;
+  const head = `Approved ${approved}. Publish to staging puts them on the test copy, and Deploy to live puts them on greatstoneint.com.`;
   return result.skipped.length ? `${head} ${plural(result.skipped.length, "item was", "items were")} not approved.` : head;
 }
 

@@ -203,7 +203,7 @@ describe("WebsiteHomeTab", () => {
     const button = (label: string) => Array.from(container.querySelectorAll("button")).find((el) => el.textContent?.trim() === label)!;
     await act(async () => { button("Edit pages").click(); });
     expect(onOpenTab).toHaveBeenLastCalledWith("sitemap");
-    await act(async () => { button("Publish").click(); });
+    await act(async () => { button("Publish to greatstone.example").click(); });
     expect(onOpenTab).toHaveBeenLastCalledWith("releases");
   });
 

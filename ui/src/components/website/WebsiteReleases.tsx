@@ -8,11 +8,13 @@ import type {
   WebsiteReleaseStatus,
   WebsiteSite,
 } from "@greatstone/shared";
+import { PUBLIC_NETLIFY_SITE_ID } from "@greatstone/shared";
 import { accessApi } from "../../api/access";
 import { websiteErrorCode, websiteModuleApi } from "../../api/website";
 import { buildCompanyUserLabelMap } from "../../lib/company-members";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, formatClockTime, formatDate, formatShortDate } from "../../lib/utils";
+import { publishLabel, STAGING_ADDRESS } from "../../lib/website-status";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -37,6 +39,7 @@ export const RELEASE_STATUS_COPY: Record<WebsiteReleaseStatus, { label: string; 
   checks_failed: { label: "Stopped by checks", help: "A check failed, so nothing was sent. The live site has not changed.", tone: "bg-status-danger-soft text-status-danger" },
   uploading: { label: "Sending", help: "Sending pages and images to the site.", tone: "bg-status-info-soft text-status-info-foreground" },
   switched: { label: "Rebuilding the site", help: "The site is building with this release. This takes about a minute.", tone: "bg-status-info-soft text-status-info-foreground" },
+  sent_live: { label: "Sent straight to live", help: "Made for a Deploy straight to live (skip staging). Staging never served it. The Deploy panel shows whether it went live.", tone: "bg-status-warning-soft text-status-warning-foreground" },
   staged: { label: "Saved to staging", help: "This content release is saved to staging, which rebuilds with it in a few minutes. Deploy takes it to the public site.", tone: "bg-status-success-soft text-status-success-foreground" },
   pending: { label: "Pending", help: "The live check has not passed yet. See what failed and retry.", tone: "bg-status-warning-soft text-status-warning-foreground" },
   live: { label: "Live", help: "Visitors see this release.", tone: "bg-status-success-soft text-status-success-foreground" },
@@ -97,9 +100,9 @@ export function releaseDate(at: string) {
 }
 
 /** Publish confirm title (copy 9): the count of approved changes when GSAM knows it. */
-export function publishConfirmTitle(count: number | null, site: string): string {
-  if (count === null) return `Publish to ${site}?`;
-  return count === 1 ? `Publish 1 change to ${site}?` : `Publish ${count} changes to ${site}?`;
+export function publishConfirmTitle(count: number | null, target: string): string {
+  if (count === null) return `Publish to ${target}?`;
+  return count === 1 ? `Publish 1 change to ${target}?` : `Publish ${count} changes to ${target}?`;
 }
 
 /** Rollback confirm body (copy 11): the cost line only when the rollback rebuilds. */
@@ -564,7 +567,7 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
     } else if (latest.status === "staged") {
       latestPanel = (
         <Panel title={`Saved to staging (content release ${latest.number})`} tone="success" testId="website-release-staged">
-          <p className="text-xs">Staging rebuilds with these changes in a few minutes. The public site changes only when you Deploy.</p>
+          <p className="text-xs">Staging ({STAGING_ADDRESS}) rebuilds with these changes in a few minutes. greatstoneint.com changes only when you Deploy to live.</p>
         </Panel>
       );
     } else if (latest.status === "live" && finished === latest.id) {
@@ -589,8 +592,9 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id={`website-releases-${site.id}-title`} className="text-sm font-semibold">Releases</h2>
         {canManage ? (
-          <Button type="button" size="sm" disabled={!!running || publish.isPending} onClick={() => setConfirmingPublish(true)} data-tour="website-publish">
-            Publish
+          <Button type="button" size="sm" disabled={!!running || publish.isPending} onClick={() => setConfirmingPublish(true)} data-tour="website-publish"
+>
+            {publishLabel(site)}
           </Button>
         ) : null}
       </div>
@@ -632,9 +636,11 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       <AlertDialog open={confirmingPublish} onOpenChange={(open) => !publish.isPending && setConfirmingPublish(open)}>
         <AlertDialogContent data-testid="website-publish-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.name)}</AlertDialogTitle>
+            <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? `staging (${STAGING_ADDRESS})` : site.domain)}</AlertDialogTitle>
             <AlertDialogDescription>
-              This puts the approved changes on staging, which rebuilds in a few minutes. Deploy then takes them to the live site. A Publish costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
+              {site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID
+                ? `This puts the approved changes on staging (${STAGING_ADDRESS}), which rebuilds in a few minutes. Visitors do not see them until you Deploy to live: greatstoneint.com.`
+                : `This puts the approved changes on ${site.domain}.`} A Publish costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -241,6 +241,8 @@ export const WEBSITE_RELEASE_STATUSES = [
   "switched",
   /** The public site's content release is in staging's store (staging rebuilds it); only Deploy takes it live. */
   "staged",
+  /** Made for Deploy straight to live (John, 13 Nov): uploaded beside staging's releases, staging never served it. */
+  "sent_live",
   "pending",
   "live",
   "superseded",
@@ -444,6 +446,12 @@ export const WEBSITE_MODULE_API_ROUTES = {
   productionDeploy: "/companies/:companyId/website/sites/:siteId/production/deploy",
   /** POST `{ deployId }` → 202 `{ request }`: put the previous live deploy back (website:deploy, a signed-in person). */
   productionRollback: "/companies/:companyId/website/sites/:siteId/production/rollback",
+  /**
+   * POST `{ mainCommit, confirm: "live" }` → 202 `{ request, release }`: John's Deploy straight to live, skipping
+   * staging (13 Nov). Makes a content release of the approved content and deploys main's head with it
+   * (website:deploy, a signed-in person; never an agent).
+   */
+  productionDeployDirect: "/companies/:companyId/website/sites/:siteId/production/deploy-direct",
   /** GET → text/css: the site stylesheet for schema 2 pages, for agents (website:view). */
   siteStylesheet: "/companies/:companyId/website/sites/:siteId/stylesheet",
   /** POST a schema 2 release file → `{ updated, created, unchanged, chrome }`: import the site's pages as HTML drafts (people, website:edit). */
@@ -654,7 +662,8 @@ export interface WebsiteHomeSummary {
 /** One run of the production workflow (deploy-production.yml): a Deploy or a Roll back. */
 export interface WebsiteProductionRun {
   id: number;
-  action: "deploy" | "rollback";
+  /** `direct`: Deploy straight to live, skipping staging (John, 13 Nov). */
+  action: "deploy" | "direct" | "rollback";
   /** GSAM's id for the request (the ticket id). */
   request: string;
   status: "queued" | "in_progress" | "completed";
@@ -668,8 +677,9 @@ export interface WebsiteProductionRun {
 
 /** What the Deploy panel shows (John, 11 Nov 2026): Live, Staging, the difference and the checks. */
 export interface WebsiteProductionStatus {
-  staging: { commit: string | null; release: number | null };
-  live: { commit: string | null; release: number | null; deployId: string | null; publishedAt: string | null };
+  /** `changedAt`: when staging last took a new upload. `url`: the staging address. */
+  staging: { commit: string | null; release: number | null; changedAt: string | null; url: string };
+  live: { commit: string | null; release: number | null; deployId: string | null; publishedAt: string | null; url: string };
   /** Commits on staging the public site does not have, newest first. */
   commits: { sha: string; title: string }[];
   /** Reasons Deploy must not run now, in plain words; empty when it may. */
@@ -685,6 +695,18 @@ export interface WebsiteProductionStatus {
   publicKey: string | null;
   /** When GSAM could not read part of this, in plain words. */
   problems: string[];
+  /**
+   * Deploy straight to live (John, 13 Nov): main's head and approved content, skipping staging. `supported` is
+   * false until the website's deploy-ticket.mjs on main accepts direct tickets.
+   */
+  direct: {
+    supported: boolean;
+    main: { sha: string; title: string } | null;
+    /** Commits on main the public site does not have, newest first. */
+    commits: { sha: string; title: string }[];
+    /** Approved pages and entries not yet on any release, by name. */
+    approved: { pages: string[]; entries: string[] };
+  };
 }
 
 export interface WebsiteDeployChanges {

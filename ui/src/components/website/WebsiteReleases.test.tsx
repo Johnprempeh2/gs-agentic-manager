@@ -29,6 +29,7 @@ vi.mock("../../api/access", () => ({
 }));
 vi.mock("./WebsiteSetup", () => ({ useCanManageWebsite: () => ({ canManage: canManage.value, isLoading: false }) }));
 
+import { PUBLIC_NETLIFY_SITE_ID } from "@greatstone/shared";
 import { WebsiteReleases, publishConfirmTitle, releaseDate } from "./WebsiteReleases";
 
 const site: WebsiteSite = {
@@ -124,12 +125,12 @@ describe("WebsiteReleases", () => {
     document.body.innerHTML = "";
   });
 
-  async function render(pollMs = 20) {
+  async function render(pollMs = 20, shown: WebsiteSite = site) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <WebsiteReleases companyId="co-1" site={site} pollMs={pollMs} />
+          <WebsiteReleases companyId="co-1" site={shown} pollMs={pollMs} />
         </QueryClientProvider>,
       );
     });
@@ -165,8 +166,8 @@ describe("WebsiteReleases", () => {
       .mockResolvedValue(release({ status: "live", liveAt: "2026-10-23T10:01:00.000Z", checks: [{ kind: "verify", name: "/", ok: true }] }));
     await render();
 
-    await click("Publish");
-    expect(document.body.textContent).toContain("Publish 3 changes to Greatstone?");
+    await click("Publish to www.greatstone.example");
+    expect(document.body.textContent).toContain("Publish 3 changes to www.greatstone.example?");
     expect(document.body.textContent).toContain("costs about 15 credits");
     await click("Publish now");
     expect(moduleMock.publish).toHaveBeenCalledWith("co-1", "site-1");
@@ -187,7 +188,7 @@ describe("WebsiteReleases", () => {
     moduleMock.release.mockResolvedValue(running);
     moduleMock.publish.mockRejectedValue(conflict("website_publish_running", "A publish is running for this site. Wait for it to finish."));
     await render(60_000);
-    await click("Publish");
+    await click("Publish to www.greatstone.example");
     await click("Publish now");
     expect(container.querySelector("[data-testid=website-publish-error]")?.textContent).toBe(
       "A Publish is running for this site, started by Ada 4 minutes ago. Wait for it to finish, then Publish again.",
@@ -285,7 +286,7 @@ describe("WebsiteReleases", () => {
     moduleMock.releases.mockResolvedValue([live41]);
     moduleMock.publish.mockRejectedValue(new ApiError("Only a person can publish, retry or roll back a website, by clicking in GSAM.", 403, { code: "website_publish_person_only" }));
     await render();
-    await click("Publish");
+    await click("Publish to www.greatstone.example");
     await click("Publish now");
     expect(container.querySelector("[data-testid=website-publish-error]")?.textContent).toBe(
       "Only a person can publish, retry or roll back a website, by clicking in GSAM.",
@@ -344,11 +345,20 @@ describe("WebsiteReleases", () => {
     expect(container.querySelector("[aria-label='In progress']")).toBeNull();
   });
 
+  it("names the target: the public site's record publishes to staging, with staging's address in the confirm", async () => {
+    moduleMock.releases.mockResolvedValue([live41]);
+    await render(20, { ...site, netlifySiteId: PUBLIC_NETLIFY_SITE_ID, domain: "greatstoneint.com" });
+    expect(button("Publish")).toBeUndefined();
+    await click("Publish to staging");
+    expect(document.body.textContent).toContain("to staging (gre3833-next-db-staging.netlify.app)?");
+    expect(document.body.textContent).toContain("Visitors do not see them until you Deploy to live: greatstoneint.com.");
+  });
+
   it("shows the busy line muted, not as an error", async () => {
     moduleMock.releases.mockResolvedValue([live41]);
     moduleMock.publish.mockRejectedValue(conflict("website_publish_running"));
     await render();
-    await click("Publish");
+    await click("Publish to www.greatstone.example");
     await click("Publish now");
     const line = container.querySelector("[data-testid=website-publish-error]")!;
     expect(line.className).toContain("text-muted-foreground");
@@ -359,7 +369,7 @@ describe("WebsiteReleases", () => {
     canManage.value = false;
     moduleMock.releases.mockResolvedValue([live41, replaced40]);
     await render();
-    expect(button("Publish")).toBeUndefined();
+    expect(button("Publish to www.greatstone.example")).toBeUndefined();
     expect(button("Roll back to this release")).toBeUndefined();
     expect(container.textContent).toContain("A person with Publish rights approves them and starts the Publish.");
   });

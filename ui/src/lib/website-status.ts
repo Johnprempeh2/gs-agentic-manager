@@ -13,6 +13,23 @@ import { queryKeys } from "./queryKeys";
 // The one place a page's or entry's publishing state becomes words (Pages list, editors, sitemap, Collections).
 // Approve, then Publish puts content on STAGING; greatstoneint.com changes only on Deploy.
 
+/**
+ * The action names (John, 13 Nov: "It should be clear that I am deploying to staging vs live"). Every button and
+ * confirm that publishes or deploys uses these, so each one names where it goes.
+ */
+export const STAGING_ADDRESS = "gre3833-next-db-staging.netlify.app";
+export const LIVE_ADDRESS = "greatstoneint.com";
+export const WEBSITE_ACTIONS = {
+  publish: "Publish to staging",
+  deploy: `Deploy to live: ${LIVE_ADDRESS}`,
+  direct: "Deploy straight to live (skip staging)",
+} as const;
+
+/** The Publish button's name: the public site's record publishes to staging; any other site publishes to itself. */
+export function publishLabel(site: Pick<WebsiteSite, "netlifySiteId" | "domain">) {
+  return site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? WEBSITE_ACTIONS.publish : `Publish to ${site.domain}`;
+}
+
 export type WebsiteStatusWord = "Draft" | "In review" | "Approved" | "On staging" | "Live";
 
 export const WEBSITE_STATUS_TONE: Record<WebsiteStatusWord, string> = {

@@ -4,10 +4,13 @@
 // public site's Netlify token in its protected `production` environment and runs deploy-site.mjs, which checks the
 // ticket, builds that commit with that content release, checks the live site and puts the old one back on failure.
 // GSAM never holds a token that is meant to deploy the public site, and no agent has a part in it.
+// Deploy straight to live (John, 13 Nov): the same workflow with a `direct` ticket that names main's head and a
+// content release GSAM made for it, uploaded beside staging's releases without moving staging's pointer. The ticket's
+// mode is signed, so a staging ticket cannot run as direct, nor the reverse.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign, type KeyObject } from "node:crypto";
 import type { WebsiteProductionRun, WebsiteProductionStatus } from "@greatstone/shared";
 import { netlifyBlobUrl } from "./netlify-publish-client.js";
-import { lastGuardedCommit, STAGING_NETLIFY_SITE_ID, WEBSITE_REPO } from "./deploy-changes.js";
+import { lastGuardedCommit, STAGING_DOMAIN, STAGING_NETLIFY_SITE_ID, WEBSITE_REPO } from "./deploy-changes.js";
 import { deployBlockers } from "./deploy-readiness.js";
 import type { secretService } from "../secrets.js";
 
@@ -26,8 +29,14 @@ export async function retryOnce<T>(read: () => Promise<T>): Promise<T> {
 
 export type ProductionTokens = { netlifySiteId: string; netlifyToken: string; githubToken: string; storeName: string };
 
+export const LIVE_URL = "https://greatstoneint.com";
+export const STAGING_URL = `https://${STAGING_DOMAIN}`;
+/** Deploy lists are read 10 at a time, up to 100: one page of 100 takes about 39 s (GRE-5062), past any timeout. */
+const DEPLOYS_PER_PAGE = 10;
+const DEPLOYS_CAP = 100;
+
 export type DeployTicket =
-  | { action: "deploy"; sha: string; release: number; sha256: string }
+  | { action: "deploy"; mode: "staging" | "direct"; sha: string; release: number; sha256: string }
   | { action: "rollback"; deployId: string };
 
 /** A ticket as deploy-ticket.mjs checks it: `<base64url JSON>.<base64url Ed25519 signature over the first part>`. */
@@ -79,11 +88,19 @@ export function rollbackTarget(deploys: NetlifyDeploy[], liveId: string | null) 
 
 /** A workflow run as the panel shows it; null for a run this workflow's run-name did not name. */
 export function toProductionRun(run: { id: number; display_title?: string; status?: string; conclusion?: string | null; created_at: string; html_url: string }): WebsiteProductionRun | null {
-  const named = /^Website (deploy|rollback) ([0-9a-f-]{36})$/.exec(run.display_title ?? "");
+  const named = /^Website (deploy|direct|rollback) ([0-9a-f-]{36})$/.exec(run.display_title ?? "");
   if (!named) return null;
   const status = run.status === "completed" ? "completed" : run.status === "in_progress" ? "in_progress" : "queued";
-  return { id: run.id, action: named[1] as "deploy" | "rollback", request: named[2]!, status, conclusion: run.conclusion ?? null, createdAt: run.created_at, url: run.html_url };
+  return { id: run.id, action: named[1] as WebsiteProductionRun["action"], request: named[2]!, status, conclusion: run.conclusion ?? null, createdAt: run.created_at, url: run.html_url };
 }
+
+/** The website's deploy-ticket.mjs on main says it takes direct tickets: `TICKET_MODES = ['staging', 'direct']`. */
+export function supportsDirect(source: string) {
+  return /TICKET_MODES\s*=\s*\[[^\]]*['"]direct['"]/.test(source);
+}
+
+type Commit = { sha: string; title: string };
+const firstLine = (message: string) => message.split("\n")[0]!;
 
 export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fetch = fetch) {
   const github = async (path: string, init: RequestInit = {}) => fetchImpl(`https://api.github.com/repos/${WEBSITE_REPO}${path}`, {
@@ -105,6 +122,38 @@ export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fet
     return typeof body.release === "number" && typeof body.sha256 === "string" ? { release: body.release, sha256: body.sha256 } : null;
   };
 
+  /** A site's deploys, newest first, 10 a page, until `enough` says so, the list ends or the cap. */
+  async function deploysUntil(siteId: string, enough: (all: NetlifyDeploy[]) => boolean) {
+    const all: NetlifyDeploy[] = [];
+    for (let page = 1; page <= DEPLOYS_CAP / DEPLOYS_PER_PAGE; page += 1) {
+      const list = await netlify<NetlifyDeploy[]>(`/sites/${siteId}/deploys?per_page=${DEPLOYS_PER_PAGE}&page=${page}`);
+      all.push(...list);
+      if (enough(all) || list.length < DEPLOYS_PER_PAGE) break;
+    }
+    return all;
+  }
+
+  const githubJson = async <T>(path: string, what: string): Promise<T> => {
+    const res = await github(path);
+    if (!res.ok) throw new Error(`GitHub answered ${res.status} for ${what}`);
+    return res.json() as Promise<T>;
+  };
+  const compare = async (from: string, to: string): Promise<Commit[]> => {
+    const list = (await githubJson<{ commits?: { sha: string; commit: { message: string } }[] }>(`/compare/${from}...${to}`, "the commit list")).commits ?? [];
+    return list.map((c) => ({ sha: c.sha, title: firstLine(c.commit.message) })).reverse();
+  };
+  /** main's newest commit: what Deploy straight to live puts out. */
+  async function mainHead(): Promise<Commit> {
+    const head = await githubJson<{ sha: string; commit: { message: string } }>("/commits/main", "main");
+    return { sha: head.sha, title: firstLine(head.commit.message) };
+  }
+  async function directSupported() {
+    const res = await github("/contents/scripts/deploy-ticket.mjs?ref=main", { headers: { accept: "application/vnd.github.raw" } });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+    return supportsDirect(await res.text());
+  }
+
   async function runs(): Promise<{ ready: boolean; runs: WebsiteProductionRun[] }> {
     const res = await github(`/actions/workflows/${PRODUCTION_WORKFLOW}/runs?per_page=10`);
     if (res.status === 404) return { ready: false, runs: [] };
@@ -122,7 +171,7 @@ export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fet
     return { ready: true, runs: mapped };
   }
 
-  async function status(): Promise<Omit<WebsiteProductionStatus, "canDeploy" | "publicKey">> {
+  async function status(): Promise<Omit<WebsiteProductionStatus, "canDeploy" | "publicKey" | "direct"> & { direct: Omit<WebsiteProductionStatus["direct"], "approved"> }> {
     const problems: string[] = [];
     const soft = async <T>(what: string, work: () => Promise<T>, fallback: T) => {
       try { return await work(); } catch (err) {
@@ -130,44 +179,49 @@ export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fet
         return fallback;
       }
     };
-    const [prodDeploys, stagingDeploys, site, livePointer, stagingPointer, history] = await Promise.all([
-      soft("the live site's deploys", () => netlify<NetlifyDeploy[]>(`/sites/${tokens.netlifySiteId}/deploys?per_page=100`), [] as NetlifyDeploy[]),
-      soft("staging's deploys", () => netlify<NetlifyDeploy[]>(`/sites/${STAGING_NETLIFY_SITE_ID}/deploys?per_page=100`), [] as NetlifyDeploy[]),
-      soft("the live site", () => netlify<{ published_deploy?: { id?: string; published_at?: string } | null }>(`/sites/${tokens.netlifySiteId}`), null),
+    const siteRead = soft("the live site", () => netlify<{ published_deploy?: { id?: string; published_at?: string } | null }>(`/sites/${tokens.netlifySiteId}`), null);
+    const [site, prodDeploys, stagingDeploys, livePointer, stagingPointer, history, main, supported] = await Promise.all([
+      siteRead,
+      // Read until the live deploy and the one before it are found: the live commit and Roll back's target.
+      soft("the live site's deploys", async () => {
+        const liveId = (await siteRead)?.published_deploy?.id ?? null;
+        return deploysUntil(tokens.netlifySiteId, (all) => all.some((d) => d.id === liveId) && rollbackTarget(all, liveId) !== null);
+      }, [] as NetlifyDeploy[]),
+      soft("staging's deploys", () => deploysUntil(STAGING_NETLIFY_SITE_ID, (all) => lastGuardedCommit(all, "staging") !== null), [] as NetlifyDeploy[]),
       soft("the live content release", () => pointer(tokens.netlifySiteId), null),
       soft("staging's content release", () => pointer(STAGING_NETLIFY_SITE_ID), null),
       soft("the Deploy history from GitHub", runs, { ready: false, runs: [] as WebsiteProductionRun[] }),
+      soft("main from GitHub", mainHead, null),
+      soft("whether the website takes Deploy straight to live", directSupported, false),
     ]);
-    const liveCommit = lastGuardedCommit(prodDeploys, "prod");
+    const liveId = site?.published_deploy?.id ?? null;
+    // The commit of the deploy that is live, so a Roll back shows the commit it put back.
+    const liveCommit = lastGuardedCommit(prodDeploys.filter((d) => d.id === liveId), "prod") ?? lastGuardedCommit(prodDeploys, "prod");
     const stagingCommit = lastGuardedCommit(stagingDeploys, "staging");
-    let commits: { sha: string; title: string }[] = [];
-    if (liveCommit && stagingCommit && liveCommit !== stagingCommit) {
-      commits = await soft("the commit list from GitHub", async () => {
-        const res = await github(`/compare/${liveCommit}...${stagingCommit}`);
-        if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-        const list = ((await res.json()) as { commits?: { sha: string; commit: { message: string } }[] }).commits ?? [];
-        return list.map((c) => ({ sha: c.sha, title: c.commit.message.split("\n")[0]! })).reverse();
-      }, []);
-    }
+    const stagingDeploy = stagingDeploys.find((d) => d.state === "ready" && d.title === `gsam-source:staging:${stagingCommit}`) as (NetlifyDeploy & { created_at?: string }) | undefined;
+    let commits: Commit[] = [];
+    if (liveCommit && stagingCommit && liveCommit !== stagingCommit) commits = await soft("the commit list from GitHub", () => compare(liveCommit, stagingCommit), []);
+    let mainCommits: Commit[] = [];
+    if (liveCommit && main && liveCommit !== main.sha) mainCommits = await soft("main's commit list from GitHub", () => compare(liveCommit, main.sha), []);
     const blockers = await deployBlockers(tokens.netlifyToken, tokens.storeName, fetchImpl);
     if (!stagingCommit) blockers.push("GSAM cannot tell which commit staging serves, so there is nothing safe to deploy.");
-    const liveId = site?.published_deploy?.id ?? null;
     return {
-      staging: { commit: stagingCommit, release: stagingPointer?.release ?? null },
-      live: { commit: liveCommit, release: livePointer?.release ?? null, deployId: liveId, publishedAt: site?.published_deploy?.published_at ?? null },
+      staging: { commit: stagingCommit, release: stagingPointer?.release ?? null, changedAt: stagingDeploy?.published_at ?? stagingDeploy?.created_at ?? null, url: STAGING_URL },
+      live: { commit: liveCommit, release: livePointer?.release ?? null, deployId: liveId, publishedAt: site?.published_deploy?.published_at ?? null, url: LIVE_URL },
       commits,
       blockers,
       rollback: rollbackTarget(prodDeploys, liveId),
       runs: history.runs,
       workflowReady: history.ready,
       problems,
+      direct: { supported, main, commits: mainCommits },
     };
   }
 
   /** The staging pointer with its sha256, read again at the moment of Deploy. */
   const stagingPointer = () => pointer(STAGING_NETLIFY_SITE_ID);
 
-  async function dispatch(action: "deploy" | "rollback", request: string, ticket: string) {
+  async function dispatch(action: WebsiteProductionRun["action"], request: string, ticket: string) {
     const res = await github(`/actions/workflows/${PRODUCTION_WORKFLOW}/dispatches`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -180,5 +234,5 @@ export function productionClient(tokens: ProductionTokens, fetchImpl: typeof fet
     }
   }
 
-  return { status, stagingPointer, dispatch };
+  return { status, stagingPointer, mainHead, dispatch };
 }

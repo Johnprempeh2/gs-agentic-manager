@@ -657,7 +657,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     mutationFn: (target: WebsitePage) => websiteModuleApi.approvePage(companyId, site.id, target.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
-      setMessage({ text: "Approved. Publish puts it on staging, and Deploy puts it live.", tone: "success" });
+      setMessage({ text: "Approved. Publish to staging puts it on the test copy, and Deploy to live puts it on greatstoneint.com.", tone: "success" });
     },
     onError: (error) => setMessage({ text: `Not approved: ${errorStateMessage(error)}`, tone: "warn" }),
   });
