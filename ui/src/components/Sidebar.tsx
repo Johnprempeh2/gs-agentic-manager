@@ -607,7 +607,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     if (!group) return items[id]!.node;
     const entries = group.items.flatMap((entryId) => {
       const entry = items[entryId];
-      if (!entry?.to || hidden.has(entryId) || pinnedSet.has(entryId)) return [];
+      if (!available(entryId) || !entry?.to || hidden.has(entryId) || pinnedSet.has(entryId)) return [];
       return [{
         id: entryId,
         label: entry.label,

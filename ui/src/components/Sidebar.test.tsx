@@ -900,12 +900,19 @@ describe("Sidebar", () => {
   });
 
   it("leaves out unavailable destinations", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    mockCanRelease.value = false;
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: false });
     const root = await renderSidebar();
 
     expect(container.querySelector('a[href="/company/settings"]')).not.toBeNull();
     expect(sectionLabels("Company")).toEqual(["GS Studio"]);
     expect(sectionLabels("Start")).not.toContain("Chats");
+
+    await click(textButton("Build"));
+    expect(document.body.querySelector('a[href="/releases"]')).toBeNull();
+
+    await click(textButton("Team"));
+    expect(document.body.querySelector('a[href="/status"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();
