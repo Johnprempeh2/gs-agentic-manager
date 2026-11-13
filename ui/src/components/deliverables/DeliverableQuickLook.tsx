@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Info, Link2, MessageSquarePlus, Sparkles, X } from "lucide-react";
+import { projectsApi } from "@/api/projects";
 import { deliverablesApi, type Deliverable, type DeliverableConfidentiality } from "@/api/deliverables";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -15,7 +16,8 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { DeliverableCommentsPanel, DeliverableReviewFrame, useDeliverableReview } from "./DeliverableComments";
 import { DeliverableDocumentView, isHtmlDeliverable, liveEditPath } from "./DeliverableDocument";
 import { DELIVERABLE_KIND_LABELS } from "./DeliverableCard";
-import { CONFIDENTIALITY_LABELS, ConfidentialityBadge, LinkStatusBadges, siteDomain } from "./DeliverableBadges";
+import { CONFIDENTIALITY_LABELS, ConfidentialityBadge, DeliverableStageBadge, LinkStatusBadges, siteDomain } from "./DeliverableBadges";
+import { DeliverableProjectAssignment, DeliverableVersionTimeline, OldVersionBanner } from "./DeliverableVersionTimeline";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -58,6 +60,8 @@ export function DeliverableQuickLook({
   const [versionId, setVersionId] = useState<string | null>(null);
   // Comment mode (GRE-982): mark up the shown version and send the notes.
   const [commenting, setCommenting] = useState(false);
+  // Phones: the side panel opens below the document on demand.
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     setVersionId(null);
@@ -96,12 +100,26 @@ export function DeliverableQuickLook({
     onError: () => pushToast({ title: "Could not refresh the screenshot", tone: "error" }),
   });
 
+  const { data: projectList } = useQuery({
+    queryKey: queryKeys.projects.list(companyId),
+    queryFn: () => projectsApi.list(companyId),
+  });
+  const move = useMutation({
+    mutationFn: (projectId: string) => deliverablesApi.move(companyId, current!.id, projectId),
+    onSuccess: (moved) => {
+      void refreshAll();
+      pushToast({ title: `Moved to ${moved.project?.name ?? "the new project"}`, tone: "success", ttlMs: 3000 });
+    },
+    onError: () => pushToast({ title: "Could not move the deliverable", tone: "error" }),
+  });
+
   const hasPrevious = index > 0;
   const hasNext = index < items.length - 1;
 
   if (!current) return null;
   const shown = detail && detail.id === shownId ? detail : current;
   const versions = detail?.versions ?? [];
+  const latestVersion = Math.max(current.version, ...versions.map((version) => version.version));
   const canComment = isHtmlDeliverable(shown);
   const reviewing = commenting && canComment;
 
@@ -120,10 +138,7 @@ export function DeliverableQuickLook({
             onIndexChange(index + 1);
           }
         }}
-        className={cn(
-          "inset-0 top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0 sm:max-w-none md:top-0 md:translate-y-0",
-          reviewing && "flex-col md:flex-row",
-        )}
+        className="inset-0 top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 sm:max-w-none md:top-0 md:translate-y-0 md:flex-row"
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
@@ -175,12 +190,30 @@ export function DeliverableQuickLook({
                 <MessageSquarePlus /> <span className="hidden sm:inline">{reviewing ? "Done commenting" : "Comment"}</span>
               </Button>
             ) : null}
+            {!reviewing ? (
+              <Button
+                variant={showDetails ? "secondary" : "ghost"}
+                size="icon-sm"
+                className="md:hidden"
+                aria-label={showDetails ? "Hide details" : "Show details and releases"}
+                aria-pressed={showDetails}
+                onClick={() => setShowDetails((value) => !value)}
+                data-testid="deliverable-details-toggle"
+              >
+                <Info />
+              </Button>
+            ) : null}
             <DialogClose asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Close preview">
                 <X />
               </Button>
             </DialogClose>
           </div>
+          <OldVersionBanner
+            shownVersion={shown.version}
+            latestVersion={latestVersion}
+            onViewLatest={() => setVersionId(null)}
+          />
           <div className="min-h-0 flex-1 bg-muted/40">
             {reviewing ? <DeliverableReviewFrame review={review} title={shown.title} /> : <DeliverableDocumentView source={shown} />}
           </div>
@@ -191,11 +224,17 @@ export function DeliverableQuickLook({
             <DeliverableCommentsPanel review={review} />
           </aside>
         ) : (
-        <aside className="hidden w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l border-border bg-background p-5 md:flex">
+        <aside
+          data-testid="deliverable-quicklook-details"
+          className={cn(
+            "max-h-(--sz-50vh) w-full shrink-0 flex-col gap-5 overflow-y-auto border-t border-border bg-background p-4 md:flex md:max-h-none md:w-80 md:border-t-0 md:border-l md:p-5",
+            showDetails ? "flex" : "hidden",
+          )}
+        >
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant="secondary">{DELIVERABLE_KIND_LABELS[shown.kind]}</Badge>
-              <Badge variant="outline">{shown.status === "draft" ? "Draft" : "Final"}</Badge>
+              <DeliverableStageBadge stage={current.stage} />
               <ConfidentialityBadge value={shown.confidentiality} />
               <LinkStatusBadges deliverable={shown} />
             </div>
@@ -309,37 +348,26 @@ export function DeliverableQuickLook({
                 </label>
               ) : null}
             </PanelRow>
-            {shown.project ? <PanelRow label="Project">{shown.project.name}</PanelRow> : null}
           </dl>
 
-          <section className="flex flex-col gap-2" aria-label="Version history">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Versions</h3>
-            {versions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">v{shown.version}</p>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {versions.map((version) => (
-                  <li key={version.id}>
-                    <button
-                      type="button"
-                      onClick={() => setVersionId(version.id === current.id ? null : version.id)}
-                      aria-current={version.id === shown.id ? "true" : undefined}
-                      className={cn(
-                        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50",
-                        version.id === shown.id && "bg-accent text-foreground",
-                      )}
-                    >
-                      <span>
-                        v{version.version}
-                        {version.status === "draft" ? <span className="ml-1.5 text-xs text-muted-foreground">Draft</span> : null}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{formatDate(version.createdAt)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <DeliverableProjectAssignment
+            title={current.title}
+            project={current.project}
+            clientName={current.clientCase?.name ?? null}
+            projects={(projectList ?? []).filter((project) => !project.archivedAt).map((project) => ({ id: project.id, name: project.name }))}
+            pending={move.isPending}
+            onMove={(projectId) => move.mutate(projectId)}
+          />
+
+          {versions.length > 0 ? (
+            <DeliverableVersionTimeline
+              versions={versions}
+              shownId={shown.id}
+              onView={(id) => setVersionId(id === current.id ? null : id)}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Release {shown.version}</p>
+          )}
         </aside>
         )}
       </DialogContent>

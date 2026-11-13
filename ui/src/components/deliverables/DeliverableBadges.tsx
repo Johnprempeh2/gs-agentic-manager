@@ -1,5 +1,5 @@
 import { Globe, Link2Off, Lock } from "lucide-react";
-import type { Deliverable, DeliverableConfidentiality } from "@/api/deliverables";
+import type { Deliverable, DeliverableConfidentiality, DeliverableStage } from "@/api/deliverables";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -122,5 +122,32 @@ export function SiteThumbnail({
         <span className="truncate">{domain}</span>
       </span>
     </div>
+  );
+}
+
+export const DELIVERABLE_STAGE_LABELS: Record<DeliverableStage, string> = {
+  draft: "Draft",
+  in_review: "In review",
+  approved: "Approved",
+  delivered: "Delivered",
+};
+
+/** Draft, In review, Approved or Delivered, in the shared status colours. */
+export function DeliverableStageBadge({ stage, className }: { stage: DeliverableStage; className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      data-testid="deliverable-stage"
+      data-stage={stage}
+      className={cn(
+        stage === "draft" && "border-status-neutral/40 bg-status-neutral-soft text-status-neutral-foreground",
+        stage === "in_review" && "border-status-review/40 bg-status-review-soft text-status-review-foreground",
+        stage === "approved" && "border-status-info/40 bg-status-info-soft text-status-info-foreground",
+        stage === "delivered" && "border-status-success/40 bg-status-success-soft text-status-success-foreground",
+        className,
+      )}
+    >
+      {DELIVERABLE_STAGE_LABELS[stage]}
+    </Badge>
   );
 }

@@ -50,10 +50,11 @@ import {
 import { ErrorState } from "../components/ErrorState";
 import { ProjectClientChips } from "../components/ProjectClientChips";
 import { ProjectGitAuthorization } from "../components/ProjectGitAuthorization";
+import { ProjectDeliverablesTab, useProjectDeliverables } from "../components/deliverables/ProjectDeliverables";
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "list" | "plugin-operations" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "list" | "deliverables" | "plugin-operations" | "workspaces" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -69,6 +70,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "overview") return "configuration";
   if (tab === "configuration") return "configuration";
   if (tab === "budget") return "budget";
+  if (tab === "deliverables") return "deliverables";
   if (tab === "issues") return "list";
   if (tab === "plugin-operations") return "plugin-operations";
   if (tab === "workspaces") return "workspaces";
@@ -379,6 +381,8 @@ export function ProjectDetail() {
   const canonicalProjectRef = project ? projectRouteRef(project) : routeProjectRef;
   const projectLookupRef = project?.id ?? routeProjectRef;
   const resolvedCompanyId = project?.companyId ?? selectedCompanyId;
+  // The tab's count badge shares the tab's own query, so it costs one request.
+  const projectDeliverables = useProjectDeliverables(resolvedCompanyId, project?.id);
   const membershipsQuery = useResourceMemberships(resolvedCompanyId);
   const membershipMutation = useResourceMembershipMutation(resolvedCompanyId);
   const projectMembershipState = project?.id
@@ -545,6 +549,10 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/budget`, { replace: true });
       return;
     }
+    if (activeTab === "deliverables") {
+      navigate(`/projects/${canonicalProjectRef}/deliverables`, { replace: true });
+      return;
+    }
     if (activeTab === "plugin-operations") {
       navigate(`/projects/${canonicalProjectRef}/plugin-operations`, { replace: true });
       return;
@@ -696,6 +704,9 @@ export function ProjectDetail() {
     if (cachedTab === "budget") {
       return <Navigate to={`/projects/${canonicalProjectRef}/budget`} replace />;
     }
+    if (cachedTab === "deliverables") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/deliverables`} replace />;
+    }
     if (cachedTab === "plugin-operations" && project?.managedByPlugin) {
       return <Navigate to={`/projects/${canonicalProjectRef}/plugin-operations`} replace />;
     }
@@ -749,6 +760,8 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
       navigate(`/projects/${canonicalProjectRef}/budget`);
+    } else if (tab === "deliverables") {
+      navigate(`/projects/${canonicalProjectRef}/deliverables`);
     } else if (tab === "plugin-operations") {
       navigate(`/projects/${canonicalProjectRef}/plugin-operations`);
     } else if (tab === "configuration") {
@@ -894,6 +907,7 @@ export function ProjectDetail() {
         <PageTabBar
           items={[
             { value: "list", label: "Tasks" },
+            { value: "deliverables", label: "Deliverables", count: projectDeliverables.documents.length },
 
             ...(project.managedByPlugin ? [{ value: "plugin-operations", label: "Plugin operations" }] : []),
             ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
@@ -915,6 +929,10 @@ export function ProjectDetail() {
       {activeTab === "list" && project?.id && resolvedCompanyId && (
         <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
       )}
+
+      {activeTab === "deliverables" && project?.id && resolvedCompanyId ? (
+        <ProjectDeliverablesTab companyId={resolvedCompanyId} projectId={project.id} />
+      ) : null}
 
       {activeTab === "plugin-operations" && project?.id && resolvedCompanyId && project.managedByPlugin && (
         <ProjectPluginOperationsList

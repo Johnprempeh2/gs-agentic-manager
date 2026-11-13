@@ -26,6 +26,7 @@ export type {
   DeliverableKind,
   DeliverableSort,
   DeliverablesResponse,
+  DeliverableStage,
   DeliverableStatus,
   DeliverableVersion,
 } from "@greatstone/shared";
@@ -74,6 +75,9 @@ export const deliverablesApi = {
     api.post<{ ok: true }>(`/companies/${companyId}/deliverables/${id}/opened`, {}),
   update: (companyId: string, id: string, input: { confidentiality?: DeliverableConfidentiality; restricted?: boolean }) =>
     api.patch<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}`, input),
+  /** People only: the server refuses agents. */
+  move: (companyId: string, id: string, projectId: string) =>
+    api.post<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}/move`, { projectId }),
   refreshScreenshot: (companyId: string, id: string) =>
     api.post<{ deliverable: DeliverableDetail; captured: boolean }>(`/companies/${companyId}/deliverables/${id}/screenshot`, {}),
   mark: (companyId: string, input: MarkDeliverableInput) =>

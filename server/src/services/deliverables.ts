@@ -5,11 +5,13 @@ import {
   agents,
   assets,
   companies,
+  deliverableComments,
   heartbeatRuns,
   issueAttachments,
   issues,
   issueWorkProducts,
   pipelineCaseIssueLinks,
+  pipelineCaseProjectLinks,
   pipelineCases,
   projects,
 } from "@greatstone/db";
@@ -27,6 +29,7 @@ import {
   type DeliverableFacets,
   type DeliverableKind,
   type DeliverableLinkCheck,
+  type DeliverableStage,
   type DeliverablesQuery,
   type DeliverablesResponse,
   type DeliverableStatus,
@@ -200,6 +203,56 @@ const versionCountExpression = sql<number>`(
     AND deliverable_version.external_id = ${issueWorkProducts.externalId}
 )`;
 
+/**
+ * The deliverable's project: the one a person moved it to (Ben, 10 Nov), else
+ * its task's. Moving sets project_id on every version and marks
+ * metadata.projectMoved, so a later move of the task does not drag it along.
+ */
+const projectIdExpression = sql<string | null>`CASE WHEN ${issueWorkProducts.metadata}->'projectMoved' IS NOT NULL
+  THEN ${issueWorkProducts.projectId} ELSE ${issues.projectId} END`;
+
+const projectJoinCondition = and(
+  sql`${projects.id} = ${projectIdExpression}`,
+  eq(projects.companyId, issueWorkProducts.companyId),
+);
+
+/** The live client publication of this deliverable, if any (newest wins). */
+const publicationStatusExpression = sql<string | null>`(
+  SELECT publication.status FROM "client_deliverable_publications" AS publication
+  WHERE publication.company_id = ${issueWorkProducts.companyId}
+    AND publication.deliverable_issue_id = ${issueWorkProducts.issueId}
+    AND publication.deliverable_key = ${issueWorkProducts.externalId}
+    AND publication.status <> 'withdrawn'
+  ORDER BY publication.updated_at DESC
+  LIMIT 1
+)`;
+
+/**
+ * Draft, In review, Approved or Delivered, from what already exists. A client
+ * publication speaks first (published or accepted is delivered, approved is
+ * approved, pending approval is in review). Without one: a draft is a draft,
+ * a finished task delivered it, and anything else waits on review.
+ */
+export function deliverableStage(input: {
+  status: DeliverableStatus;
+  issueStatus: string | null;
+  publicationStatus: string | null;
+}): DeliverableStage {
+  switch (input.publicationStatus) {
+    case "published":
+    case "accepted":
+      return "delivered";
+    case "approved":
+      return "approved";
+    case "pending_approval":
+      return "in_review";
+    default:
+      break;
+  }
+  if (input.status === "draft") return "draft";
+  return input.issueStatus === "done" ? "delivered" : "in_review";
+}
+
 const agentJoinCondition = and(
   sql`${agents.id}::text = ${issueWorkProducts.metadata}->>'createdByAgentId'`,
   eq(agents.companyId, issueWorkProducts.companyId),
@@ -209,6 +262,8 @@ type ListRow = {
   row: DeliverableRow;
   issueIdentifier: string | null;
   issueTitle: string;
+  issueStatus: string | null;
+  publicationStatus: string | null;
   projectId: string | null;
   projectName: string | null;
   agentId: string | null;
@@ -251,6 +306,61 @@ async function clientCasesByIssue(
   return result;
 }
 
+/** The client case linked to each project (earliest link wins), for deliverables whose task has none or that were moved. */
+async function clientCasesByProject(
+  db: Db,
+  companyId: string,
+  projectIds: string[],
+): Promise<Map<string, DeliverableClientCaseSummary>> {
+  const result = new Map<string, DeliverableClientCaseSummary>();
+  if (projectIds.length === 0) return result;
+  const rows = await db
+    .selectDistinctOn([pipelineCaseProjectLinks.projectId], {
+      projectId: pipelineCaseProjectLinks.projectId,
+      caseId: pipelineCases.id,
+      caseTitle: pipelineCases.title,
+    })
+    .from(pipelineCaseProjectLinks)
+    .innerJoin(pipelineCases, and(
+      eq(pipelineCaseProjectLinks.caseId, pipelineCases.id),
+      eq(pipelineCases.companyId, pipelineCaseProjectLinks.companyId),
+    ))
+    .where(and(
+      eq(pipelineCaseProjectLinks.companyId, companyId),
+      inArray(pipelineCaseProjectLinks.projectId, [...new Set(projectIds)]),
+      isNull(pipelineCases.retiredAt),
+    ))
+    .orderBy(pipelineCaseProjectLinks.projectId, asc(pipelineCaseProjectLinks.createdAt), asc(pipelineCases.id));
+  for (const row of rows) result.set(row.projectId, { id: row.caseId, name: row.caseTitle });
+  return result;
+}
+
+/**
+ * The client a deliverable belongs to. A moved deliverable follows its new
+ * project's client; otherwise the task's client, else its project's.
+ */
+async function clientCasesFor(db: Db, companyId: string, rows: ListRow[]) {
+  const byIssue = await clientCasesByIssue(db, companyId, rows.map((row) => row.row.issueId));
+  // Only rows the task's client does not settle need their project's client.
+  const byProject = await clientCasesByProject(
+    db,
+    companyId,
+    rows
+      .filter((row) => isProjectMoved(row.row.metadata as Record<string, unknown> | null) || !byIssue.has(row.row.issueId))
+      .map((row) => row.projectId)
+      .filter((id): id is string => !!id),
+  );
+  return (row: ListRow): DeliverableClientCaseSummary | null => {
+    const task = byIssue.get(row.row.issueId) ?? null;
+    const project = row.projectId ? byProject.get(row.projectId) ?? null : null;
+    return isProjectMoved(row.row.metadata as Record<string, unknown> | null) ? project ?? task : task ?? project;
+  };
+}
+
+function isProjectMoved(metadata: Record<string, unknown> | null) {
+  return !!metadata && typeof metadata.projectMoved === "object" && metadata.projectMoved !== null;
+}
+
 function toDeliverable(
   input: ListRow,
   issuePrefix: string,
@@ -275,6 +385,11 @@ function toDeliverable(
     kind: readKind(metadata),
     brand: metadataString(metadata, "brand") ?? DEFAULT_DELIVERABLE_BRAND,
     status: readStatus(metadata),
+    stage: deliverableStage({
+      status: readStatus(metadata),
+      issueStatus: input.issueStatus,
+      publicationStatus: input.publicationStatus,
+    }),
     confidentiality: readConfidentiality(metadata),
     attachmentId: external ? null : metadataString(metadata, "attachmentId") ?? "",
     external,
@@ -291,6 +406,7 @@ function toDeliverable(
     downloadPath: versionDownloadPath(row, metadata),
     issue: { id: row.issueId, identifier, title: input.issueTitle },
     project: input.projectId && input.projectName ? { id: input.projectId, name: input.projectName } : null,
+    projectMoved: isProjectMoved(metadata),
     clientCase,
     createdByAgent: input.agentId && input.agentName ? { id: input.agentId, name: input.agentName } : null,
     createdAt: row.createdAt.toISOString(),
@@ -357,6 +473,8 @@ export function deliverableService(db: Db, storage?: StorageService) {
         row: issueWorkProducts,
         issueIdentifier: issues.identifier,
         issueTitle: issues.title,
+        issueStatus: issues.status,
+        publicationStatus: publicationStatusExpression,
         projectId: projects.id,
         projectName: projects.name,
         agentId: agents.id,
@@ -365,7 +483,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
       })
       .from(issueWorkProducts)
       .innerJoin(issues, and(eq(issueWorkProducts.issueId, issues.id), eq(issues.companyId, issueWorkProducts.companyId)))
-      .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, issues.companyId)))
+      .leftJoin(projects, projectJoinCondition)
       .leftJoin(agents, agentJoinCondition);
   }
 
@@ -418,7 +536,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
     const listRow = await getListRow(companyId, id);
     if (!listRow) return null;
     const prefix = await companyPrefix(companyId);
-    const clientCases = await clientCasesByIssue(db, companyId, [listRow.row.issueId]);
+    const clientCaseOf = await clientCasesFor(db, companyId, [listRow]);
     const versionRows = await db
       .select()
       .from(issueWorkProducts)
@@ -429,10 +547,37 @@ export function deliverableService(db: Db, storage?: StorageService) {
         eq(issueWorkProducts.externalId, listRow.row.externalId ?? ""),
       ))
       .orderBy(desc(versionExpression));
+    const versionMeta = versionRows.map((row) => (row.metadata as Record<string, unknown> | null) ?? null);
+    const agentIds = [...new Set(versionMeta.map((metadata) => metadataString(metadata, "createdByAgentId")).filter((id): id is string => !!id))];
+    const agentNames = new Map(
+      agentIds.length === 0
+        ? []
+        : (await db
+          .select({ id: agents.id, name: agents.name })
+          .from(agents)
+          .where(and(eq(agents.companyId, companyId), inArray(agents.id, agentIds))))
+          .map((agent) => [agent.id, agent.name] as const),
+    );
+    // The newest sent review note on each version (rows come newest first).
+    const reviewNotes = new Map<string, string>();
+    if (versionRows.length > 0) {
+      const notes = await db
+        .select({ workProductId: deliverableComments.workProductId, body: deliverableComments.body })
+        .from(deliverableComments)
+        .where(and(
+          eq(deliverableComments.companyId, companyId),
+          inArray(deliverableComments.workProductId, versionRows.map((row) => row.id)),
+          eq(deliverableComments.status, "sent"),
+        ))
+        .orderBy(desc(deliverableComments.sentAt));
+      for (const note of notes) if (!reviewNotes.has(note.workProductId)) reviewNotes.set(note.workProductId, note.body);
+    }
     return {
-      ...toDeliverable(listRow, prefix, clientCases.get(listRow.row.issueId) ?? null),
-      versions: versionRows.map((row) => {
-        const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
+      ...toDeliverable(listRow, prefix, clientCaseOf(listRow)),
+      versions: versionRows.map((row, index) => {
+        const metadata = versionMeta[index]!;
+        const agentId = metadataString(metadata, "createdByAgentId");
+        const agentName = agentId ? agentNames.get(agentId) : undefined;
         return {
           id: row.id,
           version: metadataNumber(metadata, "version") ?? 1,
@@ -442,6 +587,9 @@ export function deliverableService(db: Db, storage?: StorageService) {
           contentPath: versionContentPath(row, metadata),
           downloadPath: versionDownloadPath(row, metadata),
           createdAt: row.createdAt.toISOString(),
+          createdByAgent: agentId && agentName ? { id: agentId, name: agentName } : null,
+          summary: row.summary ?? null,
+          reviewNote: reviewNotes.get(row.id) ?? null,
         };
       }),
     };
@@ -548,7 +696,8 @@ export function deliverableService(db: Db, storage?: StorageService) {
               .values({
                 companyId: issue.companyId,
                 issueId: issue.id,
-                projectId: issue.projectId,
+                // A deliverable a person moved stays where they put it.
+                projectId: isProjectMoved(previousMetadata) ? previous!.projectId : issue.projectId,
                 type: DELIVERABLE_TYPE,
                 provider: "paperclip",
                 externalId: key,
@@ -565,6 +714,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
                   deliverableStatus: fields.status ?? (previous ? readStatus(previousMetadata) : "final"),
                   confidentiality: fields.confidentiality ?? readConfidentiality(previousMetadata),
                   ...(restricted ? { restricted: true } : {}),
+                  ...(isProjectMoved(previousMetadata) ? { projectMoved: previousMetadata!.projectMoved } : {}),
                   createdByAgentId,
                   searchText: searchText ?? (url ? url : null),
                 },
@@ -619,13 +769,15 @@ export function deliverableService(db: Db, storage?: StorageService) {
         }
         const scopeConditions: SQL[] = [];
         if (issueIds.length > 0) scopeConditions.push(inArray(issues.id, issueIds));
-        if (projectIds.length > 0) scopeConditions.push(inArray(issues.projectId, projectIds));
+        if (projectIds.length > 0) {
+          scopeConditions.push(sql`${projectIdExpression} IN (${sql.join(projectIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
+        }
         baseConditions.push(or(...scopeConditions)!);
       }
       const conditions: SQL[] = [...baseConditions];
       if (query.kind) conditions.push(sql`${issueWorkProducts.metadata}->>'kind' = ${query.kind}`);
       if (query.brand) conditions.push(sql`lower(coalesce(${issueWorkProducts.metadata}->>'brand', ${DEFAULT_DELIVERABLE_BRAND})) = lower(${query.brand})`);
-      if (query.projectId) conditions.push(eq(issues.projectId, query.projectId));
+      if (query.projectId) conditions.push(sql`${projectIdExpression} = ${query.projectId}::uuid`);
       if (query.agentId) conditions.push(sql`${issueWorkProducts.metadata}->>'createdByAgentId' = ${query.agentId}`);
       if (query.confidentiality) conditions.push(sql`${confidentialityExpression} = ${query.confidentiality}`);
       if (query.audience) {
@@ -682,7 +834,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
           .select({ count: sql<number>`count(*)::integer` })
           .from(issueWorkProducts)
           .innerJoin(issues, and(eq(issueWorkProducts.issueId, issues.id), eq(issues.companyId, issueWorkProducts.companyId)))
-          .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, issues.companyId)))
+          .leftJoin(projects, projectJoinCondition)
           .leftJoin(agents, agentJoinCondition)
           .where(and(...conditions))
           .then((result) => result[0]),
@@ -696,7 +848,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
           })
           .from(issueWorkProducts)
           .innerJoin(issues, and(eq(issueWorkProducts.issueId, issues.id), eq(issues.companyId, issueWorkProducts.companyId)))
-          .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, issues.companyId)))
+          .leftJoin(projects, projectJoinCondition)
           .leftJoin(agents, agentJoinCondition)
           .where(and(...baseConditions))
           .limit(FACET_SCAN_LIMIT),
@@ -719,10 +871,10 @@ export function deliverableService(db: Db, storage?: StorageService) {
         projects: [...facetProjects].map(([id, name]) => ({ id, name })).sort(byName),
       };
 
-      const clientCases = await clientCasesByIssue(db, companyId, rows.map((row) => row.row.issueId));
+      const clientCaseOf = await clientCasesFor(db, companyId, rows);
       const nextOffset = query.offset + rows.length < total ? query.offset + rows.length : null;
       return {
-        deliverables: rows.map((row) => toDeliverable(row, prefix, clientCases.get(row.row.issueId) ?? null)),
+        deliverables: rows.map((row) => toDeliverable(row, prefix, clientCaseOf(row))),
         total,
         nextOffset,
         facets,
@@ -784,6 +936,48 @@ export function deliverableService(db: Db, storage?: StorageService) {
           eq(issueWorkProducts.externalId, target.key ?? ""),
         ));
       return getDetail(companyId, id);
+    },
+
+    /**
+     * Move every version of a deliverable to another project of the company
+     * (Ben, 10 Nov). Returns the project it left, or null when nothing moved.
+     */
+    moveToProject: async (
+      companyId: string,
+      id: string,
+      input: { projectId: string; userId: string },
+    ): Promise<{ from: { id: string; name: string } | null; to: { id: string; name: string } } | null> => {
+      const current = await getListRow(companyId, id);
+      if (!current) throw notFound("Deliverable not found");
+      const target = await db
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(and(eq(projects.id, input.projectId), eq(projects.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!target) throw unprocessable("That project is not in this company");
+      if (current.projectId === target.id) return null;
+      const projectMoved = {
+        at: new Date().toISOString(),
+        byUserId: input.userId,
+        fromProjectId: current.projectId,
+      };
+      await db
+        .update(issueWorkProducts)
+        .set({
+          projectId: target.id,
+          metadata: sql`coalesce(${issueWorkProducts.metadata}, '{}'::jsonb) || ${JSON.stringify({ projectMoved })}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(issueWorkProducts.companyId, companyId),
+          eq(issueWorkProducts.issueId, current.row.issueId),
+          eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+          eq(issueWorkProducts.externalId, current.row.externalId ?? ""),
+        ));
+      return {
+        from: current.projectId && current.projectName ? { id: current.projectId, name: current.projectName } : null,
+        to: target,
+      };
     },
 
     /**

@@ -9,6 +9,13 @@ export type DeliverableStatus = "draft" | "final";
 
 export type DeliverableSort = "newest" | "recently_opened" | "title";
 
+/**
+ * Where a deliverable stands, for people who do not own its task (Ben, 10 Nov).
+ * Read from what already exists: a client publication when there is one, else
+ * the draft mark and the task's status.
+ */
+export type DeliverableStage = "draft" | "in_review" | "approved" | "delivered";
+
 /** Who may see a deliverable (see deliverableConfidentialitySchema). */
 export type DeliverableConfidentiality = "internal" | "client" | "public";
 
@@ -53,6 +60,7 @@ export interface Deliverable {
   kind: DeliverableKind;
   brand: string;
   status: DeliverableStatus;
+  stage: DeliverableStage;
   confidentiality: DeliverableConfidentiality;
   /** The stored file; null for a link deliverable. */
   attachmentId: string | null;
@@ -72,7 +80,10 @@ export interface Deliverable {
   openPath: string;
   downloadPath: string;
   issue: DeliverableIssueSummary;
+  /** The task's project, or the one a person moved the deliverable to. */
   project: DeliverableProjectSummary | null;
+  /** True when a person moved the deliverable away from its task's project. */
+  projectMoved: boolean;
   /** The client (pipeline) case the deliverable's task is linked to (GRE-1488). */
   clientCase: DeliverableClientCaseSummary | null;
   createdByAgent: DeliverableAgentSummary | null;
@@ -97,6 +108,12 @@ export interface DeliverableVersion {
   contentPath: string;
   downloadPath: string;
   createdAt: string;
+  /** The agent that made this version; null when a person did. */
+  createdByAgent: DeliverableAgentSummary | null;
+  /** What changed, as the maker described it. */
+  summary: string | null;
+  /** The latest review note sent on this version (a deliverable comment), if any. */
+  reviewNote: string | null;
 }
 
 export interface DeliverableDetail extends Deliverable {
