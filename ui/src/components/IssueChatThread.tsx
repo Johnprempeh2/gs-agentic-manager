@@ -1042,6 +1042,7 @@ export function IssueChatThread({
             <div
               ref={composerViewportAnchorRef}
               data-testid="issue-chat-composer-dock"
+              data-orb-avoid
               className="sticky bottom-(--sz-calc-8) z-sticky space-y-2 bg-gradient-to-t from-background via-background/95 to-background/0 pt-6"
             >
               <IssueChatComposer

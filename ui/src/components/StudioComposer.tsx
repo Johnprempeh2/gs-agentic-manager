@@ -65,6 +65,7 @@ export function StudioComposer({
       aria-labelledby={titleId}
       data-tour={dataTour}
       data-testid="studio-composer"
+      data-orb-avoid
       className={cn(
         "gs-glass-card space-y-3 rounded-xl border bg-card p-3 shadow-sm transition-colors focus-within:border-ring sm:p-4",
         // The dock class keeps the bar above the mobile nav and the iPhone keyboard.

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../lib/queryKeys";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
+import { CUSTOMISE_SIDEBAR_EVENT } from "../lib/sidebar-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockAuthApi = vi.hoisted(() => ({
@@ -49,6 +50,28 @@ vi.mock("../context/SidebarContext", () => ({
     isMobile: false,
     setSidebarOpen: mockSetSidebarOpen,
   }),
+}));
+
+const mockCanRelease = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock("../context/CompanyContext", () => ({
+  useCompany: () => ({
+    selectedCompany: { id: "company-1", name: "Greatstone", issuePrefix: "GRE" },
+    selectedCompanyId: "company-1",
+  }),
+}));
+
+vi.mock("../hooks/useReleases", () => ({
+  useCanRelease: () => ({ canRelease: mockCanRelease() }),
+}));
+
+// The company switcher has its own tests; here it is the row that opens it.
+vi.mock("./SidebarCompanyMenu", () => ({
+  SidebarCompanyMenu: ({ inMenu }: { inMenu?: boolean }) => (
+    <button type="button" data-testid="company-switch-row" data-in-menu={inMenu ? "true" : "false"}>
+      Greatstone Switch
+    </button>
+  ),
 }));
 
 vi.mock("../context/ThemeContext", () => ({
@@ -101,7 +124,7 @@ describe("SidebarAccountMenu", () => {
     vi.clearAllMocks();
   });
 
-  it("shares the nav background without separator borders", async () => {
+  it("rests on the glass panel with a hairline above it", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -117,13 +140,13 @@ describe("SidebarAccountMenu", () => {
     await flushReact();
 
     const accountSurface = container.firstElementChild;
-    // Same token as the streamlined nav's rest surface (.primary-sidebar-surface).
-    expect(accountSurface?.className).toContain("bg-sidebar");
-    expect(accountSurface?.className).not.toContain("border-t");
+    // Sidebar v2: no solid fill of its own, the liquid glass shows through.
+    expect(accountSurface?.className).not.toContain("bg-sidebar");
+    expect(accountSurface?.className).toContain("border-t");
+    expect(accountSurface?.className).toContain("border-sidebar-border");
     expect(accountSurface?.className).not.toContain("border-r");
-    expect(accountSurface?.className).not.toContain("border-border");
     const accountTrigger = container.querySelector('button[aria-label="Open account menu"]');
-    expect(accountTrigger?.classList).toContain("rounded-lg");
+    expect(accountTrigger?.classList).toContain("rounded-xl");
     expect(accountTrigger?.classList).toContain("hover:bg-sidebar-accent");
     expect(accountTrigger?.classList).toContain("hover:text-sidebar-accent-foreground");
     expect(accountTrigger?.classList).not.toContain("hover:bg-background");
@@ -181,7 +204,7 @@ describe("SidebarAccountMenu", () => {
     await flushReact();
 
     expect(document.body.textContent).toContain("Edit profile");
-    expect(document.body.textContent).toContain("Settings");
+    expect(document.body.textContent).toContain("Company settings");
     expect(document.body.querySelector('a[href$="/tutorials"]')?.textContent).toContain("Tutorials");
     expect(document.body.textContent).not.toContain("Instance settings");
     // The upstream docs link is gone; there is no Greatstone docs site yet.
@@ -200,7 +223,7 @@ describe("SidebarAccountMenu", () => {
     expect(document.body.querySelector('[data-slot="popover-content"]')?.className)
       .toContain("rounded-xl");
     expect(document.body.querySelector('[data-slot="popover-content"]')?.className)
-      .toContain("min-h-(--profile-popover-min-height)");
+      .toContain("max-h-(--radix-popover-content-available-height)");
     expect(document.body.querySelector('a[href="/company/settings"]')?.className)
       .not.toContain("bg-muted");
     expect(document.body.textContent).not.toContain("Manage company and instance settings.");
@@ -299,6 +322,110 @@ describe("SidebarAccountMenu", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it("shows avatar, name and company, and holds every account action in v2 order", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockCanRelease.mockReturnValue(true);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <SidebarAccountMenu deploymentMode="authenticated" />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const trigger = container.querySelector('button[aria-label="Open account menu"]')!;
+    expect(trigger.querySelector('[data-slot="avatar"]')).not.toBeNull();
+    expect(trigger.textContent).toContain("Jane Example");
+    expect(trigger.querySelector('[data-slot="account-company"]')?.textContent).toBe("Greatstone");
+
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    const popover = document.body.querySelector('[data-slot="popover-content"]')!;
+    expect(popover.querySelector('[data-testid="company-switch-row"]')?.getAttribute("data-in-menu")).toBe("true");
+    const labels = Array.from(popover.querySelectorAll("a, button"))
+      .map((element) => element.textContent?.trim() ?? "")
+      .filter(Boolean);
+    const order = [
+      "Greatstone Switch",
+      "Your profile",
+      "Notifications",
+      "Customise menu",
+      "Company settings",
+      "Releases",
+      "Tutorials",
+      "What's new",
+      "Sign out",
+    ];
+    const positions = order.map((label) => labels.findIndex((text) => text.startsWith(label)));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(labels.some((text) => /theme|mode/i.test(text))).toBe(true);
+    expect(popover.querySelector('a[href="/releases"]')).not.toBeNull();
+    expect(popover.querySelector('a[href="/whats-new"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it("keeps Releases to the board", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockCanRelease.mockReturnValue(false);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <SidebarAccountMenu deploymentMode="authenticated" open />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(document.body.querySelector('a[href="/releases"]')).toBeNull();
+    expect(document.body.querySelector('a[href="/tutorials"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it("Customise menu closes the menu and asks the sidebar to start customising", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onOpenChange = vi.fn();
+    const heard = vi.fn();
+    window.addEventListener(CUSTOMISE_SIDEBAR_EVENT, heard);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <SidebarAccountMenu deploymentMode="authenticated" open onOpenChange={onOpenChange} />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const customise = Array.from(document.body.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Customise menu"));
+    await act(async () => {
+      customise?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(heard).toHaveBeenCalledOnce();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    window.removeEventListener(CUSTOMISE_SIDEBAR_EVENT, heard);
+    await act(async () => root.unmount());
   });
 
   it("never shows the local board user's placeholder address", async () => {

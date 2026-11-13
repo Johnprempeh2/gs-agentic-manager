@@ -181,3 +181,10 @@ export function setSidebarItemPinned(saved: SidebarLayout, id: string, pinned: b
 export function setSidebarSectionOpen(saved: SidebarLayout, sectionId: string, open: boolean): SidebarLayout {
   return { ...saved, collapsed: { ...saved.collapsed, [sectionId]: !open } };
 }
+
+/** Window event that puts the sidebar into customise mode (from the account menu). */
+export const CUSTOMISE_SIDEBAR_EVENT = "gsam:customise-sidebar";
+
+export function openSidebarCustomise() {
+  window.dispatchEvent(new Event(CUSTOMISE_SIDEBAR_EVENT));
+}

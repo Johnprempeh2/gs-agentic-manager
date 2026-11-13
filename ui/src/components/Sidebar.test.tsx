@@ -9,6 +9,7 @@ import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
 import { findTourTarget } from "./FeatureTour";
 import { WELCOME_TOUR } from "@/lib/welcome-tour";
+import { openSidebarCustomise } from "@/lib/sidebar-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockHeartbeatsApi = vi.hoisted(() => ({
@@ -224,6 +225,12 @@ describe("Sidebar", () => {
     return [...document.body.querySelectorAll('[role="menuitem"]')].find((node) => node.textContent?.trim() === text);
   }
 
+  // The account menu's "Customise menu" sends this event (sidebar v2).
+  async function startCustomising() {
+    flushSync(() => openSidebarCustomise());
+    await flushReact();
+  }
+
   function lastSavedLayout() {
     return mockSidebarPrefs.api.updateLayout.mock.calls.at(-1)?.[0];
   }
@@ -278,7 +285,18 @@ describe("Sidebar", () => {
     expect(sidebar?.classList).not.toContain("border-r");
     expect(sidebar?.classList).not.toContain("border-border");
     expect(sidebar?.classList).toContain("primary-sidebar-surface");
-    expect(container.querySelector('[aria-label="GS Agentic Manager"]')?.classList).toContain("text-sidebar-foreground");
+
+    // The real Greatstone assets at their true aspect: a flex row cannot stretch them.
+    const header = container.querySelector('[data-slot="sidebar-brand-header"]');
+    expect(header?.querySelector('[aria-label="Greatstone"]')).not.toBeNull();
+    const stone = header?.querySelector<HTMLImageElement>('[data-slot="greatstone-stone"]');
+    expect(stone?.getAttribute("width")).toBe("113");
+    expect(stone?.getAttribute("height")).toBe("160");
+    expect(stone?.classList).toContain("w-auto");
+    expect(stone?.classList).toContain("flex-none");
+    expect(header?.querySelector('[data-slot="greatstone-wordmark"]')?.classList).toContain("gs-wordmark");
+    // The collapse toggle sits beside the logo.
+    expect(header?.querySelector('button[aria-label="Collapse sidebar"]')?.getAttribute("aria-keyshortcuts")).toBe("[");
 
     flushSync(() => {
       root.unmount();
@@ -311,7 +329,8 @@ describe("Sidebar", () => {
       .filter((step) => step.target && ![step.target].flat().some((target) => findTourTarget(target)))
       .map((step) => step.title);
     // Commerce is in the sidebar only for the organisation that has a shop; the tour skips the stop elsewhere.
-    expect(unanchored).toEqual(["Talk to an agent", "Commerce"]);
+    // The orb (Talk to an agent) and the account menu mount beside the sidebar in Layout, not inside it.
+    expect(unanchored).toEqual(["Talk to an agent", "Commerce", "Your account menu"]);
     expect(findTourTarget("nav-website")).not.toBeNull();
 
     flushSync(() => {
@@ -335,7 +354,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows Releases only to the board (GRE-122)", async () => {
+  it("leaves Releases, Settings, Tutorials and What's new to the account menu", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     const releasesLink = () =>
       [...document.body.querySelectorAll("a")].find((anchor) => anchor.textContent?.trim() === "Releases");
@@ -350,7 +369,10 @@ describe("Sidebar", () => {
     mockCanRelease.value = true;
     root = await renderSidebar();
     await click(textButton("Build"));
-    expect(releasesLink()?.getAttribute("href")).toBe("/releases");
+    expect(releasesLink()).toBeUndefined();
+    for (const href of ["/company/settings", "/tutorials", "/whats-new"]) {
+      expect(document.body.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
     flushSync(() => {
       root.unmount();
     });
@@ -392,7 +414,7 @@ describe("Sidebar", () => {
       expect(button(`Drag to move the ${label} section`)).toBeNull();
     }
 
-    await click(textButton("Customise sidebar"));
+    await startCustomising();
     for (const label of ["Start", "Company", "Work", "Manage"]) {
       const grip = button(`Drag to move the ${label} section`);
       expect(grip).not.toBeNull();
@@ -654,7 +676,8 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     const top = container.querySelector("nav > div:first-child");
-    expect(top?.textContent).toBe("Company menuNew TaskSearch");
+    // Sidebar v2: the company switcher lives in the account menu, bottom left.
+    expect(top?.textContent).toBe("New TaskSearch");
     expect(textButton("Deliverables")).toBeTruthy();
     const chats = container.querySelector('[data-sidebar-section="start"]');
     expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
@@ -704,12 +727,12 @@ describe("Sidebar", () => {
       expect(container.querySelector('[data-testid="sidebar-customise-panel"]')).toBeNull();
       expect(button("Hide Goals")).toBeNull();
 
-      await click(textButton("Customise sidebar"));
+      await startCustomising();
       expect(container.querySelector('[data-testid="sidebar-customise-panel"]')).not.toBeNull();
       expect(container.querySelector('a[href="/goals"]')).toBeNull();
       expect(container.querySelector('[data-testid="sidebar-customise-item-goals"]')).not.toBeNull();
       // Admin opens while customising, so its items can be moved too.
-      expect(container.querySelector('[data-testid="sidebar-customise-item-settings"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="sidebar-customise-item-design-guide"]')).not.toBeNull();
       expect(container.textContent).toContain("Nothing hidden");
 
       await click(textButton("Done"));
@@ -725,7 +748,7 @@ describe("Sidebar", () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
       const root = await renderSidebar();
 
-      await click(textButton("Customise sidebar"));
+      await startCustomising();
       await click(button("Hide Goals"));
       expect(lastSavedLayout()).toEqual({ hidden: ["goals"], pinned: [] });
       expect(container.querySelector('[data-testid="sidebar-customise-item-goals"]')).toBeNull();
@@ -734,7 +757,7 @@ describe("Sidebar", () => {
       await click(textButton("Done"));
       expect(container.querySelector('a[href="/goals"]')).toBeNull();
 
-      await click(textButton("Customise sidebar"));
+      await startCustomising();
       await click(button("Show Goals"));
       expect(lastSavedLayout()?.hidden).toEqual([]);
       await click(textButton("Done"));
@@ -749,7 +772,7 @@ describe("Sidebar", () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
       const root = await renderSidebar();
 
-      await click(textButton("Customise sidebar"));
+      await startCustomising();
       await click(button("More options for Inbox"));
       await click(menuItem("Move up"));
       expect(lastSavedLayout()?.sections?.start).toEqual(["my-tasks", "inbox", "decisions", "chats", "calendar"]);
@@ -776,7 +799,7 @@ describe("Sidebar", () => {
       const root = await renderSidebar();
 
       expect(container.querySelector('a[href="/goals"]')).toBeNull();
-      await click(textButton("Customise sidebar"));
+      await startCustomising();
       await click(textButton("Reset to default"));
       expect(lastSavedLayout()).toEqual({});
       expect(mockSidebarPrefs.api.updateSectionOrder).toHaveBeenCalledWith({ orderedIds: [] });
@@ -790,12 +813,14 @@ describe("Sidebar", () => {
       });
     });
 
-    it("keeps the customise button off the collapsed rail", async () => {
+    it("opens the full sidebar first when customising starts from the rail", async () => {
       mockSidebar.collapsed = true;
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
       const root = await renderSidebar();
 
       expect(textButton("Customise sidebar")).toBeUndefined();
+      await startCustomising();
+      expect(mockSidebar.setCollapsed).toHaveBeenCalledWith(false);
 
       flushSync(() => {
         root.unmount();
@@ -881,7 +906,7 @@ describe("Sidebar", () => {
     expect(sectionLabels("Start")).toContain("Calendar");
     expect(sectionLabels("Company")).toEqual(["Deep Divebeta", "GS Studio"]);
     expect(sectionLabels("Work")).toEqual(["Tasks", "Projects", "Website", "Goals"]);
-    expect(sectionLabels("Manage")).toEqual(["Workspaces", "Cases", "Settings", "Design guide", "What's newNew", "Tutorials"]);
+    expect(sectionLabels("Manage")).toEqual(["Workspaces", "Cases", "Design guide"]);
     expect(textButton("Desk")).toBeTruthy();
     expect(textButton("Clients")).toBeTruthy();
     expect(textButton("Deliverables")).toBeTruthy();
@@ -920,7 +945,7 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: false });
     const root = await renderSidebar();
 
-    expect(container.querySelector('a[href="/company/settings"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/design-guide"]')).not.toBeNull();
     expect(sectionLabels("Company")).toEqual(["GS Studio"]);
     expect(sectionLabels("Start")).not.toContain("Chats");
 
@@ -1121,7 +1146,7 @@ describe("Sidebar", () => {
     expect(container.querySelector('button[aria-label="Collapse sidebar"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Expand sidebar"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Keep sidebar expanded"]')).toBeNull();
-    expect(container.textContent).toContain("Company menu");
+    expect(container.textContent).not.toContain("Company menu");
 
     flushSync(() => {
       root.unmount();

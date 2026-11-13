@@ -180,6 +180,7 @@ export function TeamChatThread({
       </ol>
       <div
         data-testid="team-chat-composer-dock"
+        data-orb-avoid
         className={cn(
           "sticky z-sticky -mx-4 border-t border-border bg-background px-4 pt-3 md:-mx-1 md:px-1",
           // Desktop: cover the page's bottom padding so messages never show below the composer.

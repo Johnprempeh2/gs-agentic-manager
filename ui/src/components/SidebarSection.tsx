@@ -166,7 +166,7 @@ function SidebarSectionHeader({
               <button
                 type="button"
                 data-slot="icon-button"
-                className="absolute -left-4 flex h-5 w-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                className="absolute -left-4 flex h-5 w-5 items-center justify-center rounded-sm pointer-coarse:static pointer-coarse:-ml-3 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 aria-label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`}
               >
                 <ChevronRight className={caretClassName} aria-hidden="true" />

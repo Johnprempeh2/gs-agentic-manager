@@ -153,6 +153,8 @@ the void, emerald on paper) or, on the void-only surfaces, from `--gs-lime`.
 | BrandTideHero | `BrandTideHero.tsx` | The tide of time with the lime stone, on the void. Carries NO copy. Needs a sized parent. Used on sign-in and 404. |
 | DashboardHero | `DashboardHero.tsx` | Dashboard welcome band on the void; the tide is masked out of the copy zone and not drawn below 640px. |
 | SidebarBrandSignature | `SidebarBrandSignature.tsx` | Quiet lockup at the foot of the primary sidebar; stone only in the rail. |
+| GreatstoneLogo | `GreatstoneLogo.tsx` | Master assets (3D stone + wordmark), never redrawn, at true aspect. `variant` full (sidebar open) or stone (rail). Partner instances get their own lockup. Wordmark prints as ink in daylight. |
+| EverestOrb / EverestOrbButton | `EverestOrb.tsx` | Bottom-right launcher for Ask Everest: 3D stone, count of what needs you, lime ring turning while the lead runs, still under reduced motion. Mark composers with `data-orb-avoid` and the orb rises above them. `EverestOrbButton preview` renders it in flow. On phones the orb is not mounted; `EverestTab` is its tab in MobileBottomNav. |
 
 The tide itself is `lib/greatstone-tide.ts` (`mountGreatstoneTide`): pauses when the
 tab is hidden or the host is off screen, parks under reduced motion, no-op without a
@@ -270,7 +272,7 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 ### Sidebar
 
 **File:** `Sidebar.tsx`
-**Usage:** Left navigation sidebar (`w-60`). Contains CompanySwitcher, search button, new issue button, and SidebarSections.
+**Usage:** Left navigation sidebar, a floating liquid-glass panel (`gs-sidebar-glass`, set by `SidebarShell` and the phone drawer). Header: GreatstoneLogo + collapse toggle (`[`). Then New Task, Search and the SidebarSections. The account menu (`SidebarAccountMenu`, bottom left) holds the company switcher, profile, notifications, theme, Customise menu, company settings, releases, tutorials, what's new and sign out; do not repeat them in the nav. Start customising from anywhere with `openSidebarCustomise()`.
 
 ### SidebarSection
 

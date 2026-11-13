@@ -201,8 +201,23 @@ describe("SidebarShell", () => {
     expect(spacer().style.width).toBe(`${SIDEBAR_RAIL_WIDTH}px`);
     expect(panel().style.width).toBe("300px");
     expect(panel().getAttribute("data-sidebar-overlay")).toBe("");
-    expect(panel().className).toContain("shadow-lg");
     expect(panel().className).toContain("z-chrome");
+  });
+
+  it("floats the sidebar in one liquid-glass panel inside an inset", () => {
+    act(() => {
+      root.render(
+        <SidebarShell open collapsed>
+          <div>Sidebar</div>
+        </SidebarShell>,
+      );
+    });
+
+    const glass = panel().querySelector('[data-slot="sidebar-glass"]');
+    expect(glass?.className).toContain("gs-sidebar-glass");
+    expect(glass?.textContent).toBe("Sidebar");
+    expect(panel().className).toContain("pl-2");
+    expect(panel().className).toContain("py-2");
   });
 
   it("opens and closes instantly with no width transition (PAP-10676)", () => {

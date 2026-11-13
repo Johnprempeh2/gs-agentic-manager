@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
@@ -15,6 +15,7 @@ import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useAppBadge } from "../hooks/usePushNotifications";
 import { Badge } from "@/components/ui/badge";
+import { EverestTab } from "./EverestOrb";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -93,14 +94,15 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       )}
       aria-label="Mobile navigation"
     >
-      <div className="grid h-16 grid-cols-5 px-1">
+      {/* Columns follow the tabs: Everest is a sixth tab when the team has a lead. */}
+      <div className="grid h-16 auto-cols-fr grid-flow-col px-1">
         {items.map((item) => {
           if (item.type === "action") {
             const Icon = item.icon;
             const active = /\/issues\/new(?:\/|$)/.test(location.pathname);
             return (
+              <Fragment key={item.label}>
               <button
-                key={item.label}
                 type="button"
                 onClick={item.onClick}
                 className={cn(
@@ -115,6 +117,9 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                 </span>
                 <span className="truncate">{item.label}</span>
               </button>
+              {/* Everest sits beside New Task: the two ways to hand over work. */}
+              <EverestTab />
+              </Fragment>
             );
           }
 
