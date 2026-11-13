@@ -19,9 +19,9 @@ export const WELCOME_TOUR: TourDefinition = {
       body: "GSAM is where your team and its AI agents work together. You give the agents work, they do it and report back, and they stop and ask when they need you. Here is where things are.",
     },
     {
-      target: "sidebar-ask-everest",
+      target: "global-ask",
       title: "Talk to an agent",
-      body: "The lead agent is always at the top of the sidebar. Select it to open a chat, then ask a question or say what you need, as you would to a colleague.",
+      body: "The lead agent is always at the bottom right. Select the stone to open a chat, then ask a question or say what you need, as you would to a colleague.",
     },
     {
       target: "new-task",

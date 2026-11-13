@@ -153,10 +153,14 @@ describe("WebsiteReleases", () => {
 
   it("confirms a Publish with its cost, then polls the release and stops when it is live", async () => {
     const building = release({ status: "building", switchedAt: null });
+    let resolveFirstPoll!: (value: WebsiteRelease) => void;
+    const firstPoll = new Promise<WebsiteRelease>((resolve) => {
+      resolveFirstPoll = resolve;
+    });
     moduleMock.releases.mockResolvedValueOnce([live41]).mockResolvedValue([building, live41]);
     moduleMock.publish.mockResolvedValue(building);
     moduleMock.release
-      .mockResolvedValueOnce(release({ status: "uploading" }))
+      .mockReturnValueOnce(firstPoll)
       .mockResolvedValueOnce(release({ status: "switched" }))
       .mockResolvedValue(release({ status: "live", liveAt: "2026-10-23T10:01:00.000Z", checks: [{ kind: "verify", name: "/", ok: true }] }));
     await render();
@@ -168,6 +172,7 @@ describe("WebsiteReleases", () => {
     expect(moduleMock.publish).toHaveBeenCalledWith("co-1", "site-1");
     expect(container.querySelector("[data-testid=website-release-progress]")).not.toBeNull();
 
+    resolveFirstPoll(release({ status: "uploading" }));
     await wait(200);
     await flush();
     const calls = moduleMock.release.mock.calls.length;

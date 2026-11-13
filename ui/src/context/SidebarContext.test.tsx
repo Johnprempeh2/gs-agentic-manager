@@ -70,34 +70,36 @@ describe("SidebarContext", () => {
     localStorage.clear();
   });
 
-  it("keeps the global navigation expanded even when legacy collapsed state exists", () => {
+  it("restores the remembered collapsed state", () => {
     active = renderProvider();
 
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
     expect(capturedValue?.collapseLocked).toBe(false);
     expect(capturedValue?.peeking).toBe(false);
   });
 
-  it("keeps the legacy collapse API inert", () => {
+  it("updates and persists the collapse state", () => {
     active = renderProvider();
 
-    act(() => capturedValue?.setCollapsed(true));
+    act(() => capturedValue?.setCollapsed(false));
+    expect(localStorage.getItem("paperclip.sidebar.collapsed")).toBe("0");
     act(() => capturedValue?.toggleCollapsed());
     act(() => capturedValue?.setForceCollapsed(true));
     act(() => capturedValue?.setPeeking(true));
 
-    expect(capturedValue?.collapsed).toBe(false);
-    expect(capturedValue?.collapseLocked).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
+    expect(capturedValue?.collapseLocked).toBe(true);
     expect(capturedValue?.peeking).toBe(false);
   });
 
-  it("tracks route requests for compatibility without collapsing the navigation", () => {
+  it("uses a route collapse request when the user has no saved choice", () => {
+    localStorage.clear();
     active = renderProvider();
 
     act(() => capturedValue?.setRouteRequestsCollapsed(true));
 
     expect(capturedValue?.routeRequestsCollapsed).toBe(true);
-    expect(capturedValue?.collapsed).toBe(false);
+    expect(capturedValue?.collapsed).toBe(true);
   });
 
   it("retains sidebarOpen and toggleSidebar for the mobile drawer", () => {

@@ -15,34 +15,35 @@ export interface SidebarSectionDefault {
  * destination appears exactly once; feature switches decide which ones render.
  */
 export const SIDEBAR_SECTIONS: readonly SidebarSectionDefault[] = [
-  { id: "today", label: "Today", items: ["decisions", "my-tasks", "inbox", "calendar"] },
-  { id: "chats", label: "Chats", items: ["chats"] },
-  { id: "clients", label: "Clients", items: ["organisations", "commerce", "pipelines", "deep-dive", "deliverables", "links", "images"] },
+  { id: "start", label: "Start", items: ["my-tasks", "decisions", "inbox", "chats", "calendar"] },
+  { id: "company", label: "Company", items: ["organisations", "pipelines", "deep-dive", "commerce", "deliverables", "links", "artifacts", "images"] },
   {
     id: "work",
     label: "Work",
-    items: ["dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory"],
+    items: ["tasks", "projects", "website", "goals", "dashboard", "board", "intelligence", "memory"],
   },
-  { id: "team", label: "Team", items: ["agents", "scorecard", "weekly-report", "conference-room", "status"] },
-  { id: "help", label: "Help", items: ["whats-new", "tutorials"] },
   {
-    id: "admin",
-    label: "Admin",
-    collapsed: true,
+    id: "manage",
+    label: "Manage",
     items: [
+      "agents",
+      "scorecard",
+      "weekly-report",
+      "status",
+      "conference-room",
       "skills",
       "connectors",
       "routines",
       "workflows",
       "workspaces",
-      "artifacts",
       "cases",
-      "website",
       "activity",
       "releases",
       "billing",
       "settings",
       "design-guide",
+      "whats-new",
+      "tutorials",
     ],
   },
 ];
@@ -64,6 +65,28 @@ export interface ResolvedSidebarLayout {
 
 const HOME = new Map(SIDEBAR_SECTIONS.flatMap((section) => section.items.map((id) => [id, section.id] as const)));
 
+const LEGACY_SECTION_IDS: Readonly<Record<string, readonly string[]>> = {
+  start: ["today", "chats"],
+  company: ["clients"],
+  work: ["work"],
+  manage: ["team", "help", "admin"],
+};
+
+function savedItems(saved: SidebarLayout | null | undefined, sectionId: string): readonly string[] {
+  const current = saved?.sections?.[sectionId];
+  if (current) return current;
+  return (LEGACY_SECTION_IDS[sectionId] ?? []).flatMap((legacyId) => saved?.sections?.[legacyId] ?? []);
+}
+
+function savedFolded(saved: SidebarLayout | null | undefined, section: SidebarSectionDefault): boolean {
+  const current = saved?.collapsed?.[section.id];
+  if (current !== undefined) return current;
+  const legacy = (LEGACY_SECTION_IDS[section.id] ?? [])
+    .map((legacyId) => saved?.collapsed?.[legacyId])
+    .find((value) => value !== undefined);
+  return legacy ?? section.collapsed ?? false;
+}
+
 function known(ids: readonly string[] | undefined): string[] {
   return [...new Set(ids ?? [])].filter((id) => HOME.has(id));
 }
@@ -79,12 +102,12 @@ export function resolveSidebarLayout(saved?: SidebarLayout | null): ResolvedSide
   const placed = new Set<string>();
   const sections = SIDEBAR_SECTIONS.map((section) => {
     const items: string[] = [];
-    for (const id of saved?.sections?.[section.id] ?? []) {
+    for (const id of savedItems(saved, section.id)) {
       if (!HOME.has(id) || placed.has(id)) continue;
       placed.add(id);
       items.push(id);
     }
-    const folded = saved?.collapsed?.[section.id] ?? section.collapsed ?? false;
+    const folded = savedFolded(saved, section);
     return { id: section.id, label: section.label, items, open: !folded };
   });
   SIDEBAR_SECTIONS.forEach((section, sectionIndex) => {

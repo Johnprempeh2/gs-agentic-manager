@@ -197,7 +197,7 @@ describe("Sidebar", () => {
   }
 
   function sectionLabels(label: string) {
-    const section = [...container.querySelectorAll("nav > div")]
+    const section = [...container.querySelectorAll("[data-sidebar-section]")]
       .find((node) => node.textContent?.startsWith(label));
     return [...(section?.querySelectorAll("a") ?? [])].map((anchor) => anchor.textContent?.trim());
   }
@@ -214,7 +214,10 @@ describe("Sidebar", () => {
   }
 
   function textButton(text: string) {
-    return [...container.querySelectorAll("button")].find((node) => node.textContent?.trim() === text);
+    return [...container.querySelectorAll("button")].find((node) =>
+      node.textContent?.trim() === text
+        || [...node.querySelectorAll("span")].some((label) => label.textContent?.trim() === text),
+    );
   }
 
   function menuItem(text: string) {
@@ -275,13 +278,14 @@ describe("Sidebar", () => {
     expect(sidebar?.classList).not.toContain("border-r");
     expect(sidebar?.classList).not.toContain("border-border");
     expect(sidebar?.classList).toContain("primary-sidebar-surface");
+    expect(container.querySelector('[aria-label="GS Agentic Manager"]')?.classList).toContain("text-sidebar-foreground");
 
     flushSync(() => {
       root.unmount();
     });
   });
 
-  it("puts Ask Everest first, in words, linking to the lead agent's chat (Ben, 13 Oct)", async () => {
+  it("does not duplicate the persistent Everest launcher inside the sidebar", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     mockAgentsApi.list.mockResolvedValue([
       { id: "agent-cto", name: "Atlas", role: "cto", status: "idle", reportsTo: "agent-ceo", urlKey: "atlas" },
@@ -289,11 +293,7 @@ describe("Sidebar", () => {
     ]);
     const root = await renderSidebar();
 
-    const ask = container.querySelector("[data-testid=\"sidebar-ask-everest\"]");
-    expect(ask?.textContent).toContain("Ask Everest");
-    expect(ask?.getAttribute("href")).toBe("/chats/everest");
-    // First link in the navigation.
-    expect(container.querySelector("nav a")).toBe(ask);
+    expect(container.querySelector('[data-testid="sidebar-ask-everest"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -311,10 +311,8 @@ describe("Sidebar", () => {
       .filter((step) => step.target && ![step.target].flat().some((target) => findTourTarget(target)))
       .map((step) => step.title);
     // Commerce is in the sidebar only for the organisation that has a shop; the tour skips the stop elsewhere.
-    expect(unanchored).toEqual(["Commerce"]);
-    // Admin is folded, so the website stop points at the control that opens it.
-    expect(findTourTarget("nav-website")).toBeNull();
-    expect(findTourTarget("Expand Admin")).not.toBeNull();
+    expect(unanchored).toEqual(["Talk to an agent", "Commerce"]);
+    expect(findTourTarget("nav-website")).not.toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -323,9 +321,8 @@ describe("Sidebar", () => {
 
   it("shows Releases only to the board (GRE-122)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
-    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const releasesLink = () =>
-      [...container.querySelectorAll("nav a")].find((anchor) => anchor.textContent?.trim() === "Releases");
+      [...document.body.querySelectorAll("a")].find((anchor) => anchor.textContent?.trim() === "Releases");
 
     mockCanRelease.value = false;
     let root = await renderSidebar();
@@ -336,6 +333,7 @@ describe("Sidebar", () => {
 
     mockCanRelease.value = true;
     root = await renderSidebar();
+    await click(textButton("Build"));
     expect(releasesLink()?.getAttribute("href")).toBe("/releases");
     flushSync(() => {
       root.unmount();
@@ -361,9 +359,8 @@ describe("Sidebar", () => {
     ]);
     const root = await renderSidebar();
 
-    const dashboardLink = [...container.querySelectorAll("nav a")]
-      .find((anchor) => anchor.getAttribute("href") === "/dashboard");
-    expect(dashboardLink?.textContent).toContain("2 live");
+    await click(textButton("Desk"));
+    expect(document.body.querySelector('a[href="/dashboard"]')).not.toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -374,13 +371,13 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
 
-    for (const label of ["Today", "Chats", "Clients", "Work", "Team", "Admin"]) {
+    for (const label of ["Start", "Company", "Work", "Manage"]) {
       expect(button(`Rearrange ${label} section`)).not.toBeNull();
       expect(button(`Drag to move the ${label} section`)).toBeNull();
     }
 
     await click(textButton("Customise sidebar"));
-    for (const label of ["Today", "Chats", "Clients", "Work", "Team", "Admin"]) {
+    for (const label of ["Start", "Company", "Work", "Manage"]) {
       const grip = button(`Drag to move the ${label} section`);
       expect(grip).not.toBeNull();
       expect(grip?.closest("a")).toBeNull();
@@ -444,11 +441,10 @@ describe("Sidebar", () => {
 
     const projectsLink = [...container.querySelectorAll("nav a")].find((a) => a.textContent?.trim() === "Projects");
     expect(projectsLink?.getAttribute("href")).toBe("/projects");
-    const agentLinks = [...container.querySelectorAll('a[href="/agents"]')];
-    expect(agentLinks).toHaveLength(1);
-    // Audit and Settings live in the Admin section, folded by default.
+    expect(textButton("Team")).toBeTruthy();
+    // Audit and Settings live under Build and Manage.
     expect(container.querySelector('a[href="/activity"]')).toBeNull();
-    expect(button("Expand Admin")).not.toBeNull();
+    expect(textButton("Build")).toBeTruthy();
     expect(container.querySelector('[data-testid="sidebar-recent-tasks"]')).not.toBeNull();
 
     flushSync(() => {
@@ -462,7 +458,7 @@ describe("Sidebar", () => {
 
     const navLabels = [...container.querySelectorAll("nav a")].map((a) => a.textContent?.trim());
     expect(navLabels).toContain("Projects");
-    expect(navLabels).toContain("Agents");
+    expect(textButton("Team")).toBeTruthy();
     expect(container.textContent).not.toContain("Organization");
 
     flushSync(() => {
@@ -485,7 +481,7 @@ describe("Sidebar", () => {
     // Top-level Projects link + starred children stay, per-project collapsible gone.
     expect(navLabels).toContain("Projects");
     expect(container.querySelector('[data-testid="sidebar-starred-projects"]')).not.toBeNull();
-    expect(navLabels).toContain("Agents");
+    expect(textButton("Team")).toBeTruthy();
 
     flushSync(() => {
       root.unmount();
@@ -534,10 +530,10 @@ describe("Sidebar", () => {
     });
     const root = await renderSidebar();
 
-    const link = (href: string) =>
-      [...container.querySelectorAll("nav a")].find((anchor) => anchor.getAttribute("href") === href);
-    expect(link("/desk")?.textContent?.trim()).toBe("Desk1");
-    expect(link("/desk#desk-needs-me")?.textContent?.trim()).toBe("Decisions1");
+    expect(textButton("Desk")?.textContent).toContain("1");
+    await click(textButton("Desk"));
+    expect(document.body.querySelector('a[href="/desk"]')).not.toBeNull();
+    expect(document.body.querySelector('a[href="/desk#desk-needs-me"]')?.textContent).toContain("1");
 
     flushSync(() => {
       root.unmount();
@@ -546,7 +542,7 @@ describe("Sidebar", () => {
 
   it("lights only one of Decisions and Desk, since both point at the Desk", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
-    const active = () => [...container.querySelectorAll("a.gs-nav-item-active")].map((a) => a.textContent?.trim());
+    const active = () => [...container.querySelectorAll(".gs-nav-item-active")].map((a) => a.textContent?.trim());
 
     mockLocation.pathname = "/PAP/desk";
     let root = await renderSidebar();
@@ -557,7 +553,7 @@ describe("Sidebar", () => {
 
     mockLocation.hash = "#desk-needs-me";
     root = await renderSidebar();
-    expect(active()).toEqual([expect.stringMatching(/^Decisions/)]);
+    expect(active()).toEqual([expect.stringMatching(/^Desk/)]);
     flushSync(() => {
       root.unmount();
     });
@@ -569,7 +565,8 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Today")).toEqual(["Decisions", "Desk", "Inbox", "Calendar"]);
+    expect(sectionLabels("Start")).toContain("Calendar");
+    expect(textButton("Desk")).toBeTruthy();
 
     flushSync(() => {
       root.unmount();
@@ -580,9 +577,8 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
     const root = await renderSidebar();
 
-    const decisionsLink = container.querySelector('a[href="/desk#desk-needs-me"]');
-    expect(decisionsLink?.textContent?.trim()).toBe("Decisions");
-    expect(sectionLabels("Today")).toContain("Decisions");
+    await click(textButton("Desk"));
+    expect(document.body.querySelector('a[href="/desk#desk-needs-me"]')).not.toBeNull();
     expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
@@ -594,8 +590,8 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: true, enableConferenceRoomChat: true });
     const root = await renderSidebar();
 
-    expect(container.querySelector('a[href="/status"]')?.textContent).toBe("Status");
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
+    await click(textButton("Team"));
+    expect(document.body.querySelector('a[href="/status"]')?.textContent).toBe("Status");
 
     flushSync(() => {
       root.unmount();
@@ -611,8 +607,8 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     expect(container.querySelector('a[href="/status"]')).toBeNull();
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room"]);
-    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
+    expect(textButton("Team")).toBeTruthy();
+    expect(sectionLabels("Start")).not.toContain("Chats");
 
     flushSync(() => {
       root.unmount();
@@ -621,16 +617,16 @@ describe("Sidebar", () => {
 
   it("remembers folded sections from the saved layout and saves a toggle", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
-    mockSidebarPrefs.layout = { collapsed: { work: true, admin: false } };
+    mockSidebarPrefs.layout = { collapsed: { work: true, manage: false } };
     const root = await renderSidebar();
 
     const navLabels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
     expect(navLabels).not.toContain("Dashboard");
-    expect(navLabels).toContain("Skills");
+    expect(textButton("Build")).toBeTruthy();
 
-    await click(button("Collapse Admin"));
-    expect(lastSavedLayout()).toEqual({ collapsed: { work: true, admin: true } });
-    expect(button("Expand Admin")).not.toBeNull();
+    await click(button("Collapse Manage"));
+    expect(lastSavedLayout()).toEqual({ collapsed: { work: true, manage: true } });
+    expect(button("Expand Manage")).not.toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -642,12 +638,12 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     const top = container.querySelector("nav > div:first-child");
-    expect(top?.textContent).toBe("New TaskSearch");
-    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
-    const chats = container.querySelector('[data-sidebar-section="chats"]');
+    expect(top?.textContent).toBe("Company menuNew TaskSearch");
+    expect(textButton("Deliverables")).toBeTruthy();
+    const chats = container.querySelector('[data-sidebar-section="start"]');
     expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
-    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Links", "GS Studio"]);
+    expect(sectionLabels("Company")).toEqual(["GS Studio"]);
 
     flushSync(() => {
       root.unmount();
@@ -655,6 +651,36 @@ describe("Sidebar", () => {
   });
 
   describe("customise mode", () => {
+    it("keeps a group when its anchor is pinned", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      mockSidebarPrefs.layout = { pinned: ["agents"] };
+      const root = await renderSidebar();
+
+      expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
+      expect(textButton("Team")).toBeTruthy();
+      await click(textButton("Team"));
+      expect(document.body.querySelector('a[href="/scorecard"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("keeps a group when its anchor is hidden", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      mockSidebarPrefs.layout = { hidden: ["agents"] };
+      const root = await renderSidebar();
+
+      expect(container.querySelector('a[href="/agents"]')).toBeNull();
+      expect(textButton("Team")).toBeTruthy();
+      await click(textButton("Team"));
+      expect(document.body.querySelector('a[href="/scorecard"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
     it("stays out of the way until asked for, then swaps links for editable rows", async () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
       const root = await renderSidebar();
@@ -710,7 +736,7 @@ describe("Sidebar", () => {
       await click(textButton("Customise sidebar"));
       await click(button("More options for Inbox"));
       await click(menuItem("Move up"));
-      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks", "calendar"]);
+      expect(lastSavedLayout()?.sections?.start).toEqual(["my-tasks", "inbox", "decisions", "chats", "calendar"]);
 
       await click(button("More options for Agents"));
       await click(menuItem("Pin to top"));
@@ -718,8 +744,8 @@ describe("Sidebar", () => {
       expect(button("Unpin Agents")).not.toBeNull();
 
       await click(textButton("Done"));
-      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "Desk", "Calendar"]);
-      expect(sectionLabels("Pinned")).toEqual(["Agents"]);
+      expect(textButton("Desk")).toBeTruthy();
+      expect(container.querySelector('a[href="/agents"]')?.textContent).toBe("Agents");
       // Pinned items move to the top group; they are not listed twice.
       expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
 
@@ -819,32 +845,32 @@ describe("Sidebar", () => {
     });
   });
 
-  it("groups the navigation into Today, Chats, Clients, Work, Team and a folded Admin (PR #551 audit)", async () => {
+  it("groups the navigation into Start, Company, Work and Manage", async () => {
     mockCanRelease.value = true;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: true,
       enableCases: true,
       enableDeepDive: true,
       enablePipelines: true,
-      enableConferenceRoomChat: true,
-      enableAgentChat: true,
-      enableStatusCards: true,
+        enableConferenceRoomChat: true,
+        enableAgentChat: true,
+        enableStatusCards: true,
+        enableWebsiteView: true,
     });
-    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
 
     const headings = [...container.querySelectorAll("[data-sidebar-section]")]
       .map((section) => section.getAttribute("data-sidebar-section"));
-    expect(headings).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
-    expect(sectionLabels("Help")).toEqual(["What's newNew", "Tutorials"]);
-    expect(sectionLabels("Today")).toEqual(["Decisions", "Desk", "Inbox", "Calendar"]);
-    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Links", "GS Studio"]);
-    expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
-    expect(sectionLabels("Admin")).toEqual([
-      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Cases",
-      "Audit", "Releases", "Settings", "Design guide",
-    ]);
+    expect(headings).toEqual(["start", "company", "work", "manage"]);
+    expect(sectionLabels("Start")).toContain("Calendar");
+    expect(sectionLabels("Company")).toEqual(["Deep Divebeta", "GS Studio"]);
+    expect(sectionLabels("Work")).toEqual(["Tasks", "Projects", "Website", "Goals"]);
+    expect(sectionLabels("Manage")).toEqual(["Workspaces", "Cases", "Settings", "Design guide", "What's newNew", "Tutorials"]);
+    expect(textButton("Desk")).toBeTruthy();
+    expect(textButton("Clients")).toBeTruthy();
+    expect(textButton("Deliverables")).toBeTruthy();
+    expect(textButton("Team")).toBeTruthy();
+    expect(textButton("Build")).toBeTruthy();
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
     ).toBe(true);
@@ -855,33 +881,38 @@ describe("Sidebar", () => {
     mockCanRelease.value = false;
   });
 
-  it("opens folded-by-default Admin while you are on one of its pages, unless you folded it", async () => {
+  it("keeps Build destinations in its flyout", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
     mockLocation.pathname = "/PAP/apps/advanced";
     let root = await renderSidebar();
-    expect(container.querySelector('a[href="/apps"]')?.textContent).toBe("Connectors");
+    await click(textButton("Build"));
+    expect(document.body.querySelector('a[href="/apps"]')?.textContent).toBe("Connectors");
     flushSync(() => {
       root.unmount();
     });
 
-    mockSidebarPrefs.layout = { collapsed: { admin: true } };
+    mockSidebarPrefs.layout = { collapsed: { manage: true } };
     root = await renderSidebar();
-    expect(container.querySelector('a[href="/apps"]')).toBeNull();
+    expect(textButton("Build")).toBeUndefined();
     flushSync(() => {
       root.unmount();
     });
   });
 
-  it("folds Admin by default and leaves out a section with nothing to show", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+  it("leaves out unavailable destinations", async () => {
+    mockCanRelease.value = false;
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: false });
     const root = await renderSidebar();
 
-    expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
-    expect(button("Expand Admin")).not.toBeNull();
-    // Pipelines and Deep Dive are off, so Clients holds only Deliverables.
-    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Links", "GS Studio"]);
-    // Agent Chat reads off here (as in a client plan, GRE-1633), so Chats has nothing to show.
-    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
+    expect(container.querySelector('a[href="/company/settings"]')).not.toBeNull();
+    expect(sectionLabels("Company")).toEqual(["GS Studio"]);
+    expect(sectionLabels("Start")).not.toContain("Chats");
+
+    await click(textButton("Build"));
+    expect(document.body.querySelector('a[href="/releases"]')).toBeNull();
+
+    await click(textButton("Team"));
+    expect(document.body.querySelector('a[href="/status"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -891,7 +922,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive in Clients only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Links", "GS Studio"]);
+    expect(sectionLabels("Company")).toEqual(["Deep Divebeta", "GS Studio"]);
     flushSync(() => {
       root.unmount();
     });
@@ -970,7 +1001,8 @@ describe("Sidebar", () => {
     });
     const root = await renderSidebar();
 
-    const link = [...container.querySelectorAll("nav a")].find(
+    await click(textButton("Team"));
+    const link = [...document.body.querySelectorAll("a")].find(
       (anchor) => anchor.textContent?.trim() === "Conference Room",
     );
     expect(link?.getAttribute("href")).toBe("/board-chat");
@@ -984,7 +1016,7 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
     const root = await renderSidebar();
 
-    expect(container.textContent).toContain("Conference Room");
+    expect(textButton("Team")).toBeTruthy();
 
     flushSync(() => {
       root.unmount();
@@ -1005,12 +1037,12 @@ describe("Sidebar", () => {
     });
   });
 
-  it("always shows Connectors in the Admin section", async () => {
+  it("always shows Connectors in the Build flyout", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableApps: false });
-    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
 
-    const links = [...container.querySelectorAll("a")];
+    await click(textButton("Build"));
+    const links = [...document.body.querySelectorAll("a")];
     const link = links.find((anchor) => anchor.textContent === "Connectors");
     expect(link?.getAttribute("href")).toBe("/apps");
     expect(link?.querySelector("svg")?.classList).toContain("lucide-unplug");
@@ -1033,7 +1065,8 @@ describe("Sidebar", () => {
     });
     const root = await renderSidebar();
 
-    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Pipelines");
+    await click(textButton("Clients"));
+    const link = [...document.body.querySelectorAll("a")].find((anchor) => anchor.textContent === "Pipelines");
     expect(link?.getAttribute("href")).toBe("/pipelines");
 
     flushSync(() => {
@@ -1054,7 +1087,7 @@ describe("Sidebar", () => {
 
   it("shows the Workspaces link when isolated workspaces are enabled", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
-    mockSidebarPrefs.layout = { collapsed: { admin: false } };
+    mockSidebarPrefs.layout = { collapsed: { manage: false } };
     const root = await renderSidebar();
 
     const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Workspaces");
@@ -1065,11 +1098,11 @@ describe("Sidebar", () => {
     });
   });
 
-  it("does not render a global navigation collapse affordance", async () => {
+  it("renders a global navigation collapse affordance", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     const root = await renderSidebar();
 
-    expect(container.querySelector('button[aria-label="Collapse sidebar"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Collapse sidebar"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Expand sidebar"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Keep sidebar expanded"]')).toBeNull();
     expect(container.textContent).toContain("Company menu");

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@/lib/router";
-import { ChevronLeft, Menu, MessageCircle, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
+import { ChevronLeft, Menu, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -18,11 +18,9 @@ import { PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 import { cn } from "../lib/utils";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
-import { MobileEverestButton, useLeadAgent } from "./MobileEverestButton";
 import { PageTourButton } from "./PageTourButton";
 import { FeatureTour } from "./FeatureTour";
 import { SEARCH_ASK_TOUR } from "../lib/search-ask-tour";
-import { openAskEverest } from "../lib/ask-everest-events";
 import { openCommandPalette } from "../lib/global-search";
 import { IconTip, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -53,7 +51,6 @@ function GlobalToolbar({
       <FeatureTour tour={SEARCH_ASK_TOUR} className="hidden" />
       {pageToolbar}
       <GlobalSearchButton />
-      <GlobalAskButton />
       {slots.length > 0 ? (
         <PluginSlotOutlet slotTypes={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
@@ -92,31 +89,6 @@ function GlobalSearchButton() {
     </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">Search everything ({shortcut})</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/** "Ask Everest" on every page's top bar (desktop): opens the Ask panel (Ctrl/Cmd+J). */
-function GlobalAskButton() {
-  const lead = useLeadAgent();
-  if (!lead) return null;
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-    <button
-      type="button"
-      onClick={() => openAskEverest()}
-      data-testid="global-ask-button"
-      data-tour="global-ask"
-      aria-keyshortcuts="Control+J Meta+J"
-      className="hidden h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-(length:--text-compact) font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex @max-2xl/bar:size-8 @max-2xl/bar:justify-center @max-2xl/bar:px-0 @max-xl/bar:hidden"
-    >
-      <MessageCircle className="h-4 w-4" aria-hidden="true" />
-      <span className="@max-2xl/bar:sr-only">Ask {lead.name}</span>
-    </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">Ask {lead.name} ({isMac ? "⌘J" : "Ctrl J"})</TooltipContent>
     </Tooltip>
   );
 }
@@ -315,7 +287,6 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
           )}
         </div>
         {globalToolbarSlots}
-        {isMobile ? <MobileEverestButton /> : null}
       </div>
     );
   }
