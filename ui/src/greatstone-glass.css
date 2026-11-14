@@ -1245,6 +1245,41 @@
   .gs-sidebar-glass a[aria-label="Email feedback to Greatstone"] { min-width: 2.75rem; }
 }
 
+/* Expand and collapse (SidebarShell). The spacer and the panel ease their
+   width on one clock, so the page eases with a pinned sidebar and a peek only
+   grows the overlay. Nothing inside moves: icons are left-anchored on the rail
+   axis, and what only the open sidebar shows (labels, counts, the wordmark)
+   fades and slides in once the width is under way (gs-side-reveal), so text
+   never reflows or wraps mid-motion. Reduced motion: instant. */
+:root {
+  --motion-sidebar-width: 220ms;
+  --motion-sidebar-reveal: 160ms;
+  --motion-sidebar-reveal-delay: 70ms;
+}
+
+.gs-sidebar-motion {
+  transition: width var(--motion-sidebar-width) var(--motion-ease-out);
+}
+
+.gs-sidebar-glass .gs-side-reveal {
+  animation: gs-side-reveal var(--motion-sidebar-reveal) var(--motion-ease-out) var(--motion-sidebar-reveal-delay) both;
+}
+
+@keyframes gs-side-reveal {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-sidebar-width: 0ms;
+    --motion-sidebar-reveal: 0ms;
+    --motion-sidebar-reveal-delay: 0ms;
+  }
+  .gs-sidebar-motion { transition: none; }
+  .gs-sidebar-glass .gs-side-reveal { animation: none; }
+}
+
 /* Phone drawer: the same panel, clear of the notch and the home indicator. */
 .gs-sidebar-drawer {
   padding:
@@ -1398,6 +1433,34 @@
   --gs-bubble-theirs-bg: rgb(34 40 36 / 0.86);
   --gs-bubble-theirs-edge: rgb(255 255 255 / 0.1);
   --gs-convo-avatar-bg: rgb(34 40 36 / 0.95);
+}
+
+/* The hub's layout (Layout.tsx): the content area beside the sidebar is a size
+   container. The conversation list floats beside the thread only when the
+   thread still gets at least 480px: 320 list + 480 thread = 50rem with the
+   artifacts pane shut, 75rem with it open (its default 400px). Narrower, the
+   hub is one pane: /messages shows the list in the page, a thread fills the
+   area, and under 50rem the artifacts pane steps aside for the thread.
+   Unlayered on purpose, so it wins over the panes' own display utilities. */
+.gs-hub { container: hub / inline-size; }
+.gs-hub-list { display: none; }
+.gs-hub-inline-list { display: flex; }
+.gs-hub-empty { display: none; }
+
+@container hub (min-width: 50rem) {
+  .gs-hub:not([data-pane-open]) .gs-hub-list { display: flex; }
+  .gs-hub:not([data-pane-open]) .gs-hub-inline-list { display: none; }
+  .gs-hub:not([data-pane-open]) .gs-hub-empty { display: flex; }
+}
+
+@container hub (min-width: 75rem) {
+  .gs-hub .gs-hub-list { display: flex; }
+  .gs-hub .gs-hub-inline-list { display: none; }
+  .gs-hub .gs-hub-empty { display: flex; }
+}
+
+@container hub (max-width: 49.99rem) {
+  .gs-hub[data-messages-hub] [data-side-pane] { display: none; }
 }
 
 [data-messages-hub] {

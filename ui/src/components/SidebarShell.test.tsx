@@ -220,18 +220,25 @@ describe("SidebarShell", () => {
     expect(panel().className).toContain("py-2");
   });
 
-  it("opens and closes instantly with no width transition (PAP-10676)", () => {
+  it("eases its width on expand and collapse, but not while dragging the handle", () => {
     act(() => {
       root.render(
-        <SidebarShell open>
+        <SidebarShell open resizable>
           <div>Sidebar</div>
         </SidebarShell>,
       );
     });
 
-    // Open/close must be instant: the panel never animates its width, so neither
-    // the transition nor its reduced-motion fallback should be present.
-    expect(panel().className).not.toContain("transition-(--tp-width)");
-    expect(panel().className).not.toContain("motion-reduce:transition-none");
+    // The spacer and the panel share one clock, so the page eases with the sidebar.
+    expect(spacer().className).toContain("gs-sidebar-motion");
+    expect(panel().className).toContain("gs-sidebar-motion");
+
+    const separator = handle()!;
+    separator.setPointerCapture = vi.fn();
+    act(() => {
+      separator.dispatchEvent(pointerEvent("pointerdown", 240));
+    });
+    expect(spacer().className).not.toContain("gs-sidebar-motion");
+    expect(panel().className).not.toContain("gs-sidebar-motion");
   });
 });

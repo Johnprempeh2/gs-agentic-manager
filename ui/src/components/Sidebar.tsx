@@ -172,7 +172,7 @@ function SidebarNavGroup({
           onPointerEnter={() => { if (rail) setOpen(true); }}
           onMouseEnter={(event) => { if (rail) event.stopPropagation(); }}
           className={cn(
-            "gs-nav-item mx-2 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-(length:--text-compact) font-medium outline-none transition-colors pointer-coarse:py-1",
+            "gs-nav-item mx-2 flex min-h-8 items-center gap-2.5 rounded-lg px-2 py-1.5 text-(length:--text-compact) font-medium outline-none transition-colors pointer-coarse:py-1",
             active
               ? "gs-nav-item-active bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -184,16 +184,18 @@ function SidebarNavGroup({
               <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary shadow-(--shadow-sidebar-icon-badge)" aria-hidden="true" />
             ) : null}
           </span>
-          <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "min-w-0 flex-1 truncate text-left"}>{label}</span>
+          <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "gs-side-reveal min-w-0 flex-1 truncate text-left"}>{label}</span>
           {!rail && hasBadge ? (
-            <Badge variant="ghost" className="ml-auto px-1.5 leading-none bg-primary text-primary-foreground">
+            <Badge variant="ghost" className="gs-side-reveal ml-auto px-1.5 leading-none bg-primary text-primary-foreground">
               {badge}
             </Badge>
           ) : null}
-          {rail ? null : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          {rail ? null : <ChevronRight className="gs-side-reveal h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-56">
+      {/* The flyout's first item lines up with the hovered row (alignOffset cancels
+          the menu's own 4px padding) and it clears the glass by the 8px inset. */}
+      <DropdownMenuContent side="right" align="start" sideOffset={RAIL_FLYOUT_OFFSET} alignOffset={-4} className="w-56">
         <SidebarNavExpandedProvider>
           {entries.map((entry) => {
             const EntryIcon = entry.icon;
@@ -216,6 +218,12 @@ function SidebarNavGroup({
     </DropdownMenu>
   );
 }
+
+/**
+ * A row's pill ends 20px inside the glass (nav px-3 + row mx-2), then the 1px
+ * edge and the 8px float inset: a flyout opens just clear of the glass.
+ */
+const RAIL_FLYOUT_OFFSET = 12 + 8 + 1 + 8;
 
 const ICON_BUTTON =
   "flex size-7 pointer-coarse:size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
@@ -710,13 +718,16 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         primarySidebarStyles.surface,
       )}
     >
-      {/* Top bar: the Greatstone logo at its true aspect, the collapse toggle
-          beside it ([ on the keyboard). The rail keeps the 3D stone only. */}
+      {/* Top bar, one 56px row in both states so nothing below it moves: the
+          logo stone sits on the rail axis (pl-6 + a 24px box = 36px), the
+          wordmark beside it, the toggle at the row's end ([ on the keyboard).
+          On the rail the toggle sits over the stone on the same axis and shows
+          on hover or focus; tapping the stone expands. */}
       <div
-        className={cn("flex shrink-0 items-center gap-1 px-4 pt-3 pb-2", rail && "flex-col justify-center gap-2 px-2")}
+        className="group/brand relative flex h-14 shrink-0 items-center gap-2 pl-6 pr-5"
         data-slot="sidebar-brand-header"
       >
-        <GreatstoneLogo variant={rail ? "stone" : "full"} />
+        <GreatstoneLogo variant={rail ? "stone" : "full"} className={cn(rail && "transition-opacity group-hover/brand:opacity-0 group-has-[:focus-visible]/brand:opacity-0")} />
         {collapseLocked || isMobile ? null : (
           <button
             type="button"
@@ -725,7 +736,12 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-keyshortcuts="["
             title={collapsed ? "Expand sidebar ([)" : "Collapse sidebar ([)"}
-            className={cn("ml-auto flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", rail && "ml-0")}
+            className={cn(
+              "flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              rail
+                ? "absolute left-5 top-1/2 -translate-y-1/2 text-transparent group-hover/brand:text-foreground focus-visible:text-foreground"
+                : "gs-side-reveal ml-auto",
+            )}
           >
             {collapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
           </button>
@@ -742,11 +758,11 @@ export function Sidebar({ children }: { children?: ReactNode }) {
                 data-tour="new-task"
                 aria-label={rail ? "New Task" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+                  "flex min-h-8 items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
                 )}
               >
                 <SquarePen className="h-4 w-4 shrink-0" />
-                <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "truncate"}>New Task</span>
+                <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "gs-side-reveal truncate"}>New Task</span>
               </button>
             );
             return rail ? (

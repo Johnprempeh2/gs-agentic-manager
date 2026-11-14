@@ -18,11 +18,14 @@ const MAX_SIDEBAR_WIDTH = 420;
 const SIDEBAR_WIDTH_STEP = 16;
 
 // Collapsed icon rail. The glass panel floats inside an 8px inset on the left
-// and top/bottom and a 4px one on the right. Inside the glass the icon's left
-// edge sits at nav px-3 (12) + item mx-2 (8) + px-2 (8) = 28px, so a 72px panel
-// centres the 16px icon (28 + 16 + 28) and keeps the highlight symmetric
-// (PAP-10676): 8 + 72 + 4 = 84. Icons stay pixel-identical across states.
-export const SIDEBAR_RAIL_WIDTH = 84;
+// and top/bottom and a 4px one on the right, and has a 1px edge. Inside the
+// glass the icon's left edge sits at nav px-3 (12) + item mx-2 (8) + px-2 (8)
+// = 28px, so a 72px content box centres the 16px icon (28 + 16 + 28) on one
+// vertical axis, 36px in, with the highlight pill symmetric around it:
+// 8 + 1 + 72 + 1 + 4 = 86. Icons stay pixel-identical across states.
+export const SIDEBAR_RAIL_WIDTH = 86;
+/** Where every rail icon, the logo stone and the avatar centre, from the glass's content edge. */
+export const SIDEBAR_RAIL_AXIS = 36;
 
 function clampSidebarWidth(width: number) {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
@@ -83,9 +86,12 @@ type SidebarShellProps = {
  * change with `overflow-hidden` clipping the labels; item padding/icon markup
  * are never touched, so the left-aligned icon stays pixel-identical.
  *
- * Opening/closing is intentionally instant (no width transition): the pin toggle
- * and peek snap between rail and expanded widths so the content never appears to
- * slide. Resizing the drag handle is likewise direct.
+ * Expanding and collapsing ease the width (gs-sidebar-motion, about 220ms
+ * ease-out): the spacer and the panel share one clock, so the page eases with
+ * the sidebar on a pin, and a peek only grows the overlay. Nothing inside the
+ * panel moves: icons are left-anchored and labels fade in after the width
+ * starts (gs-side-reveal). Reduced motion is instant. Dragging the handle is
+ * direct (no transition while resizing).
  */
 export function SidebarShell({
   children,
@@ -194,13 +200,16 @@ export function SidebarShell({
   );
 
   return (
-    <div className={cn("relative h-full shrink-0", className)} style={reservedStyle}>
+    <div
+      className={cn("relative h-full shrink-0", !isResizing && "gs-sidebar-motion", className)}
+      style={reservedStyle}
+      data-slot="sidebar-spacer"
+    >
       <div
         className={cn(
           // The padding is the float inset around the liquid-glass panel.
           "absolute inset-y-0 left-0 flex flex-col py-2 pl-2 pr-1",
-          // Open/close is instant (PAP-10676): no width transition so the rail and
-          // expanded states snap without any sliding motion.
+          !isResizing && "gs-sidebar-motion",
           // Overlay styling only while the panel is wider than its reserved
           // spacer (i.e. peeking) so it floats above content without reflow.
           isOverlay ? "z-chrome" : "z-page",

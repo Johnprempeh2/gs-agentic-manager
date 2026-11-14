@@ -23,6 +23,7 @@ export function PropertiesPanel({ taskDetailLayout = false }: { taskDetailLayout
   if (classicTaskInterfaceEnabled) {
     return (
       <aside
+        data-side-pane=""
         className="hidden md:flex border-l border-border bg-card flex-col shrink-0 overflow-hidden transition-(--tp-width-opacity) duration-200 ease-in-out h-full"
         style={{ width: panelVisible ? 320 : 0, opacity: panelVisible ? 1 : 0 }}
       >
@@ -344,12 +345,14 @@ function ResizablePropertiesPanel({
         // position:fixed, so the main column never reflows.
         <div
           aria-hidden
+          data-side-pane=""
           className="hidden md:block shrink-0"
           style={{ width: panelVisible ? width : 0 }}
         />
       ) : null}
       <aside
         ref={asideRef}
+        data-side-pane=""
         className={cn(
           "hidden md:flex bg-card flex-col",
           !maximized && "border-l border-border",

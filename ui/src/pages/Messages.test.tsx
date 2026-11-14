@@ -60,12 +60,15 @@ describe("Messages page", () => {
     done();
   });
 
-  it("on desktop is the pick-a-conversation pane beside the list", () => {
+  it("on desktop is the pick-a-conversation pane beside the list, with the list as the one-pane fallback", () => {
     state.isMobile = false;
     const { container, done } = render();
-    expect(container.querySelector("[data-testid='conversation-list']")).toBeNull();
-    expect(container.textContent).toContain("Your messages");
-    expect(container.querySelector("a")?.getAttribute("href")).toBe("/chats/everest");
+    // The hub's size container shows one or the other (greatstone-glass.css gs-hub-*).
+    const empty = container.querySelector(".gs-hub-empty");
+    expect(empty?.textContent).toContain("Your messages");
+    expect(empty?.querySelector("a")?.getAttribute("href")).toBe("/chats/everest");
+    const fallback = container.querySelector(".gs-hub-inline-list");
+    expect(fallback?.querySelector("[data-testid='conversation-list']")).not.toBeNull();
     done();
   });
 });

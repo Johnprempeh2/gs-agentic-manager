@@ -166,7 +166,7 @@ canvas. Rule: at most one tide per viewport, and lime never behind copy.
 |-----------|------|-----|
 | ConversationList | `ConversationList.tsx` | Messenger list: search, rows (avatar, name, time, one-line preview, unread, pin, mute, working or typing dot), a floating New message slot. Presentational; order with `orderConversations` (lib/conversations). |
 | ConversationAvatar / TypingDots | `ConversationList.tsx` | Agent avatar, person initials or group mark in a glass disc (24, 32, 40); three dots that stop under reduced motion. |
-| MessagesPane / ConversationHeaderActions | `MessagesPane.tsx` | The list with data (`useConversations`) and New message; the thread header's status, pin, mute and profile (a breadcrumb trailing node). |
+| MessagesPane / ConversationHeaderActions | `MessagesPane.tsx` | The list with data (`useConversations`) and New message; the thread header's status, pin, mute and profile (a breadcrumb trailing node). On desktop the hub (`gs-hub`, a size container in Layout) floats the list beside the thread only when the thread keeps 480px; narrower, /messages shows the list in the page (`gs-hub-inline-list`). |
 | NewMessageDialog | `NewMessageDialog.tsx` | One search over agents and people, with New group on top. |
 | SidebarChats | `SidebarChats.tsx` | Sidebar Chats: Everest, pinned conversations, All messages with every unread. |
 
@@ -289,7 +289,7 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 ### Sidebar
 
 **File:** `Sidebar.tsx`
-**Usage:** Left navigation sidebar, a floating liquid-glass panel (`gs-sidebar-glass`, set by `SidebarShell` and the phone drawer). Header: GreatstoneLogo + collapse toggle (`[`). Then New Task, Search and the SidebarSections. The account menu (`SidebarAccountMenu`, bottom left) holds the company switcher, profile, notifications, theme, Customise menu, company settings, releases, tutorials, what's new and sign out; do not repeat them in the nav. Start customising from anywhere with `openSidebarCustomise()`.
+**Usage:** Left navigation sidebar, a floating liquid-glass panel (`gs-sidebar-glass`, set by `SidebarShell` and the phone drawer). Header: GreatstoneLogo + collapse toggle (`[`). Then New Task, Search and the SidebarSections. The account menu (`SidebarAccountMenu`, bottom left) holds the company switcher, profile, notifications, theme, Customise menu, company settings, releases, tutorials, what's new and sign out; do not repeat them in the nav. Start customising from anywhere with `openSidebarCustomise()`. Rail geometry: every icon, the logo stone and the avatar centre on one axis 36px inside the glass (`SIDEBAR_RAIL_AXIS`, rail `SIDEBAR_RAIL_WIDTH` 86); rows are 32px and the header one 56px row in both states, so opening only reveals labels to the right. The rail stays a rail under the pointer (tooltips, group flyouts); keyboard focus peeks. Opening and closing ease the width over about 220ms (`gs-sidebar-motion`) and labels, counts and the wordmark fade in after it starts (`gs-side-reveal` on anything only the open sidebar shows); reduced motion is instant. Proved in a real browser by `tests/e2e/shell-fit.spec.ts`.
 
 ### SidebarSection
 
