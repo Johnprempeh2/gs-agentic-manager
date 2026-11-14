@@ -1,0 +1,18 @@
+{
+  "companyId": "company-example",
+  "organisations": [
+    { "id": "crm-org-1", "companyId": "company-example", "websiteOrganisationId": "site-org-1" },
+    { "id": "crm-org-2", "companyId": "company-example", "websiteOrganisationId": null }
+  ],
+  "people": [
+    { "kind": "gsam_contact", "id": "contact-1", "companyId": "company-example", "organisationId": "crm-org-1", "email": "matched@example.test", "websiteUserId": null },
+    { "kind": "organisation_member", "id": "member-1", "companyId": "company-example", "organisationId": "crm-org-1", "email": "conflict@example.test", "websiteUserId": null },
+    { "kind": "pipedrive_person", "id": "person-1", "companyId": "company-example", "organisationId": "crm-org-1", "email": "new@example.test", "websiteUserId": null },
+    { "kind": "old_supabase_user", "id": "old-user-1", "companyId": "company-example", "organisationId": "crm-org-2", "email": "old@example.test", "websiteUserId": null }
+  ],
+  "websiteUsers": [
+    { "id": "site-user-1", "email": "matched@example.test", "organisationIds": ["site-org-1"] },
+    { "id": "site-user-2", "email": "conflict@example.test", "organisationIds": ["site-org-other"] }
+  ],
+  "decisions": []
+}
