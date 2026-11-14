@@ -103,13 +103,14 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
   useEffect(() => {
     if (!polling) return;
     const timer = setInterval(() => {
-      // Every 5s while the tab is visible; nothing while it is hidden.
+      // A safety net only: the page's event stream asks for a fresh read whenever the session changes
+      // (GRE-5369). Every 15s while the tab is visible; nothing while it is hidden.
       if (!idRef.current || document.hidden) return;
       liveDesignApi.get(idRef.current).then(setView).catch((err: unknown) => {
         // A GSAM release forgets open sessions: start a new one instead of leaving a dead editor.
         if (isGoneSession(err)) setAttempt((n) => n + 1);
       });
-    }, 5000);
+    }, LIVE_VIEW_POLL_MS);
     return () => clearInterval(timer);
   }, [polling]);
 
@@ -133,6 +134,9 @@ export function useLiveDesign(start: () => Promise<LiveDesignView>, key: string,
 
   return { view, error, retry, run, sessionId: view?.id ?? null };
 }
+
+/** How often an open editor reads its session when nothing on the stream asked it to. */
+export const LIVE_VIEW_POLL_MS = 15_000;
 
 /** After this long a save is slow enough to explain (a save GSAM does itself takes well under a second). */
 const SLOW_SAVE_SECONDS = 20;

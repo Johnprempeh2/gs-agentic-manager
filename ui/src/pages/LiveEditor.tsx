@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, type LiveDesignView } from "@greatstone/shared";
+import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, LIVE_DESIGN_VIEW_FRAME, type LiveDesignView } from "@greatstone/shared";
 import { ArrowLeft, Check, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -291,6 +291,9 @@ function LiveEditorShell({
   const viewId = viewing?.restoreId ?? null;
   const viewIdRef = useRef(viewId);
   viewIdRef.current = viewId;
+  // Impeccable asks every 5 seconds whether the agent is there; the session view already knows.
+  const agentConnectedRef = useRef(false);
+  agentConnectedRef.current = live.view?.agentConnected ?? false;
   const busy = live.view?.status !== "idle" && live.view?.status !== "waiting_agent";
   const unsaved = (live.view?.stagedCount ?? 0) > 0;
   // No warning on leaving: edits not saved yet are kept on the server and come back on the next open.
@@ -383,7 +386,9 @@ function LiveEditorShell({
       while (!controller.signal.aborted) {
         try {
           const { cursor, frames, ended } = await liveDesignApi.stream(sessionId, after, controller.signal);
-          for (const f of frames) toFrame({ kind: "stream", data: f.data });
+          // Something changed: read the session once now, instead of polling it every few seconds.
+          if (after !== "start" && frames.length) void refresh((id) => liveDesignApi.get(id));
+          for (const f of frames) if (f.data.type !== LIVE_DESIGN_VIEW_FRAME) toFrame({ kind: "stream", data: f.data });
           after = cursor;
           if (ended) return;
         } catch (err) {
@@ -459,6 +464,8 @@ function LiveEditorShell({
           if (m.abort === true) current.rec.abort();
           else current.rec.stop();
         }
+      } else if (m.kind === "request" && typeof m.path === "string" && m.path.split("?")[0] === "/status") {
+        toFrame({ kind: "response", rid: m.rid, status: 200, body: JSON.stringify({ agentPolling: agentConnectedRef.current, activeSessions: [] }) });
       } else if (m.kind === "request" && typeof m.path === "string") {
         const rid = m.rid;
         const extra = m.extra && typeof m.extra === "object" ? (m.extra as { selector?: unknown; position?: unknown }) : {};
@@ -476,7 +483,8 @@ function LiveEditorShell({
           .then((r) => {
             toFrame({ kind: "response", rid, status: r.status, body: r.body, contentType: r.contentType });
             // A direct edit was staged, saved or dropped: show it here at once instead of at the next poll.
-            if (m.method === "POST" && String(m.path).startsWith("/manual-edit")) void refresh((id) => liveDesignApi.get(id));
+            // An Accept saved a new version: show it at once too.
+            if (m.method === "POST" && /^\/(manual-edit|events)/.test(String(m.path))) void refresh((id) => liveDesignApi.get(id));
           })
           .catch((err: unknown) =>
             toFrame({ kind: "response", rid, status: 502, body: JSON.stringify({ error: err instanceof Error ? err.message : "relay failed" }) }),
