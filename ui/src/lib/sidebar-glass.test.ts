@@ -169,10 +169,17 @@ describe("sidebar expand and collapse motion", () => {
 });
 
 describe("Messages hub layout", () => {
-  it("folds the list into one pane when the thread would drop under 480px", () => {
-    // 320px list + 480px thread, and + the artifacts pane's default 400px when it is open.
-    expect(glassCss).toMatch(/@container hub \(min-width: 50rem\) \{\s*\.gs-hub:not\(\[data-pane-open\]\) \.gs-hub-list \{ display: flex; \}/);
-    expect(glassCss).toMatch(/@container hub \(min-width: 75rem\) \{\s*\.gs-hub \.gs-hub-list \{ display: flex; \}/);
+  it("keeps the conversation list whenever the thread keeps 480px, even with the artifacts pane open", () => {
+    // 320px list + 480px thread. The list is how you switch chats, so the open
+    // artifacts pane never hides it (it used to, under 75rem).
+    expect(glassCss).toMatch(/@container hub \(min-width: 50rem\) \{\s*\.gs-hub \.gs-hub-list \{ display: flex; \}/);
+    expect(glassCss).not.toMatch(/data-pane-open\]\) \.gs-hub-list/);
     expect(glassCss).toMatch(/\.gs-hub-list \{ display: none; \}/);
+  });
+
+  it("gives the artifacts pane only what list and thread leave, so it never covers the thread", () => {
+    expect(glassCss).toMatch(/@container hub \(min-width: 62\.5rem\) and \(max-width: 74\.99rem\) \{\s*\.gs-hub\[data-messages-hub\] \[data-side-pane\]:not\(\.fixed\) \{ max-width: calc\(100cqi - 50rem\); \}/);
+    expect(glassCss).toMatch(/@container hub \(max-width: 62\.49rem\) \{\s*\.gs-hub\[data-messages-hub\] \[data-side-pane\] \{ display: none; \}/);
+    expect(glassCss).not.toMatch(/\[data-side-pane\][^{]*\{\s*position: absolute/);
   });
 });

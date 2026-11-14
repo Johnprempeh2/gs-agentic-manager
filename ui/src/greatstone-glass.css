@@ -1436,11 +1436,16 @@
 }
 
 /* The hub's layout (Layout.tsx): the content area beside the sidebar is a size
-   container. The conversation list floats beside the thread only when the
-   thread still gets at least 480px: 320 list + 480 thread = 50rem with the
-   artifacts pane shut, 75rem with it open (its default 400px). Narrower, the
-   hub is one pane: /messages shows the list in the page, a thread fills the
-   area, and under 50rem the artifacts pane steps aside for the thread.
+   container. From 50rem (320 list + 480 thread) the conversation list always
+   sits beside the thread: it is how you move between chats, so nothing may
+   take it away (14 Nov: an agent chat opened the artifacts pane, the list
+   folded away under 75rem, and the next chat could not be clicked).
+   The artifacts pane gets what is left after list and thread: its full width
+   from 75rem, capped to the leftover between 62.5rem and 75rem, and under
+   62.5rem (less than 200px left) it steps aside for the thread. It never
+   floats over the thread, so it can never cover the composer.
+   Narrower than 50rem the hub is one pane: /messages shows the list in the
+   page and a thread fills the area.
    Unlayered on purpose, so it wins over the panes' own display utilities. */
 .gs-hub { container: hub / inline-size; }
 .gs-hub-list { display: none; }
@@ -1448,18 +1453,20 @@
 .gs-hub-empty { display: none; }
 
 @container hub (min-width: 50rem) {
-  .gs-hub:not([data-pane-open]) .gs-hub-list { display: flex; }
-  .gs-hub:not([data-pane-open]) .gs-hub-inline-list { display: none; }
-  .gs-hub:not([data-pane-open]) .gs-hub-empty { display: flex; }
-}
-
-@container hub (min-width: 75rem) {
   .gs-hub .gs-hub-list { display: flex; }
   .gs-hub .gs-hub-inline-list { display: none; }
   .gs-hub .gs-hub-empty { display: flex; }
 }
 
-@container hub (max-width: 49.99rem) {
+/* Not while maximized: then the pane is position: fixed over the page. */
+@container hub (min-width: 62.5rem) and (max-width: 74.99rem) {
+  .gs-hub[data-messages-hub] [data-side-pane]:not(.fixed) { max-width: calc(100cqi - 50rem); }
+  /* Its content fits the capped width, so the tabs and close stay on screen
+     (the pane pins its content to the full width inline, hence !important). */
+  .gs-hub[data-messages-hub] aside[data-side-pane]:not(.fixed) > :last-child { width: 100% !important; min-width: 0 !important; }
+}
+
+@container hub (max-width: 62.49rem) {
   .gs-hub[data-messages-hub] [data-side-pane] { display: none; }
 }
 

@@ -77,6 +77,9 @@ import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
 import { getAppDetailConnectionId } from "../lib/app-detail-route";
 
+/** How long the pointer rests on the collapsed rail before it opens. */
+const PEEK_INTENT_MS = 180;
+
 /** Focus that came from the keyboard (Tab), not from a click on a rail icon. */
 function isKeyboardFocus(target: EventTarget | null): boolean {
   try {
@@ -357,13 +360,15 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     }));
   }, []);
 
-  // Peek for the collapsed rail. A pointer no longer peeks: the rail stays a
-  // rail under the mouse, so every icon shows its tooltip and a group row its
-  // flyout (John, 14 Nov), and the toggle or [ expands it. Keyboard focus
-  // still opens the peek immediately so tabbing reaches the full nav with its
-  // labels. Closing is debounced to avoid flicker on the rail to overlay seam.
-  // Context gates the effective `peeking` to desktop + collapsed +
-  // hover-capable pointers, so these handlers are inert otherwise.
+  // Peek for the collapsed rail. Hovering opens it after a short intent delay
+  // (PEEK_INTENT_MS), so a pointer only passing over the rail on its way to the
+  // page never flashes it open (John, 14 Nov: hover to open). The peek overlays
+  // the page; leaving it closes it at once, so the next click lands on what is
+  // under the pointer (the Messages list sits right beside the rail). Keyboard
+  // focus opens it immediately so tabbing reaches the full nav with its labels;
+  // a focus blur closes it debounced. Context gates the effective `peeking` to
+  // desktop + collapsed + hover-capable pointers, so these handlers are inert
+  // otherwise.
   const peekTimer = useRef<number | null>(null);
   // Whether the pointer is currently over the peek panel. Used to keep the peek
   // open across focus changes (e.g. navigation steals focus to <main>) as long as
@@ -393,12 +398,16 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   // whether the pointer is over the panel and should suppress the re-peek.
   const handlePanelPointerEnter = useCallback(() => {
     pointerInsidePanel.current = true;
-  }, []);
+    if (!collapsed || suppressPeekRef.current) return;
+    clearPeekTimer();
+    peekTimer.current = window.setTimeout(() => setPeeking(true), PEEK_INTENT_MS);
+  }, [collapsed, clearPeekTimer, setPeeking]);
   const handlePanelPointerLeave = useCallback(() => {
     pointerInsidePanel.current = false;
     suppressPeekRef.current = false; // pointer left — re-arm peek for the next hover
-    closePeek();
-  }, [closePeek]);
+    clearPeekTimer();
+    setPeeking(false);
+  }, [clearPeekTimer, setPeeking]);
   const handlePanelFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
     // React sends focus inside portals (a rail flyout menu) through here too;
     // only focus that lands in the panel itself opens the peek.

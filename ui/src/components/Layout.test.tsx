@@ -470,8 +470,9 @@ describe("Layout", () => {
     await act(async () => {
       hover(railPanel!);
     });
+    // Past the hover intent delay, so only the suppression keeps it shut.
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 80));
+      await new Promise((r) => setTimeout(r, 250));
     });
     expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
 
@@ -480,7 +481,7 @@ describe("Layout", () => {
     });
   });
 
-  it("keeps the rail a rail under the pointer, and peeks for keyboard focus", async () => {
+  it("opens the collapsed rail after a short hover, closes it the moment the pointer leaves, and peeks for keyboard focus", async () => {
     mockSidebarState.collapsed = true;
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -501,22 +502,38 @@ describe("Layout", () => {
         el.className.includes("pl-2"),
     );
     expect(panel).toBeTruthy();
-    // Hovering the rail shows each icon's tooltip or a group's flyout, so it
-    // must not expand the sidebar.
-    await act(async () => {
-      panel!.dispatchEvent(
-        new MouseEvent("mouseover", {
-          bubbles: true,
-          relatedTarget: document.body,
-        }),
-      );
+    const wait = (ms: number) => act(async () => {
+      await new Promise((r) => setTimeout(r, ms));
     });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 80));
+    // React derives onMouseEnter/Leave from mouseover/mouseout crossing the edge.
+    const enter = () => act(async () => {
+      panel!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
     });
+    const leave = () => act(async () => {
+      panel!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body }));
+    });
+
+    // A pointer passing over the rail on its way to the page does not open it.
+    await enter();
+    await wait(80);
+    await leave();
+    await wait(200);
     expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
 
+    // Resting on it does, after the intent delay.
+    await enter();
+    await wait(100);
+    expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
+    await wait(150);
+    expect(mockSetPeeking).toHaveBeenLastCalledWith(true);
+
+    // Leaving closes it straight away, with no debounce left to catch a click.
+    mockSetPeeking.mockClear();
+    await leave();
+    expect(mockSetPeeking).toHaveBeenCalledWith(false);
+
     // Tabbing into the rail still opens the full nav with its labels.
+    mockSetPeeking.mockClear();
     const target = document.createElement("button");
     panel!.appendChild(target);
     const matches = vi.spyOn(target, "matches").mockImplementation((selector: string) => selector === ":focus-visible");
