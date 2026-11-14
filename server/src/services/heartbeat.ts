@@ -23157,7 +23157,7 @@ export function heartbeatService(
     } = {},
   ) {
     const attemptStartedAtMs = Date.now();
-    // Pre-start step timings (run.prestart.timing): a chat's first seconds
+    // Pre-start step timings (the "prestart" lifecycle event): a chat's first seconds
     // are spent here before the adapter is even invoked. Each mark names the
     // step that ran since the previous one.
     const prestartMarks: string[] = [];
@@ -26069,9 +26069,10 @@ export function heartbeatService(
           message: "run started",
         });
         // Where the time between claiming the run and starting the adapter went,
-        // step by step (each figure is the time since the previous mark).
+        // step by step (each figure is the time since the previous mark). A
+        // lifecycle event, so run liveness never counts it as work done.
         await appendRunEvent(currentRun, {
-          eventType: "run.prestart.timing",
+          eventType: "lifecycle",
           stream: "system",
           level: "info",
           message: `prestart ${Date.now() - attemptStartedAtMs}ms: ${prestartMarks.join(", ")}`,
