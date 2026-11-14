@@ -10,7 +10,8 @@ import type {
   LiveDesignVariant,
   LiveDesignView,
 } from "@greatstone/shared";
-import { applyEditsToPage, parseQuickChange, previewEdits, quickTextOp } from "./live-design-direct.js";
+import { LIVE_DESIGN_VIEW_FRAME } from "@greatstone/shared";
+import { applyEditsToPage, applyVariantToPage, parseQuickChange, previewEdits, quickTextOp } from "./live-design-direct.js";
 
 /**
  * Live design sessions: John uses Impeccable's own page tools on an agent's
@@ -132,7 +133,15 @@ function say(s: Session, from: LiveDesignMessage["from"], text: string) {
   s.messages.push({ from, text: text.slice(0, 2000), at: new Date().toISOString() });
   if (s.messages.length > 200) s.messages.splice(0, s.messages.length - 200);
   saveStore();
+  // The editor reads the session again when the stream says so, instead of asking every few seconds.
+  if (s.frames) frame(s, { type: LIVE_DESIGN_VIEW_FRAME });
 }
+
+/** A line from GSAM in the editor's chat. */
+export function liveDesignNote(s: Session, text: string) {
+  say(s, "gsam", text);
+}
+
 
 function isConnected(s: Session, now = Date.now()) {
   return now - s.agentSeenAt < AGENT_PRESENCE_MS;
@@ -485,6 +494,52 @@ export function acceptLiveDesign(s: Session, requestId: string, variant: number,
   say(s, "gsam", `You kept version ${variant + 1}${chosen.name ? ` (${chosen.name})` : ""}. The agent is saving it into the page.`);
   push(s, { type: "accept", requestId, variant, chosen, paramValues, request: s.request, attachmentId: s.attachmentId });
   return s;
+}
+
+/**
+ * Accept without the agent (GRE-5369): GSAM puts the kept version into the page and saves the next
+ * version itself, so the save takes moments and never waits for an agent that has stopped. Null means
+ * it could not place it for certain (or the version has tune knobs to bake in): the caller hands the
+ * accept to the agent, as before. A failed save leaves the versions open and says why.
+ */
+export async function acceptLiveDesignDirect(s: Session, requestId: string, variant: number, paramValues: Record<string, unknown> | null, userId: string | null) {
+  const chosen = s.variants[variant];
+  if (!s.request || s.request.id !== requestId || s.status !== "ready" || !chosen) {
+    throw new LiveDesignConflict("Those versions are no longer open.");
+  }
+  if (!s.source || chosen.params?.length || (paramValues && Object.keys(paramValues).length)) return null;
+  const request = s.request;
+  const startedAt = Date.now();
+  // Held while the page is read and saved, so a second accept or a new pick waits.
+  s.status = "applying";
+  try {
+    const result = applyVariantToPage(await s.source.read(s.attachmentId), request, chosen);
+    if ("failed" in result) {
+      s.status = "ready";
+      return null;
+    }
+    const id = await s.source.save(result.html, s.agentId, userId);
+    const version = (await s.source.version?.(id).catch(() => null)) ?? null;
+    s.attachmentId = id;
+    s.appliedAttachmentId = id;
+    s.request = null;
+    s.variants = [];
+    s.error = null;
+    s.status = isConnected(s) ? "idle" : "waiting_agent";
+    s.touchedAt = Date.now();
+    const name = chosen.name ? ` (${chosen.name})` : "";
+    say(s, "gsam", version ? `Kept version ${variant + 1}${name}. Saved as version ${version}.` : `Kept version ${variant + 1}${name}. Saved as a new version of the file.`);
+    frame(s, { type: "agent_done", id: requestId, data: { carbonize: false } });
+    // Work still waiting for this request is done; the agent's copy of the page is now behind.
+    s.queue = s.queue.filter((e) => !("requestId" in e) || e.requestId !== requestId);
+    push(s, { type: "restored", attachmentId: id, version });
+    return { saved: true as const, attachmentId: id, version, ms: Date.now() - startedAt };
+  } catch (err) {
+    s.status = "ready";
+    const reason = err instanceof LiveDesignConflict ? err.message : "the page could not be saved";
+    say(s, "gsam", `Not saved: ${reason}. The versions are still open: press Accept again, or Discard.`);
+    return { saved: false as const, reason, error: err };
+  }
 }
 
 export function discardLiveDesign(s: Session) {
@@ -1038,10 +1093,12 @@ function withInstructions(s: Session, event: AgentEvent) {
             : `John picked ${event.request.label || event.request.tag} on the page and asked, as ${action}: "${event.request.prompt}".`,
           "First read PRODUCT.md and DESIGN.md at your workspace root and design inside them. If they are missing, write them before your versions (Greatstone brand by default; the client's brand for client work), and tell John in your note.",
           `The company's reference studio lists approved brand elements and examples with notes on how to use them: GET /api/companies/${s.companyId}/references (optional ?tag=). When John names a reference or gives an /api/assets/.../content path, fetch that image and follow its note.`,
-          `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
+          event.count === 1
+            ? "Make ONE version of that element: your best answer to the request, following the impeccable skill's live-mode rules. It is ONE element (normally the same tag) that replaces the original. John asks for alternatives when he wants them."
+            : `Make ${event.count} versions of that element, following the impeccable skill's live-mode rules: each version commits to a DIFFERENT primary direction, and each is ONE element (normally the same tag) that replaces the original.`,
           "Give each version its own class names (for example .lv-halo) and put its CSS in that version's css; do not restyle shared classes. Respect prefers-reduced-motion. Keep text contrast readable.",
           ...(s.source?.guidance ? [s.source.guidance] : []),
-          "Optional tune knobs per version: params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
+          "Tune knobs only when John asks for them (a version with knobs waits for you to bake them in when he keeps it): params [{ id, kind: \"range\" | \"steps\" | \"toggle\", ... }] as in the impeccable skill's live.md section 7, driving --p-<id> custom properties or data-p-<id> attributes.",
           `The element's current HTML is in request.html; for the whole page, ${pageCall(s.id)}.`,
           ...(s.islands ? [s.islands] : []),
           ...(event.request.notes.length ? [`John pinned these comments on the page: ${event.request.notes.map((n) => `"${n}"`).join("; ")}.`] : []),

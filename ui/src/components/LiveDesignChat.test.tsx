@@ -6,7 +6,7 @@ import { ApiError } from "../api/client";
 import { liveDesignApi } from "../api/liveDesign";
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: null }) }));
 
-import { AgentWork, historyKey, LiveDesignChat, saveThenApprove, StagedEdits, useLiveDesign } from "./LiveDesignChat";
+import { AgentWork, historyKey, LIVE_VIEW_POLL_MS, LiveDesignChat, saveThenApprove, StagedEdits, useLiveDesign } from "./LiveDesignChat";
 
 describe("useLiveDesign", () => {
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -22,7 +22,10 @@ describe("useLiveDesign", () => {
     act(() => createRoot(document.createElement("div")).render(<Probe />));
     await act(async () => { await Promise.resolve(); });
     expect(result.current.sessionId).toBe("s1");
+    // The stream asks for fresh reads now (GRE-5369): the timer is a slow safety net, not a 5-second poll.
     await act(async () => { await vi.advanceTimersByTimeAsync(5100); });
+    expect(start).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(LIVE_VIEW_POLL_MS); });
     expect(start).toHaveBeenCalledTimes(2);
     expect(result.current.sessionId).toBe("s2");
   });

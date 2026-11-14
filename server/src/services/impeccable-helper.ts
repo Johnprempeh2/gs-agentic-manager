@@ -377,6 +377,18 @@ const ADAPTER = String.raw`(function () {
   });
 })();`;
 
+const IMPECCABLE_DEFAULT_COUNT = "let selectedCount = 3;";
+
+/**
+ * One version per request unless John asks for more with Impeccable's count control (John, 14 Nov:
+ * "propose one draft, offer alternatives only when asked"). Impeccable's own default is three; a vendor
+ * update that renames it fails loudly here instead of quietly going back to three.
+ */
+export function oneVersionByDefault(script: string) {
+  if (!script.includes(IMPECCABLE_DEFAULT_COUNT)) throw new Error("Impeccable's default version count moved: update oneVersionByDefault");
+  return script.replace(IMPECCABLE_DEFAULT_COUNT, `let selectedCount = ${LIVE_DESIGN_VARIANT_COUNT};`);
+}
+
 /** Impeccable's page scripts with GSAM's adapter in front, ready to inline in a page. */
 export function impeccableLiveScript() {
   if (cached) return cached;
@@ -390,7 +402,7 @@ export function impeccableLiveScript() {
     `window.__IMPECCABLE_PROJECT_IGNORES__ = ${JSON.stringify({ ignoreRules: [], ignoreValues: [], ignoreFiles: [], roots: [""], pageFiles: [] })};`,
   ].join("\n");
   // modern-screenshot (MIT) inline, so Impeccable never tries to load it over the network.
-  cached = `${ADAPTER.replace("__PORT__", String(FAKE_PORT))}\n${readVendor("modern-screenshot.umd.js")}\n${head}\n${readVendor("live-browser.js")}`.replace(/<\/script/gi, "<\\/script");
+  cached = `${ADAPTER.replace("__PORT__", String(FAKE_PORT))}\n${readVendor("modern-screenshot.umd.js")}\n${head}\n${oneVersionByDefault(readVendor("live-browser.js"))}`.replace(/<\/script/gi, "<\\/script");
   return cached;
 }
 
@@ -506,6 +518,17 @@ export function handleImpeccableRequest(s: LiveDesignSession, req: HelperRequest
   return json(404, { error: "not_available_in_gsam" });
 }
 
+/** Impeccable's Accept, from a parsed event or an /events body: the request id, the kept version (from 0) and tune values. */
+export function acceptOf(evt: Record<string, unknown> | string | null) {
+  const body = typeof evt === "string" || evt === null ? parseBody(evt) : evt;
+  if (!body || body.type !== "accept") return null;
+  return {
+    id: str(body.id, 64),
+    variant: Number(body.variantId) - 1,
+    paramValues: body.paramValues && typeof body.paramValues === "object" ? (body.paramValues as Record<string, unknown>) : null,
+  };
+}
+
 function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: { selector?: string; position?: "before" | "after" }): HelperResponse {
   const id = str(evt.id, 64) || randomUUID().slice(0, 8);
   switch (evt.type) {
@@ -540,9 +563,8 @@ function handleEvent(s: LiveDesignSession, evt: Record<string, unknown>, extra: 
       return json(200, { ok: true });
     }
     case "accept": {
-      const variant = Number(evt.variantId) - 1;
-      const params = evt.paramValues && typeof evt.paramValues === "object" ? (evt.paramValues as Record<string, unknown>) : null;
-      acceptLiveDesign(s, id, variant, params);
+      const accept = acceptOf(evt)!;
+      acceptLiveDesign(s, accept.id, accept.variant, accept.paramValues);
       return json(200, { ok: true });
     }
     case "discard":

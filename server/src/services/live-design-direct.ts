@@ -252,3 +252,74 @@ export function quickTextOp(html: string, change: { from: string; to: string }):
     quick: true,
   };
 }
+
+/** Attributes and classes Impeccable or the editor add to an element in the frame: not part of the saved page. */
+const FRAME_ATTR = /^(data-impeccable|data-gs-staged|contenteditable$|spellcheck$)/;
+
+/** An element's HTML without the frame's own marks and with spacing collapsed, to compare the frame's copy with the saved one. */
+function canonical(el: Element) {
+  const copy = el.cloneNode(true) as Element;
+  for (const node of [copy, ...copy.querySelectorAll("*")]) {
+    for (const attr of [...node.attributes]) if (FRAME_ATTR.test(attr.name)) node.removeAttribute(attr.name);
+    for (const cls of [...node.classList]) if (cls.startsWith("impeccable-")) node.classList.remove(cls);
+    if (node.hasAttribute("class") && !node.classList.length) node.removeAttribute("class");
+  }
+  return copy.outerHTML.replace(/\s+/g, " ").replace(/>\s+</g, "><").trim();
+}
+
+/**
+ * Accept without the agent: the version John kept goes into the saved page in place of the element he
+ * picked (or before or after it, for Insert), with its CSS in a style element just before it. The
+ * element is found from what the frame saw (its HTML, then its path and words), and anything unclear
+ * fails so the caller can hand the accept to the agent instead. Like the edits above, the saved HTML is
+ * cut at the parser's source positions, so nothing else in the page changes.
+ */
+export function applyVariantToPage(
+  html: string,
+  target: { selector: string; html: string; insert?: { position: "before" | "after" } },
+  variant: { html: string; css?: string; name?: string },
+): DirectEditResult {
+  if (!variant.html.trim()) return { failed: "the version is empty" };
+  const dom = new JSDOM(html, { includeNodeLocations: true });
+  const doc = dom.window.document;
+  const root: Element = doc.querySelector("#gs-page") ?? doc.body;
+  const picked = JSDOM.fragment(target.html).firstElementChild;
+  if (!picked) return { failed: "nothing identifies the element" };
+  const tag = picked.localName;
+  const words = norm(picked.textContent);
+  const all = [...root.querySelectorAll(tag)];
+  const want = canonical(picked);
+  const bySelector = (() => {
+    try {
+      return doc.body.querySelectorAll(target.selector).length === 1 ? doc.body.querySelector(target.selector) : null;
+    } catch {
+      return null;
+    }
+  })();
+  // The same HTML once; else the frame's path with the same tag and words; else the same tag and words once.
+  const sameHtml = all.filter((el) => canonical(el) === want);
+  const sameWords = words ? all.filter((el) => norm(el.textContent) === words) : [];
+  const el = sameHtml.length === 1
+    ? sameHtml[0]!
+    : sameHtml.length > 1 && bySelector && sameHtml.includes(bySelector)
+      ? bySelector
+      : bySelector && bySelector.localName === tag && root.contains(bySelector) && norm(bySelector.textContent) === words
+        ? bySelector
+        : sameWords.length === 1 ? sameWords[0]! : null;
+  if (!el || el === root) return { failed: "the element was not found in the saved page" };
+  if (touchesIsland(el) || RAW_TEXT.has(el.localName)) return { failed: "the element holds a built-in part" };
+  const place = dom.nodeLocation(el) as { startOffset: number; endOffset: number } | null | undefined;
+  if (!place) return { failed: "the element has no place in the saved page" };
+  const css = (variant.css ?? "").trim().replace(/<\/style/gi, "<\\/style");
+  const style = css ? `<style data-gs-live="${escapeText(variant.name || "kept version").replace(/"/g, "&quot;")}">${css}</style>` : "";
+  const added = style + variant.html.trim();
+  const [start, end] = target.insert ? (target.insert.position === "before" ? [place.startOffset, place.startOffset] : [place.endOffset, place.endOffset]) : [place.startOffset, place.endOffset];
+  const out = html.slice(0, start) + added + html.slice(end);
+  // The check: the page must still read as a page with the version in it.
+  const again = new JSDOM(out).window.document;
+  const kept = JSDOM.fragment(variant.html.trim()).firstElementChild;
+  if (kept && ![...again.querySelectorAll(kept.localName)].some((node) => canonical(node) === canonical(kept))) {
+    return { failed: "the version does not fit where the element was" };
+  }
+  return { html: out, applied: 1 };
+}

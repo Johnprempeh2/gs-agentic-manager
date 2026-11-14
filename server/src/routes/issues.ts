@@ -29,10 +29,12 @@ import {
   liveDesignPreviewOps,
   refuseLiveDesignSave,
   viewLiveDesign,
+  acceptLiveDesignDirect,
+  liveDesignNote,
 } from "../services/live-design.js";
 import { hasIslands, islandsForAgents, loadCompanyIslandManifest, withIslandPlaceholders } from "../services/website/islands.js";
-import { handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
-import { deliverableService } from "../services/deliverables.js";
+import { acceptOf, handleImpeccableRequest, injectImpeccableLive } from "../services/impeccable-helper.js";
+import { deliverableService, latestDeliverableIdsByAttachment } from "../services/deliverables.js";
 import { LIVE_KIND_GUIDANCE } from "../services/live-design-kinds.js";
 import { agentHasActiveRun, pickLiveDesigner, wakeLiveDesignAgent } from "../services/live-design-agents.js";
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
@@ -21254,14 +21256,14 @@ export function issueRoutes(
     session: LiveDesignSession,
     attachmentId: string,
     restoredFrom: number | null,
-  ) {
-    if (!session.deliverableId) return;
+  ): Promise<boolean> {
+    if (!session.deliverableId) return false;
     const [detail, issue, attachment] = await Promise.all([
       liveDeliverables.getDetail(session.companyId, session.deliverableId),
       svc.getById(session.issueId),
       liveDeliverables.getAttachment(session.companyId, attachmentId),
     ]);
-    if (!detail || !issue || !attachment) return;
+    if (!detail || !issue || !attachment) return false;
     const next = await liveDeliverables.register({
       issue: { id: issue.id, companyId: issue.companyId, projectId: issue.projectId ?? null },
       attachment,
@@ -21284,6 +21286,7 @@ export function issueRoutes(
       entityId: session.issueId,
       details: { deliverableId: next.id, key: detail.key, version: next.version, source: restoredFrom === null ? "live_design" : "live_design_restore", restoredFrom },
     });
+    return true;
   }
 
   function sendLiveConflict(res: Response, err: unknown) {
@@ -21313,6 +21316,15 @@ export function issueRoutes(
       deliverableId = detail.versions[0]?.id ?? detail.id;
       pageAttachmentId = detail.versions[0]?.attachmentId ?? attachment.id;
       deliverableKind = detail.kind;
+    } else {
+      // Opened from the task's files: a file that is a deliverable's newest version still saves as that
+      // deliverable's next version (GRE-5369), never as a loose file the deliverable does not show.
+      const linked = (await latestDeliverableIdsByAttachment(db, issue.companyId, [attachment.id])).get(attachment.id);
+      const detail = linked ? await liveDeliverables.getDetail(issue.companyId, linked) : null;
+      if (detail && detail.issue.id === issue.id && detail.versions[0]?.attachmentId === attachment.id) {
+        deliverableId = detail.versions[0].id;
+        deliverableKind = detail.kind;
+      }
     }
     // A flagged live designer runs the session (John, 2 Nov: one UI agent for all live design);
     // without one, the task's own agent does.
@@ -21441,10 +21453,53 @@ export function issueRoutes(
         return;
       }
     }
+    // Accept: GSAM saves the kept version itself and answers only once it is saved (GRE-5369). Before,
+    // Accept only queued work for the agent, and the page showed it as kept even when no agent was there.
+    const accept = body.path.startsWith("/events") ? acceptOf(body.body) : null;
+    if (accept) {
+      const actor = getActorInfo(req);
+      let direct: Awaited<ReturnType<typeof acceptLiveDesignDirect>>;
+      try {
+        direct = await acceptLiveDesignDirect(session, accept.id, accept.variant, accept.paramValues, boardUserId(req));
+      } catch (err) {
+        if (!(err instanceof LiveDesignConflict)) throw err;
+        res.json({ status: 409, body: JSON.stringify({ error: err.message }) });
+        return;
+      }
+      if (direct && !direct.saved) {
+        logger.warn({ err: direct.error, sessionId: session.id, issueId: session.issueId }, "live design accept was not saved");
+        res.json({ status: 500, body: JSON.stringify({ error: `Not saved: ${direct.reason}` }) });
+        return;
+      }
+      if (direct?.saved) {
+        let filed = false;
+        try {
+          filed = await fileLiveDeliverableVersion(req, session, direct.attachmentId, null);
+        } catch (err) {
+          logger.warn({ err, sessionId: session.id, deliverableId: session.deliverableId }, "live design accept saved but not filed as a deliverable version");
+        }
+        if (session.deliverableId && !filed) {
+          liveDesignNote(session, "Saved as a file on the task, but it could not be added to the deliverable's versions. Open Deliverables and add it, or tell the agent.");
+        }
+        await logActivity(db, {
+          companyId: session.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          action: "issue.live_design_accepted",
+          entityType: "issue",
+          entityId: session.issueId,
+          issueId: session.issueId,
+          details: { sessionId: session.id, attachmentId: direct.attachmentId, version: direct.version, variant: accept.variant + 1, deliverableFiled: filed, ms: direct.ms },
+        });
+        res.json({ status: 200, body: JSON.stringify({ ok: true, saved: true, attachmentId: direct.attachmentId }) });
+        return;
+      }
+    }
     const answer = handleImpeccableRequest(session, { ...body, screenshotAttachmentId, userId: boardUserId(req) });
     // A request with no agent listening (it stopped, or never joined): wake one again.
     if (body.path.startsWith("/events") || body.path.startsWith("/manual-edit-commit")) {
-      const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer)"/.test(body.body ?? "");
+      const asked = body.path.startsWith("/manual-edit-commit") || /"type"\s*:\s*"(generate|steer|accept)"/.test(body.body ?? "");
       if (asked && answer.status < 300 && !isLiveDesignAgentConnected(session) && !(await agentHasActiveRun(db, session.agentId))) {
         await rewakeLiveAgent(req, session);
       }
