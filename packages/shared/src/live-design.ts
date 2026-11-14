@@ -6,7 +6,11 @@ import { z } from "zod";
  * GSAM relays everything, so it works from any device that can reach GSAM.
  */
 
-export const LIVE_DESIGN_VARIANT_COUNT = 3;
+/** One version per request; John asks for alternatives with the count control (GRE-5369). */
+export const LIVE_DESIGN_VARIANT_COUNT = 1;
+
+/** A stream frame for the editor only, never passed to the page: the session changed, read it again. */
+export const LIVE_DESIGN_VIEW_FRAME = "gs_view";
 
 export const liveDesignRequestSchema = z.object({
   selector: z.string().min(1).max(500),
@@ -17,7 +21,7 @@ export const liveDesignRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(2000),
   /** Impeccable's action for this request ("impeccable" is freeform; others name a design command such as "bolder"). */
   action: z.string().max(40).default("impeccable"),
-  count: z.number().int().min(1).max(8).default(3),
+  count: z.number().int().min(1).max(8).default(LIVE_DESIGN_VARIANT_COUNT),
   /** Comments John pinned on the page before pressing Go (Impeccable's annotations). */
   notes: z.array(z.string().max(1000)).max(30).default([]),
   /** The marked-up screenshot, saved as an image attachment on the task, when John drew or commented. */
