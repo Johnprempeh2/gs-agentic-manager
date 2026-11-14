@@ -23157,6 +23157,16 @@ export function heartbeatService(
     } = {},
   ) {
     const attemptStartedAtMs = Date.now();
+    // Pre-start step timings (the "prestart" lifecycle event): a chat's first seconds
+    // are spent here before the adapter is even invoked. Each mark names the
+    // step that ran since the previous one.
+    const prestartMarks: string[] = [];
+    let prestartLastMs = attemptStartedAtMs;
+    const markPrestart = (step: string) => {
+      const now = Date.now();
+      prestartMarks.push(`${step} ${now - prestartLastMs}ms`);
+      prestartLastMs = now;
+    };
     let attestedQuestionResponseAtMs: number | null = null;
     if ((await getSchedulingSuppression()).suppressed) {
       try {
@@ -23325,6 +23335,7 @@ export function heartbeatService(
         throw new Error("Agent adapter changed during startup; start a new turn with the updated agent.");
       }
 
+      markPrestart("claim");
       const preparedConversation = await prepareConversationTurn(db, run);
       run = { ...run, contextSnapshot: preparedConversation.context };
       if (preparedConversation.reset) {
@@ -23644,6 +23655,7 @@ export function heartbeatService(
           issueContext,
           routineEnvContext,
         });
+      markPrestart("conversation");
       const identityContext = await initializeRunIdentity(db, {
         companyId: agent.companyId,
         runId: run.id,
@@ -24135,6 +24147,7 @@ export function heartbeatService(
       const localEnvironment = await environmentsSvc.ensureLocalEnvironment(
         agent.companyId,
       );
+      markPrestart("identity_and_context");
       const resolvedInstanceSettings = await instanceSettings.get();
       // Managed-sandbox-only policy: a run that would land on the local
       // environment is redirected onto the platform-managed sandbox row, and
@@ -24244,6 +24257,7 @@ export function heartbeatService(
           : selectedEnvironmentId
             ? await environmentsSvc.getById(selectedEnvironmentId)
             : null;
+      markPrestart("instance_settings");
       const nativeChatWorkspaceScope = await findNativeChatWorkspaceScope(db, {
         adapterType: agent.adapterType,
         environmentDriver: selectedEnvironmentForConfig?.driver ?? null,
@@ -24393,6 +24407,7 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
+      markPrestart("workspace_scope");
       const { githubSelection, githubAccessNote, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
         companyId: agent.companyId,
         agentId: agent.id,
@@ -24407,6 +24422,7 @@ export function heartbeatService(
       }
       const aiAccessRoute = agentAiAccessRoute(agent);
       let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
+      markPrestart("github_access");
       const { resolvedConfig, secretKeys, secretManifest } =
         await resolveExecutionRunAdapterConfig({
           managedAiCredentials: Boolean(aiBinding),
@@ -24432,6 +24448,7 @@ export function heartbeatService(
         try {
           // A route run uses the responsible user's own account or a shared
           // one connected inside this install; never the host's login.
+          markPrestart("adapter_config");
           if (aiAccessRoute) aiBinding = await resolveAiAccessRouteBinding(db, { companyId: agent.companyId, responsibleUserId, route: aiAccessRoute });
           managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
           if (aiAccessRoute && managedAiRuntime.attribution.method !== aiBinding.method) {
@@ -24564,6 +24581,7 @@ export function heartbeatService(
         startedAtMs: skillsPrepareStartedAtMs,
         endedAtMs: Date.now(),
       });
+      markPrestart("ai_runtime");
       const connectorAssignments = await resolveConnectorAssignments(db, { companyId: agent.companyId, agentId: agent.id, runId: run.id, issueId: typeof context.issueId === "string" ? context.issueId : undefined });
       const connectorSkillConfig = await applyConnectorSkills(effectiveResolvedConfig, runtimeSkillEntries, connectorAssignments);
       // Both CLI adapters and native context materialization use the same resolved set.
@@ -24712,6 +24730,7 @@ export function heartbeatService(
         },
         resolveWorkspace: async () => {
           if (nativeChatWorkspaceScope && !nativeChatWorkspaceScope.projectId) {
+            markPrestart("connectors");
             const cwd = await materializeNativeChatTaskRoot(
               nativeChatWorkspaceScope,
             );
@@ -24730,6 +24749,7 @@ export function heartbeatService(
               referencedProjectFailures: [],
             };
           }
+          markPrestart("chat_root");
           const workspace = await resolveWorkspaceForRun(
             agent,
             context,
@@ -25311,6 +25331,7 @@ export function heartbeatService(
           eq(projectWorkspaces.companyId, agent.companyId),
           eq(projectWorkspaces.projectId, executionWorkspace.projectId),
         )).orderBy(asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id));
+        markPrestart("workspace");
         const repositories = await prepareProjectRepositoryWorkspaces({
           cwd: executionWorkspace.cwd,
           anchorRepoUrl: executionWorkspace.repoUrl,
@@ -25569,6 +25590,7 @@ export function heartbeatService(
       };
       if (!executionTarget || executionTarget.kind === "local") {
         try {
+          markPrestart("repositories");
           runScratch = await prepareHeartbeatRunScratch({
             companyId: agent.companyId,
             agentId: agent.id,
@@ -25611,6 +25633,7 @@ export function heartbeatService(
       } else {
         delete context.paperclipScratch;
       }
+      markPrestart("run_scratch");
       const gitExecutionEnv = await prepareGitHubExecutionEnvironment({
         target: executionTarget,
         cwd: executionWorkspace.cwd,
@@ -25630,6 +25653,7 @@ export function heartbeatService(
       for (const key of MANAGED_GITHUB_TOKEN_KEYS) secretKeys.add(key);
       context.githubAuthenticationMode = useHostGitHub ? "host" : "managed";
       if (!useHostGitHub) {
+        markPrestart("git_env");
         const githubLaunchers = await prepareHeartbeatGitHubLaunchers({
           native: agent.adapterType === "paperclip_runner",
           githubConfigured: githubSelection.configured,
@@ -25830,6 +25854,7 @@ export function heartbeatService(
         stripPaperclipSessionMetadataFromSessionParams(runtimeSessionParams),
       );
 
+      markPrestart("github_launchers");
       const sessionCompaction = await evaluateSessionCompaction({
         agent,
         sessionId: previousSessionDisplayId ?? runtimeSessionIdForAdapter,
@@ -26036,11 +26061,22 @@ export function heartbeatService(
         });
 
         const currentRun = run;
+        markPrestart("session_and_prompt");
         await appendRunEvent(currentRun, {
           eventType: "lifecycle",
           stream: "system",
           level: "info",
           message: "run started",
+        });
+        // Where the time between claiming the run and starting the adapter went,
+        // step by step (each figure is the time since the previous mark). A
+        // lifecycle event, so run liveness never counts it as work done.
+        await appendRunEvent(currentRun, {
+          eventType: "lifecycle",
+          stream: "system",
+          level: "info",
+          message: `prestart ${Date.now() - attemptStartedAtMs}ms: ${prestartMarks.join(", ")}`,
+          payload: { totalMs: Date.now() - attemptStartedAtMs, marks: prestartMarks },
         });
 
         handle = await runLogStore.begin({
