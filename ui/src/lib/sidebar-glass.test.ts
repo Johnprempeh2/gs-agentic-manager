@@ -86,7 +86,11 @@ describe("sidebar liquid glass legibility", () => {
 
   it("never fades sidebar text with opacity", () => {
     const block = glassCss.slice(glassCss.indexOf("Sidebar v2: floating liquid glass"));
-    expect(block).not.toMatch(/(^|[\s{;])opacity\s*:/);
+    // The one exception is motion: labels fade in as the sidebar opens and
+    // come to rest fully solid (the keyframes end at opacity 1, fill both).
+    const reveal = /@keyframes gs-side-reveal \{[^@]*?to \{ opacity: 1; transform: none; \}\s*\}/;
+    expect(block).toMatch(reveal);
+    expect(block.replace(reveal, "")).not.toMatch(/(^|[\s{;])opacity\s*:/);
   });
 });
 
@@ -134,5 +138,41 @@ describe("phone touch targets and the docked orb", () => {
     const rule = glassCss.slice(at, glassCss.indexOf("}", at));
     expect(rule).toContain("position: relative;");
     expect(rule).not.toContain("position: fixed");
+  });
+});
+
+describe("sidebar expand and collapse motion", () => {
+  const ms = (name: string) => {
+    const match = new RegExp(`${name}: (\\d+)ms;`).exec(glassCss);
+    if (!match) throw new Error(`${name} missing`);
+    return Number(match[1]);
+  };
+  const reduced = (() => {
+    const start = glassCss.indexOf("@media (prefers-reduced-motion: reduce)", glassCss.indexOf("--motion-sidebar-width"));
+    return glassCss.slice(start, glassCss.indexOf("/* Phone drawer", start));
+  })();
+
+  it("eases the width in about 200 to 240ms, and reveals labels after the width starts", () => {
+    expect(glassCss).toMatch(/\.gs-sidebar-motion \{\s*transition: width var\(--motion-sidebar-width\) var\(--motion-ease-out\);/);
+    expect(ms("--motion-sidebar-width")).toBeGreaterThanOrEqual(200);
+    expect(ms("--motion-sidebar-width")).toBeLessThanOrEqual(240);
+    expect(ms("--motion-sidebar-reveal-delay")).toBeGreaterThan(0);
+    // Only opacity and transform move: nothing that reflows text.
+    expect(glassCss).toMatch(/@keyframes gs-side-reveal \{\s*from \{ opacity: 0; transform: translateX\(-6px\); \}\s*to \{ opacity: 1; transform: none; \}/);
+  });
+
+  it("is instant under reduced motion", () => {
+    expect(reduced).toContain("--motion-sidebar-width: 0ms;");
+    expect(reduced).toContain(".gs-sidebar-motion { transition: none; }");
+    expect(reduced).toContain(".gs-sidebar-glass .gs-side-reveal { animation: none; }");
+  });
+});
+
+describe("Messages hub layout", () => {
+  it("folds the list into one pane when the thread would drop under 480px", () => {
+    // 320px list + 480px thread, and + the artifacts pane's default 400px when it is open.
+    expect(glassCss).toMatch(/@container hub \(min-width: 50rem\) \{\s*\.gs-hub:not\(\[data-pane-open\]\) \.gs-hub-list \{ display: flex; \}/);
+    expect(glassCss).toMatch(/@container hub \(min-width: 75rem\) \{\s*\.gs-hub \.gs-hub-list \{ display: flex; \}/);
+    expect(glassCss).toMatch(/\.gs-hub-list \{ display: none; \}/);
   });
 });

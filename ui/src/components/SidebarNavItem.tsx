@@ -132,7 +132,7 @@ export function SidebarNavItem({
           // the sidebar edges, rounded-lg matches the card anchor, px-2 gives
           // the icon breathing room inside the pill. Rows with hover menus
           // (agents/projects) reserve extra right padding via className.
-          "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
+          "flex min-h-8 items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
           "gs-nav-item",
           isActive
             ? "gs-nav-item-active bg-sidebar-accent text-sidebar-accent-foreground"
@@ -176,12 +176,12 @@ export function SidebarNavItem({
           )}
         </span>
       ) : null}
-      <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : cn("min-w-0 flex-1 truncate", labelClassName)}>{label}</span>
+      <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : cn("gs-side-reveal min-w-0 flex-1 truncate", labelClassName)}>{label}</span>
       {!rail && trailing}
       {!rail && textBadge && (
         <Badge variant="ghost"
           className={cn(
-            "ml-auto px-1.5 text-(length:--text-nano) leading-none",
+            "gs-side-reveal ml-auto px-1.5 text-(length:--text-nano) leading-none",
             textBadgeTone === "amber"
               ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
               : "bg-muted text-muted-foreground",
@@ -191,7 +191,7 @@ export function SidebarNavItem({
         </Badge>
       )}
       {!rail && (hasLive || liveAccessory) && (
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+        <span className="gs-side-reveal ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           {liveAccessory}
           {hasLive && (
             <>
@@ -207,7 +207,7 @@ export function SidebarNavItem({
       {!rail && hasBadge && (
         <Badge variant="ghost"
           className={cn(
-            "ml-auto px-1.5 leading-none",
+            "gs-side-reveal ml-auto px-1.5 leading-none",
             badgeTone === "danger"
               ? "bg-red-600/90 text-red-50"
               : badgeTone === "warning"

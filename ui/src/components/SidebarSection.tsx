@@ -158,7 +158,10 @@ function SidebarSectionHeader({
   );
 
   return (
-    <div className="group/sidebar-section px-3 py-1.5 pointer-coarse:py-1">
+    // Inside the nav's px-3, pl-3 + the heading's px-1 puts the label on the
+    // icons' left edge (28px in); pr-2 ends the header controls where the row
+    // pills end.
+    <div className="gs-side-reveal group/sidebar-section py-1 pl-3 pr-2">
       <div className="relative flex min-h-6 min-w-0 items-center gap-1">
         {collapsible ? (
           <IconTip label={collapsible.open ? `Collapse ${label}` : `Expand ${label}`} side="right">
@@ -205,7 +208,7 @@ export function SidebarSection({
   const { collapsed, peeking } = useSidebar();
   const forceExpanded = useSidebarNavExpanded();
   const rail = collapsed && !peeking && !forceExpanded;
-  const content = <div className="flex flex-col gap-0.5 mt-0.5">{children}</div>;
+  const content = <div className="flex flex-col">{children}</div>;
 
   // Collapsed rail: the section header would only show a clipped sliver of its
   // label, so replace it with a thin divider. The label stays in the a11y tree,
@@ -213,16 +216,17 @@ export function SidebarSection({
   // rail), and the items always render so their icons stay reachable.
   //
   // The header wrapper mirrors the expanded header's vertical footprint exactly
-  // (outer `px-3 py-1.5 pointer-coarse:py-1` + inner `min-h-6`) so item icons land
+  // (outer `py-1` + inner `min-h-6`, 32px) so item icons land
   // at the identical y-position in both states — no movement on collapse/expand
   // (PAP-10676). The divider is vertically centered within that same row.
   if (rail) {
     return (
       <div>
-        <div className="px-3 py-1.5 pointer-coarse:py-1">
+        <div className="px-3 py-1 pointer-coarse:py-1">
           <div className="flex min-h-6 items-center">
             <span className="sr-only">{label}</span>
-            <div className="h-px w-full bg-border/60" aria-hidden="true" />
+            {/* A short hairline centred on the rail axis, the same for every group. */}
+            <div className="mx-auto h-px w-6 bg-border" aria-hidden="true" />
           </div>
         </div>
         {content}

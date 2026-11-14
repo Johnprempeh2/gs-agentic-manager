@@ -480,7 +480,7 @@ describe("Layout", () => {
     });
   });
 
-  it("opens the peek when hovering a collapsed rail (positive control for the hover sim)", async () => {
+  it("keeps the rail a rail under the pointer, and peeks for keyboard focus", async () => {
     mockSidebarState.collapsed = true;
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -501,6 +501,8 @@ describe("Layout", () => {
         el.className.includes("pl-2"),
     );
     expect(panel).toBeTruthy();
+    // Hovering the rail shows each icon's tooltip or a group's flyout, so it
+    // must not expand the sidebar.
     await act(async () => {
       panel!.dispatchEvent(
         new MouseEvent("mouseover", {
@@ -512,8 +514,17 @@ describe("Layout", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 80));
     });
-    // A normal collapsed-rail hover (not just-collapsed) opens the peek.
+    expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
+
+    // Tabbing into the rail still opens the full nav with its labels.
+    const target = document.createElement("button");
+    panel!.appendChild(target);
+    const matches = vi.spyOn(target, "matches").mockImplementation((selector: string) => selector === ":focus-visible");
+    await act(async () => {
+      target.focus();
+    });
     expect(mockSetPeeking).toHaveBeenCalledWith(true);
+    matches.mockRestore();
 
     await act(async () => {
       root.unmount();

@@ -21,7 +21,10 @@ export function GreatstoneLogo({ variant = "full", className }: { variant?: "ful
       ? <ProductMark className={cn("h-7 w-auto flex-none", className)} />
       : <BrandLockup className={cn("h-5 w-auto flex-none text-sidebar-foreground", className)} />;
   }
+  // A 24px box centres the stone (22.6px wide at 32px tall), so it lines up
+  // with 16px nav icons on the sidebar's rail axis in both sidebar states.
   const stone = (
+    <span className="flex w-6 flex-none justify-center">
     <img
       src={stoneSrc}
       width={113}
@@ -31,6 +34,7 @@ export function GreatstoneLogo({ variant = "full", className }: { variant?: "ful
       className="h-8 w-auto flex-none object-contain"
       data-slot="greatstone-stone"
     />
+    </span>
   );
   if (variant === "stone") return <span className={cn("inline-flex flex-none", className)}>{stone}</span>;
   return (
@@ -38,7 +42,7 @@ export function GreatstoneLogo({ variant = "full", className }: { variant?: "ful
       {stone}
       <span
         aria-hidden="true"
-        className="gs-wordmark"
+        className="gs-wordmark gs-side-reveal"
         data-slot="greatstone-wordmark"
         style={{ "--gs-wordmark-src": `url("${wordmarkSrc}")` } as CSSProperties}
       />

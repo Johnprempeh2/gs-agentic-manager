@@ -1,7 +1,7 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -77,6 +77,15 @@ import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
 import { getAppDetailConnectionId } from "../lib/app-detail-route";
 
+/** Focus that came from the keyboard (Tab), not from a click on a rail icon. */
+function isKeyboardFocus(target: EventTarget | null): boolean {
+  try {
+    return target instanceof Element && target.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
 }
@@ -93,7 +102,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     isMobile,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
-  const { togglePanelVisible } = usePanel();
+  const { togglePanelVisible, panelVisible, panelContent } = usePanel();
   // Optional: Layout also renders in harnesses without a ToastProvider.
   const pushToast = useOptionalToastActions()?.pushToast ?? null;
   const {
@@ -348,12 +357,13 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     }));
   }, []);
 
-  // Peek (hover flyout) triggers for the collapsed rail. Opening has a tiny
-  // delay so a pointer merely sweeping across the rail doesn't flash it open;
-  // closing is debounced to avoid flicker on the rail→overlay seam. Keyboard
-  // focus opens immediately so tabbing reaches the full nav. Context gates the
-  // effective `peeking` to desktop + collapsed + hover-capable pointers, so
-  // these handlers are inert otherwise.
+  // Peek for the collapsed rail. A pointer no longer peeks: the rail stays a
+  // rail under the mouse, so every icon shows its tooltip and a group row its
+  // flyout (John, 14 Nov), and the toggle or [ expands it. Keyboard focus
+  // still opens the peek immediately so tabbing reaches the full nav with its
+  // labels. Closing is debounced to avoid flicker on the rail to overlay seam.
+  // Context gates the effective `peeking` to desktop + collapsed +
+  // hover-capable pointers, so these handlers are inert otherwise.
   const peekTimer = useRef<number | null>(null);
   // Whether the pointer is currently over the peek panel. Used to keep the peek
   // open across focus changes (e.g. navigation steals focus to <main>) as long as
@@ -371,10 +381,6 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       peekTimer.current = null;
     }
   }, []);
-  const openPeek = useCallback(() => {
-    clearPeekTimer();
-    peekTimer.current = window.setTimeout(() => setPeeking(true), 50);
-  }, [clearPeekTimer, setPeeking]);
   const openPeekImmediate = useCallback(() => {
     clearPeekTimer();
     setPeeking(true);
@@ -387,15 +393,16 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   // whether the pointer is over the panel and should suppress the re-peek.
   const handlePanelPointerEnter = useCallback(() => {
     pointerInsidePanel.current = true;
-    if (collapsed && !suppressPeekRef.current) openPeek();
-  }, [collapsed, openPeek]);
+  }, []);
   const handlePanelPointerLeave = useCallback(() => {
     pointerInsidePanel.current = false;
     suppressPeekRef.current = false; // pointer left — re-arm peek for the next hover
     closePeek();
   }, [closePeek]);
-  const handlePanelFocus = useCallback(() => {
-    if (suppressPeekRef.current) return;
+  const handlePanelFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    // React sends focus inside portals (a rail flyout menu) through here too;
+    // only focus that lands in the panel itself opens the peek.
+    if (suppressPeekRef.current || !event.currentTarget.contains(event.target as Node) || !isKeyboardFocus(event.target)) return;
     openPeekImmediate();
   }, [openPeekImmediate]);
   // Close on focus leaving the panel only when the pointer isn't hovering it.
@@ -755,15 +762,24 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </SecondarySidebar>
         ) : null}
 
-        {/* Messages: the conversation list floats beside the open thread, like a messenger. */}
+        {/* The content area beside the sidebar. In Messages it is the hub: the
+            conversation list floats beside the open thread, like a messenger,
+            and both fill the height (the list and the thread scroll on their
+            own). gs-hub is a size container, so the list folds into one pane
+            when the area is too narrow for list plus thread (and the artifacts
+            pane when it is open): see greatstone-glass.css. */}
+        <div
+          data-messages-hub={isMessagesRoute ? "" : undefined}
+          data-pane-open={isMessagesRoute && panelVisible && panelContent ? "" : undefined}
+          className={cn(isMobile ? "contents" : "gs-hub flex h-full min-w-0 flex-1 print:block print:h-auto")}
+        >
         {!isMobile && isMessagesRoute ? (
-          <div className="flex h-full w-80 shrink-0 flex-col py-2 pr-1 print:hidden" data-testid="messages-list-pane">
+          <div className="gs-hub-list h-full w-80 shrink-0 flex-col py-2 pr-1 print:hidden" data-testid="messages-list-pane">
             <MessagesPane className="gs-sidebar-glass" />
           </div>
         ) : null}
 
         <div
-          data-messages-hub={isMessagesRoute ? "" : undefined}
           className={cn("flex min-w-0 flex-col print:block print:h-auto", isMobile ? "w-full" : "h-full flex-1")}
         >
           <div
@@ -830,6 +846,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                     ? "overflow-visible pb-(--tc-composer-hidden-nav-offset)"
                     : "overflow-visible pb-(--mobile-nav-content-inset)"
                   : "overflow-auto [scrollbar-gutter:stable]",
+                // Messages: the thread's composer sits on the bottom edge with the
+                // page's own padding (it lifts the Everest orb above itself), so
+                // the hub keeps no extra orb clearance.
+                !isMobile && isMessagesRoute && "pb-4 md:pb-6",
               )}
             >
               {hasUnknownCompanyPrefix ? (
@@ -852,6 +872,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               <PropertiesPanel taskDetailLayout={!isMobile && useStreamlinedTaskDetailShell} />
             </div>
           </div>
+        </div>
         </div>
       </div>
       {isMobile && <MobileBottomNav visible={showMobileNav} />}

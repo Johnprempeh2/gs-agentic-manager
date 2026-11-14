@@ -8,8 +8,10 @@ import { Link } from "@/lib/router";
 
 /**
  * /messages. Phones: the conversation list, WhatsApp style (a thread opens
- * full screen and its back arrow returns here). Desktop: the list already sits
- * beside this pane (Layout), so this is the "pick a conversation" state.
+ * full screen and its back arrow returns here). Desktop: the list sits beside
+ * this pane (Layout), so this is the "pick a conversation" state; when the hub
+ * is too narrow for two panes, the list shows here instead (gs-hub-* in
+ * greatstone-glass.css).
  */
 export function Messages() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -19,7 +21,9 @@ export function Messages() {
   if (isMobile) return <MessagesPane heading={false} className="-mx-4 -mt-2 flex flex-col" />;
   const everest = lead ? rows.find((row) => row.agent?.id === lead.id) : null;
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+    <>
+    <MessagesPane heading={false} className="gs-hub-inline-list mx-auto h-full w-full max-w-xl flex-col" />
+    <div className="gs-hub-empty h-full flex-col items-center justify-center gap-3 text-center">
       <span className="gs-convo-avatar flex size-14 items-center justify-center rounded-full">
         <MessageCircle aria-hidden="true" className="size-6 text-foreground" />
       </span>
@@ -33,5 +37,6 @@ export function Messages() {
         </Link>
       ) : null}
     </div>
+    </>
   );
 }

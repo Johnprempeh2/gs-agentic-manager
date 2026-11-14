@@ -169,7 +169,9 @@ export function SidebarAccountMenu({
   }
 
   return (
-    <div className="shrink-0 border-t border-sidebar-border px-2 py-2" data-slot="sidebar-account">
+    // px-3 + the trigger's pl-3 put the 24px avatar on the rail axis (36px in) in
+    // both states, and a fixed 48px trigger keeps it at the same height.
+    <div className="shrink-0 border-t border-sidebar-border px-3 py-2" data-slot="sidebar-account">
       <div className="flex items-center gap-0.5">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
@@ -177,7 +179,8 @@ export function SidebarAccountMenu({
               type="button"
               className={cn(
                 "flex min-w-0 items-center gap-2.5 rounded-xl text-left text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                rail ? "w-full justify-center py-2" : "flex-1 px-2 py-1.5",
+                "h-12",
+                rail ? "w-full justify-center" : "flex-1 pl-3 pr-2",
               )}
               aria-label="Open account menu"
               data-tour="account-menu"
@@ -186,7 +189,7 @@ export function SidebarAccountMenu({
                 {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
-              <span className={rail ? "sr-only" : "min-w-0 flex-1"}>
+              <span className={rail ? "sr-only" : "gs-side-reveal min-w-0 flex-1"}>
                 <span className="block truncate text-(length:--text-compact) font-semibold">{displayName}</span>
                 {selectedCompany ? (
                   <span className="block truncate text-xs text-muted-foreground" data-slot="account-company">
@@ -194,7 +197,7 @@ export function SidebarAccountMenu({
                   </span>
                 ) : null}
               </span>
-              {rail ? null : <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+              {rail ? null : <ChevronsUpDown className="gs-side-reveal size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
             </button>
           </PopoverTrigger>
           <PopoverContent
@@ -278,7 +281,7 @@ export function SidebarAccountMenu({
               <a
                 href={FEEDBACK_URL}
                 aria-label="Email feedback to Greatstone"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-subtle-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="gs-side-reveal flex size-8 shrink-0 items-center justify-center rounded-lg text-subtle-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Flag className="h-4 w-4" aria-hidden="true" />
               </a>
