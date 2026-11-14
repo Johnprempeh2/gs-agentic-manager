@@ -69,7 +69,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
@@ -158,18 +158,27 @@ function SidebarNavGroup({
   const { collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const hasBadge = badge != null && badge > 0;
   if (entries.length === 0) return null;
 
+  // In the rail, hovering opens the flyout, so a click on the icon must only ever
+  // open it. A modal menu would read that click as outside and shut it (GRE-5326).
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={!rail}>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={rail ? `${label}${hasBadge ? `, ${badge} decisions` : ""}` : undefined}
           aria-expanded={open}
           data-tour={label === "Desk" ? "nav-decisions" : undefined}
           onPointerEnter={() => { if (rail) setOpen(true); }}
+          onPointerDown={(event) => {
+            if (!rail || event.button !== 0 || event.ctrlKey) return;
+            event.preventDefault();
+            setOpen(true);
+          }}
           onMouseEnter={(event) => { if (rail) event.stopPropagation(); }}
           className={cn(
             "gs-nav-item mx-2 flex min-h-8 items-center gap-2.5 rounded-lg px-2 py-1.5 text-(length:--text-compact) font-medium outline-none transition-colors pointer-coarse:py-1",
@@ -195,7 +204,16 @@ function SidebarNavGroup({
       </DropdownMenuTrigger>
       {/* The flyout's first item lines up with the hovered row (alignOffset cancels
           the menu's own 4px padding) and it clears the glass by the 8px inset. */}
-      <DropdownMenuContent side="right" align="start" sideOffset={RAIL_FLYOUT_OFFSET} alignOffset={-4} className="w-56">
+      <DropdownMenuContent
+        side="right"
+        align="start"
+        sideOffset={RAIL_FLYOUT_OFFSET}
+        alignOffset={-4}
+        className="w-56"
+        onPointerDownOutside={(event) => {
+          if (rail && triggerRef.current?.contains(event.target as Node)) event.preventDefault();
+        }}
+      >
         <SidebarNavExpandedProvider>
           {entries.map((entry) => {
             const EntryIcon = entry.icon;

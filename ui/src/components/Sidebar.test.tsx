@@ -405,6 +405,73 @@ describe("Sidebar", () => {
     });
   });
 
+  describe("rail flyouts (GRE-5326)", () => {
+    function railDesk() {
+      return [...container.querySelectorAll("button[aria-label]")]
+        .find((node) => node.getAttribute("aria-label")?.startsWith("Desk"));
+    }
+
+    function deskFlyoutOpen() {
+      return document.body.querySelector('[role="menu"] a[href="/dashboard"]') != null;
+    }
+
+    async function hover(element: Element | null | undefined) {
+      expect(element).toBeTruthy();
+      // React derives pointerenter from pointerover.
+      element?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      await flushReact();
+    }
+
+    beforeEach(() => {
+      mockSidebar.collapsed = true;
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    });
+
+    it("keeps the flyout open when a hovered group icon is clicked", async () => {
+      const root = await renderSidebar();
+
+      await hover(railDesk());
+      expect(deskFlyoutOpen()).toBe(true);
+      await click(railDesk());
+      expect(deskFlyoutOpen()).toBe(true);
+      await click(railDesk());
+      expect(deskFlyoutOpen()).toBe(true);
+
+      flushSync(() => root.unmount());
+    });
+
+    it("opens the flyout on a click with no hover first, as on touch", async () => {
+      const root = await renderSidebar();
+
+      await click(railDesk());
+      expect(deskFlyoutOpen()).toBe(true);
+
+      flushSync(() => root.unmount());
+    });
+
+    it("opens the flyout from the keyboard", async () => {
+      const root = await renderSidebar();
+
+      railDesk()?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+      await flushReact();
+      expect(deskFlyoutOpen()).toBe(true);
+
+      flushSync(() => root.unmount());
+    });
+
+    it("still closes when the pointer goes down outside the flyout", async () => {
+      const root = await renderSidebar();
+
+      await hover(railDesk());
+      expect(deskFlyoutOpen()).toBe(true);
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      await flushReact();
+      expect(deskFlyoutOpen()).toBe(false);
+
+      flushSync(() => root.unmount());
+    });
+  });
+
   it("gives each section a rearrange menu, and drag grips only while customising", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
