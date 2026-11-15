@@ -39,14 +39,17 @@ export function CollectionToolbar({
       role="toolbar"
       aria-label={ariaLabel}
     >
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+      {/* The row wraps rather than squeeze: a search never shrinks under its
+          drawn width onto the view controls (15 Nov: at 768 wide, beside the
+          sidebar, the Inbox search sat on top of them). */}
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {context ? (
           <div data-slot="collection-toolbar-context" className="min-w-0 shrink-0">
             {context}
           </div>
         ) : null}
         {search ? (
-          <div data-slot="collection-toolbar-search" className="min-w-0 flex-1">
+          <div data-slot="collection-toolbar-search" className="min-w-0 flex-1 sm:min-w-(--sz-220px)">
             {search}
           </div>
         ) : null}

@@ -51,7 +51,7 @@ describe("digestCountsSentence", () => {
       "2 tasks finished, 1 started, 1 failed run",
     );
     expect(digestCountsSentence(counts({ tasksStarted: 1, decisionsRaised: 2 }))).toBe(
-      "1 task started, 2 decisions for you",
+      "1 task started, 2 decisions asked of you",
     );
     expect(digestCountsSentence(counts())).toBe("No agent work");
   });
@@ -96,7 +96,7 @@ describe("digest views", () => {
     expect(lines).toEqual([
       "Ridge:3 tasks finished",
       "Mica:1 task started",
-      "Everest:1 decision for you",
+      "Everest:1 decision asked of you",
       "and 1 more agent",
     ]);
     const link = container.querySelector("a")!;
