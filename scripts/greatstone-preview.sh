@@ -110,8 +110,10 @@ end_left_step() {
 }
 
 # The time limit of one start: every step of it must end within this many
-# seconds of its start, or the start fails and stops that step.
-START_LIMIT_S="${GSAM_PREVIEW_START_LIMIT_S:-1800}"
+# seconds of its start, or the start fails and stops that step. Stopgap: 45
+# minutes (was 30) while the faster database copy of 15 Nov 2026 proves itself;
+# put it back to 1800 once a few starts have finished well inside 30.
+START_LIMIT_S="${GSAM_PREVIEW_START_LIMIT_S:-2700}"
 start_limit_text() { if [ "$START_LIMIT_S" -ge 120 ]; then echo "$((START_LIMIT_S / 60)) minutes"; else echo "$START_LIMIT_S seconds"; fi; }
 
 # Runs one long step of a start, <what> in <dir>, in a process group of its

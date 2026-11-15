@@ -23,10 +23,9 @@
 // database does not need to be quiet and nothing is written under its folder.
 import { createReadStream, createWriteStream, existsSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createGunzip, createGzip } from "node:zlib";
+import { createGunzip } from "node:zlib";
 import {
   createDb,
   embeddedPostgresConnectionString,
@@ -78,6 +77,16 @@ const PREVIEW_GUARDS: Array<{ label: string; sql: string }> = [
   },
 ];
 
+// Append-only audit logs that nothing references: the preview gets their
+// recent rows only (schema, indexes and sequences stay whole). On 15 Nov 2026
+// secret_access_events alone held 1.45 million rows, growing 240,000 a week.
+const PREVIEW_RECENT_ONLY = "created_at > now() - interval '14 days'";
+const PREVIEW_ROW_FILTERS: Record<string, string> = {
+  secret_access_events: PREVIEW_RECENT_ONLY,
+  tool_access_audit_events: PREVIEW_RECENT_ONLY,
+  heartbeat_run_events: PREVIEW_RECENT_ONLY,
+};
+
 function parseArgs(argv: string[]): { command: string; options: Record<string, string> } {
   const [command = "", ...rest] = argv;
   const options: Record<string, string> = {};
@@ -98,38 +107,55 @@ function required(options: Record<string, string>, key: string): string {
   return value;
 }
 
-async function backup(sourceUrl: string, dir: string, prefix: string): Promise<string> {
+async function backup(
+  sourceUrl: string,
+  dir: string,
+  prefix: string,
+  extra: Pick<Parameters<typeof runDatabaseBackup>[0], "backupEngine" | "rowFilters"> = {},
+): Promise<string> {
   const result = await runDatabaseBackup({
     connectionString: sourceUrl,
     backupDir: dir,
     retention: { dailyDays: 3650, weeklyWeeks: 520, monthlyMonths: 120 },
     filenamePrefix: prefix,
     backupEngine: "javascript",
+    ...extra,
   });
   return result.backupFile;
 }
 
 // Rewrites absolute paths into the live data folder (agent instruction files,
-// workspaces) so that the preview reads and writes its own copy.
+// workspaces) so that the preview reads and writes its own copy. Works on
+// whole chunks of lines and writes plain SQL: a line at a time with a gzip
+// round trip took 12 minutes of the 30 on 15 Nov 2026.
 async function rewritePaths(inputFile: string, outputFile: string, from: string, to: string): Promise<number> {
   const fromPrefix = from.endsWith("/") ? from : `${from}/`;
   const toPrefix = to.endsWith("/") ? to : `${to}/`;
   let rewritten = 0;
-  const lines = createInterface({
-    input: createReadStream(inputFile).pipe(createGunzip()),
-    crlfDelay: Infinity,
-  });
-  async function* rewrite() {
-    for await (const line of lines) {
-      if (line.includes(fromPrefix)) {
+  const rewriteLines = (text: string) => {
+    if (!text.includes(fromPrefix)) return text;
+    return text
+      .split("\n")
+      .map((line) => {
+        if (!line.includes(fromPrefix)) return line;
         rewritten += 1;
-        yield `${line.split(fromPrefix).join(toPrefix)}\n`;
-      } else {
-        yield `${line}\n`;
-      }
+        return line.split(fromPrefix).join(toPrefix);
+      })
+      .join("\n");
+  };
+  const input = createReadStream(inputFile).pipe(createGunzip());
+  input.setEncoding("utf8");
+  async function* rewrite() {
+    let rest = "";
+    for await (const chunk of input as AsyncIterable<string>) {
+      const text = rest + chunk;
+      const end = text.lastIndexOf("\n") + 1;
+      rest = text.slice(end);
+      if (end > 0) yield rewriteLines(text.slice(0, end));
     }
+    if (rest) yield rewriteLines(rest);
   }
-  await pipeline(Readable.from(rewrite()), createGzip(), createWriteStream(outputFile));
+  await pipeline(Readable.from(rewrite()), createWriteStream(outputFile));
   return rewritten;
 }
 
@@ -147,9 +173,13 @@ async function seedPreview(options: Record<string, string>): Promise<void> {
     throw new Error(`${targetDbDir} already holds a database; remove the preview data first`);
   }
 
-  const liveBackup = await backup(sourceUrl, workDir, "live-copy");
+  // COPY blocks, not a statement per row: psql restores them many times faster.
+  const liveBackup = await backup(sourceUrl, workDir, "live-copy", {
+    backupEngine: "copy",
+    rowFilters: PREVIEW_ROW_FILTERS,
+  });
   console.log(`Copied the live database: ${liveBackup}`);
-  const previewBackup = path.join(workDir, "preview-seed.sql.gz");
+  const previewBackup = path.join(workDir, "preview-seed.sql");
   // Written beside it and renamed into place, so preview-seed.sql.gz is only
   // ever whole: a run that is stopped half way leaves the .tmp, not a short seed.
   const partial = `${previewBackup}.${process.pid}.tmp`;
