@@ -274,6 +274,35 @@ describeEmbeddedPostgres("one shared memory for Claude Code, Codex and GSAM (GRE
     expect((await request(asBen).post(`${base}/recall`).send({ query: "client identity", scopeIds: [scope.id] })).status).toBe(404);
   });
 
+  it("lets an agent acting for Ben read only Ben's work, and one acting for the owner read John's", async () => {
+    const { links, base, companyId, userId, factory, tools } = await setup("ActingFor");
+    await request(links.codex.rest).post(`${base}/sync`).send({ entries: [turn("codex:r:t1", "Decision: Better Auth for client identity.")] });
+    const scope = (await ctx.db.select().from(memoryScopes)).find((row) => row.kind === "person")!;
+    await ctx.db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: "user-ben", status: "active", membershipRole: "operator", updatedAt: new Date() });
+    const agent = await seedAgent(companyId, "Shared helper");
+    const actingFor = (who: string) =>
+      routeApp(ctx.db, {
+        type: "agent", agentId: agent.id, companyId, runId: null, source: "agent_key",
+        onBehalfOfUserId: who,
+        onBehalfOfMemberships: [{ companyId, membershipRole: who === "user-ben" ? "operator" : "owner", status: "active" }],
+      } as never, factory);
+    const named = (app: ReturnType<typeof routeApp>) =>
+      request(app).post(`${base}/recall`).send({ query: "client identity", scopeIds: [scope.id] });
+    expect((await named(actingFor("user-ben"))).status).toBe(404);
+    const forJohn = await named(actingFor(userId));
+    expect(forJohn.status).toBe(200);
+    expect(JSON.stringify(forJohn.body.results)).toContain("Better Auth");
+
+    // The same through the MCP tools from a live run acting for Ben.
+    const [task] = await ctx.db.insert(issues).values({ companyId, title: "Ben's task", status: "in_progress", priority: "medium" }).returning();
+    const [run] = await ctx.db.insert(heartbeatRuns).values({
+      companyId, agentId: agent.id, status: "running", responsibleUserId: "user-ben", contextSnapshot: { issueId: task.id },
+    }).returning();
+    const runActor = { type: "agent", source: "agent_jwt", agentId: agent.id, companyId, runId: run.id } as never;
+    const byBank = await callTool(routeApp(ctx.db, runActor, tools), "memory_recall", { query: "client identity", scopes: ["greatstone-john"] });
+    expect(JSON.stringify(byBank.body)).not.toContain("Better Auth");
+  });
+
   it("refuses to make a person scope through the scope route", async () => {
     const { board, base } = await setup("NoCreate");
     const res = await request(board).post(`${base}/scopes`).send({ kind: "person", name: "Someone's work" });

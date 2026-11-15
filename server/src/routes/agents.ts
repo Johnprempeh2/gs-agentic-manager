@@ -260,6 +260,7 @@ import { managedAgentProfileService } from "../services/managed-agent-profiles.j
 import { remoteAgentProfileService } from "../services/remote-agent-profiles.js";
 import { ensureGoalCheckInRoutine } from "../services/goal-check-in-routine.js";
 import { memoryLinkPerson } from "../services/memory-gateway/service.js";
+import { assertCanApproveAsPerson } from "../services/approval-authority.js";
 
 const AGENT_SKILL_ASSIGNMENT_MODES = ["add", "remove", "replace"] as const;
 
@@ -5962,6 +5963,14 @@ export function agentRoutes(
     // approval record exists (e.g. agents created before approvals were tracked).
     const decidedByUserId = req.actor.userId ?? "board";
     const openApproval = await approvalsSvc.findOpenHireApprovalForAgent(existing.companyId, id);
+
+    // Same rule as the approvals route: a hire needs agents:create, and nobody
+    // but the owner approves their own request.
+    await assertCanApproveAsPerson(db, access, req.actor, openApproval ?? {
+      type: "hire_agent",
+      companyId: existing.companyId,
+      requestedByUserId: null,
+    });
 
     let agent: Awaited<ReturnType<typeof svc.getById>> | null = null;
     if (openApproval) {

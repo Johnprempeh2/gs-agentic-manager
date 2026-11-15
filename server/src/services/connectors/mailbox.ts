@@ -142,7 +142,7 @@ export async function executeMailboxTool(
     },
   });
   const reader = { kind: "agent" as const, agentId: binding.agentId, runId: binding.runId };
-  if (action === "list") return service.assigned(binding.companyId, binding.agentId);
+  if (action === "list") return service.assigned(binding.companyId, binding.agentId, binding.runId);
   const { mailboxId, ...rest } = withMailbox.parse(value);
   if (action === "folders") return service.folders(binding.companyId, mailboxId, reader);
   if (action === "search")

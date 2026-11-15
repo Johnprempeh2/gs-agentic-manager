@@ -219,13 +219,14 @@ const support = await getEmbeddedPostgresTestSupport();
       expect(resolved.every((response) => response.status === 200)).toBe(true);
       expect(resolved[0].body.id).toBe(resolved[1].body.id);
       expect(resolved[0].body.conversationUserId).toBe(owner);
+      // A chat is private to the person who started it (Ben's access, Nov 2026).
       expect(
         (
           await request(appFor(colleague)).get(
             `/api/issues/${resolved[0].body.id}`,
           )
         ).status,
-      ).toBe(200);
+      ).toBe(404);
       expect(
         (await request(appFor(randomUUID(), false)).get(path)).status,
       ).toBe(403);
@@ -239,17 +240,17 @@ const support = await getEmbeddedPostgresTestSupport();
       const chatId = resolved[0].body.id;
       const queuedInterrupt = { queueId: randomUUID(), revision: "queue-revision", targetRunId: randomUUID() };
       expect((await request(appFor(colleague)).post(`/api/issues/${chatId}/queued-comments/interrupt`)
-        .send(queuedInterrupt)).status).toBe(403);
-      // Colleagues may write in the chat (GRE-1688), but only the owner resets it.
+        .send(queuedInterrupt)).status).toBe(404);
+      // A colleague cannot write in someone else's chat at all, nor reset it.
       expect((await request(appFor(colleague)).post(`/api/issues/${chatId}/comments`)
-        .send({ body: "/new", clientRequestId: randomUUID() })).status).toBe(403);
+        .send({ body: "/new", clientRequestId: randomUUID() })).status).toBe(404);
 
       const [planReview] = await db.insert(issueThreadInteractions).values({
         companyId, issueId: chatId, kind: "request_confirmation", status: "pending",
         continuationPolicy: "wake_assignee_on_accept", payload: { version: 1, prompt: "Hand off this plan?" },
       }).returning();
       expect((await request(appFor(colleague))
-        .post(`/api/issues/${chatId}/interactions/${planReview.id}/accept`).send({})).status).toBe(403);
+        .post(`/api/issues/${chatId}/interactions/${planReview.id}/accept`).send({})).status).toBe(404);
       expect((await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, planReview.id)))[0].status).toBe("pending");
       const [pause] = await db.insert(issueTreeHolds).values({
         companyId, rootIssueId: chatId, mode: "pause", status: "active",
@@ -284,7 +285,7 @@ const support = await getEmbeddedPostgresTestSupport();
       const interruptOff = await request(app).post(`/api/issues/${chatId}/queued-comments/interrupt`).send(queuedInterrupt);
       expect(interruptOff.body).not.toMatchObject({ code: "not_entitled" });
     });
-    it("lets a board member who did not start it comment on another user's chat and an agent-created task (GRE-1688)", async () => {
+    it("keeps another user's chat private but lets a colleague comment on an agent-created task", async () => {
       const appFor = (userId: string) => {
         const app = express();
         app.use(express.json());
@@ -320,13 +321,13 @@ const support = await getEmbeddedPostgresTestSupport();
       const colleagueApp = appFor(colleague);
 
       const chat = await create(owner);
+      // GRE-1688 let any member write in any chat; since Ben's access (Nov 2026) chats are private.
       const message = await request(colleagueApp).post(`/api/issues/${chat.id}/comments`)
         .send({ body: "Adding a note to your chat", clientRequestId: randomUUID() });
-      expect(message.status).toBe(201);
-      expect(message.body.authorUserId).toBe(colleague);
+      expect(message.status).toBe(404);
       expect((await request(colleagueApp)
         .post(`/api/companies/${companyId}/issues/${chat.id}/attachments`)
-        .attach("file", Buffer.from("colleague upload"), "note.txt")).status).toBe(201);
+        .attach("file", Buffer.from("colleague upload"), "note.txt")).status).toBe(404);
 
       const task = await issueService(db).create(companyId, {
         title: "Agent-created task",

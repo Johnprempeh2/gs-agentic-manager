@@ -31,7 +31,7 @@ import { conflict, forbidden, HttpError, unprocessable } from "../errors.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertOwnerOrAdminForPerson, getAccessibleResource, getActorInfo } from "./authz.js";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
   listConfiguredRuntimeServiceEntries,
@@ -917,6 +917,8 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    // Hard delete is for the owner and admins; others archive.
+    assertOwnerOrAdminForPerson(req, existing.companyId);
     const project = await svc.remove(id);
     if (!project) {
       res.status(404).json({ error: "Project not found" });

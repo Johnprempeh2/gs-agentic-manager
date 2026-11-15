@@ -23,6 +23,8 @@ export type SpendingActor = {
   userId: string | null;
   /** The hosting operator: not bound by the ceiling, always an approver. */
   operator: boolean;
+  /** Owner or admin of the company: the only people who decide when no approver is named. */
+  clientAdmin?: boolean;
 };
 
 export type BudgetChange = {
@@ -71,7 +73,8 @@ export function assertBudgetWithinAuthority(
 
 export function canResolveBudgetOverride(authority: BudgetAuthority, actor: SpendingActor) {
   if (actor.operator) return true;
-  if (authority.approverUserIds.length === 0) return true;
+  // With nobody named, the owner and admins decide, never every member.
+  if (authority.approverUserIds.length === 0) return actor.clientAdmin === true;
   return actor.userId !== null && authority.approverUserIds.includes(actor.userId);
 }
 

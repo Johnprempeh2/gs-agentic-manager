@@ -1,4 +1,5 @@
 import { and, eq, inArray, like, ne, or, sql } from "drizzle-orm";
+import { isActiveCompanyOwner } from "../board-identity.js";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -114,6 +115,8 @@ export type MemoryCaller = {
   runId: string | null;
   /** Local board, instance admin, or owner/admin of this company. */
   isBoardAdmin: boolean;
+  /** The person an agent run acts for (null when it acts for nobody). */
+  responsibleUserId?: string | null;
   /** The app the call came through and its session (GRE-1079). Stored on every audit and review row. */
   app?: MemoryCallerApp | null;
   sessionId?: string | null;
@@ -506,6 +509,15 @@ export function memoryGatewayService(
       };
     }
     const isAdmin = (caller.actorType === "user" && caller.isBoardAdmin) || grants.has("memory:admin");
+    // An agent acting for a person reads person scopes only for that person,
+    // or for anyone when that person is the owner (GRE-2668 kept for runs
+    // that act for nobody).
+    const responsibleUserId = caller.actorType === "agent" ? caller.responsibleUserId?.trim() || null : null;
+    const responsibleIsOwner = responsibleUserId
+      ? await isActiveCompanyOwner(db, caller.companyId, responsibleUserId)
+      : false;
+    const agentMayReadPersonScope = (scope: ScopeRow) =>
+      !responsibleUserId || responsibleIsOwner || personScopeOwner(scope) === responsibleUserId;
     return {
       /** John: a person who owns or administers the company. Never an agent, whatever its grants. */
       isOwner: caller.actorType === "user" && caller.isBoardAdmin,
@@ -521,7 +533,7 @@ export function memoryGatewayService(
         // GRE-2668: every GSAM agent may read a person's shared work when it
         // names the scope (`greatstone-john`); it is not in an agent's default
         // recall, and an agent never writes to it.
-        if (caller.actorType === "agent" && scope.kind === "person") return true;
+        if (caller.actorType === "agent" && scope.kind === "person") return agentMayReadPersonScope(scope);
         return grantCovers(grants, "memory:read", scope);
       },
       canContribute(scope: ScopeRow) {

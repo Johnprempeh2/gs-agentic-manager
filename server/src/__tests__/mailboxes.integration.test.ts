@@ -14,6 +14,7 @@ import {
   companySecrets,
   companySecretVersions,
   createDb,
+  companyMemberships,
   heartbeatRuns,
   issues,
   toolConnections,
@@ -314,6 +315,31 @@ describe("mailbox connections (GRE-1343)", () => {
     expect((await f.connect()).status).toBe(403);
     expect((await request(f.app).delete(`/api/companies/${f.companyId}/mailboxes/${mailbox.id}`)).status).toBe(403);
     expect(await resolveConnectorAssignments(db, { companyId: f.companyId, agentId: f.otherAgentId })).toEqual([]);
+  });
+
+  it("lets an agent acting for a person reach only that person's mailbox, unless they are owner or admin", async () => {
+    const f = await fixture();
+    const { body: mailbox } = await f.connect();
+    await db.update(toolConnections).set({ createdByUserId: "user-john" }).where(eq(toolConnections.id, mailbox.id));
+    await db.insert(companyMemberships).values([
+      { companyId: f.companyId, principalType: "user", principalId: "user-john", status: "active", membershipRole: "owner" },
+      { companyId: f.companyId, principalType: "user", principalId: "user-ben", status: "active", membershipRole: "operator" },
+    ]);
+    const actFor = (userId: string | null) =>
+      db.update(heartbeatRuns).set({ responsibleUserId: userId }).where(eq(heartbeatRuns.id, f.runId));
+    const search = () =>
+      request(f.app).post(`/api/companies/${f.companyId}/mailboxes/${mailbox.id}/search`).send({ from: "ama" });
+    f.asAgent();
+
+    await actFor("user-ben");
+    expect((await search()).status).toBe(404);
+    expect((await request(f.app).get(`/api/companies/${f.companyId}/mailboxes`)).body).toEqual([]);
+
+    await actFor("user-john");
+    expect((await search()).status).toBe(200);
+    // A run acting for nobody keeps the assignment rule alone.
+    await actFor(null);
+    expect((await search()).status).toBe(200);
   });
 
   it("reports a sign-in failure clearly and marks the mailbox for reconnecting", async () => {

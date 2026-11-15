@@ -90,8 +90,9 @@ function auditRowsToCsv(rows: AuditCsvRow[]): string {
 }
 
 const createActivitySchema = z.object({
-  actorType: z.enum(["agent", "user", "system", "plugin"]).optional().default("system"),
-  actorId: z.string().min(1),
+  // Accepted for older callers and ignored: the server records the caller.
+  actorType: z.enum(["agent", "user", "system", "plugin"]).optional(),
+  actorId: z.string().min(1).optional(),
   action: z.string().min(1),
   entityType: z.string().min(1),
   entityId: z.string().min(1),
@@ -338,9 +339,15 @@ export function activityRoutes(db: Db) {
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    // The actor is always the caller: a person cannot log an entry as an agent,
+    // another person or the system.
+    const { actorType: _actorType, actorId: _actorId, agentId: _agentId, ...entry } = req.body;
     const event = await svc.create({
       companyId,
-      ...req.body,
+      ...entry,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      agentId: null,
       details: req.body.details ? sanitizeRecord(req.body.details) : null,
     });
     res.status(201).json(event);

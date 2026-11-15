@@ -221,7 +221,7 @@ export function mailboxRoutes(
     const who = await reader(req, companyId);
     res.set("Cache-Control", "no-store").json(
       who.kind === "agent"
-        ? await service.assigned(companyId, who.agentId)
+        ? await service.assigned(companyId, who.agentId, who.runId)
         : await service.list(companyId),
     );
   });

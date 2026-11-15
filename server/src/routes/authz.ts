@@ -180,6 +180,57 @@ export function assertCompanyOwnerOrAdmin(req: Request, companyId: string) {
 }
 
 /**
+ * The person a request speaks for: the signed-in board user, or the user an
+ * agent run acts for. Null for the local board, an instance admin and agents
+ * acting for nobody (those keep their own rules).
+ */
+function personForRequest(req: Request, companyId: string): { userId: string; role: string | null } | null {
+  if (req.actor.type === "board") {
+    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return null;
+    const membership = req.actor.memberships?.find((item) => item.companyId === companyId && item.status === "active");
+    return { userId: req.actor.userId ?? "", role: membership?.membershipRole ?? null };
+  }
+  const onBehalfOf = req.actor.type === "agent" ? req.actor.onBehalfOfUserId?.trim() : null;
+  if (!onBehalfOf) return null;
+  const membership = req.actor.onBehalfOfMemberships?.find(
+    (item) => item.companyId === companyId && item.status === "active",
+  );
+  return { userId: onBehalfOf, role: membership?.membershipRole ?? null };
+}
+
+/**
+ * Owner-or-admin work (company export, secrets, budgets, hard deletes): a
+ * person needs the owner or admin role, and so does an agent acting for one.
+ * Agents acting for nobody keep the rules of the route that calls this.
+ */
+export function assertOwnerOrAdminForPerson(req: Request, companyId: string) {
+  assertCompanyAccess(req, companyId);
+  const person = personForRequest(req, companyId);
+  if (!person || isCompanyOwnerOrAdminRole(person.role)) return;
+  throw forbidden(OWNER_OR_ADMIN_REQUIRED_MESSAGE, { code: OWNER_OR_ADMIN_REQUIRED_CODE });
+}
+
+/**
+ * Agent chats are private to the person who started them, plus the owner and
+ * admins. Returns the user id whose chats this request may see, or null when
+ * it may see every chat.
+ */
+export function privateChatViewerUserId(req: Request, companyId: string): string | null {
+  const person = personForRequest(req, companyId);
+  if (!person || isCompanyOwnerOrAdminRole(person.role)) return null;
+  return person.userId;
+}
+
+export function canSeeAgentChat(
+  req: Request,
+  issue: { companyId: string; conversationAgentId?: string | null; conversationUserId?: string | null },
+) {
+  if (!issue.conversationAgentId || !issue.conversationUserId) return true;
+  const viewer = privateChatViewerUserId(req, issue.companyId);
+  return viewer === null || viewer === issue.conversationUserId;
+}
+
+/**
  * Non-throwing access check for routes that look up a resource by id
  * before responding. Prefer this over `assertCompanyAccess` whenever the
  * route can reach the access check only after a successful `getById`
@@ -251,6 +302,11 @@ export async function getAccessibleResource<T extends { companyId: string }>(
     return null;
   }
   assertCompanyAccess(req, resolved.companyId, opts);
+  // Someone else's agent chat answers like a missing one (read and write).
+  if (!canSeeAgentChat(req, resolved as { companyId: string; conversationAgentId?: string | null; conversationUserId?: string | null })) {
+    res.status(404).json({ error: notFoundMessage });
+    return null;
+  }
   return resolved;
 }
 

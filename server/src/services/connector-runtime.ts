@@ -98,7 +98,7 @@ const connectors: ConnectorDefinition[] = [
     skillName: "mailbox",
     tools: MAILBOX_TOOLS.map(({ action: _action, ...definition }) => definition),
     async resolve(db, binding) {
-      return (await mailboxService(db).assigned(binding.companyId, binding.agentId)).map(
+      return (await mailboxService(db).assigned(binding.companyId, binding.agentId, binding.runId)).map(
         ({ id, label, address }) => ({
           id,
           label: `${label} <${address}>`,

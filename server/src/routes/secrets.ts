@@ -400,6 +400,8 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       assertBoard(req);
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
+      // Vaults and secret values are for owners and admins; others propose.
+      assertSecretDefinitionAdmin(req, companyId);
 
       const preview = await svc.previewProviderConfigDiscovery(companyId, {
         provider: req.body.provider,
@@ -432,6 +434,8 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    // Vaults and secret values are for owners and admins; others propose.
+    assertSecretDefinitionAdmin(req, companyId);
 
     const created = await svc.createProviderConfig(
       companyId,
@@ -475,6 +479,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getProviderConfigById(id), "Provider vault not found");
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
 
     const updated = await svc.updateProviderConfig(id, {
       displayName: req.body.displayName,
@@ -510,6 +515,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getProviderConfigById(id), "Provider vault not found");
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
 
     const removed = await svc.removeProviderConfig(id);
     if (!removed) {
@@ -539,6 +545,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getProviderConfigById(id), "Provider vault not found");
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
 
     const updated = await svc.setDefaultProviderConfig(id);
     if (!updated) {
@@ -899,7 +906,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
 
   router.post("/companies/:companyId/secrets", validate(createSecretSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertCompanySecretWrite(req, companyId);
+    assertSecretDefinitionAdmin(req, companyId);
 
     const created = await svc.create(
       companyId,
@@ -938,6 +945,8 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       assertBoard(req);
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
+      // Vaults and secret values are for owners and admins; others propose.
+      assertSecretDefinitionAdmin(req, companyId);
 
       const preview = await svc.previewRemoteImport(companyId, {
         providerConfigId: req.body.providerConfigId,
@@ -973,6 +982,8 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       assertBoard(req);
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
+      // Vaults and secret values are for owners and admins; others propose.
+      assertSecretDefinitionAdmin(req, companyId);
 
       const result = await svc.importRemoteSecrets(
         companyId,
@@ -1013,6 +1024,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       "Secret not found",
     );
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
     if (existing.status === "deleted") {
       res.status(404).json({ error: "Secret not found" });
       return;
@@ -1053,6 +1065,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       "Secret not found",
     );
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
     if (existing.status === "deleted") {
       res.status(404).json({ error: "Secret not found" });
       return;
@@ -1127,6 +1140,7 @@ export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
       "Secret not found",
     );
     if (!existing) return;
+    assertSecretDefinitionAdmin(req, existing.companyId);
 
     const removed = await svc.remove(id);
     if (!removed) {

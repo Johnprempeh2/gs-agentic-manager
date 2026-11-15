@@ -472,12 +472,13 @@ describe.sequential("company portability routes", () => {
     );
   });
 
-  it.sequential("allows board users to export through legacy and CEO-safe bundle routes", async () => {
+  it.sequential("allows owners and admins to export through legacy and CEO-safe bundle routes", async () => {
     mockCompanyPortabilityService.exportBundle.mockResolvedValue(createExportResult());
     const app = await createApp({
       type: "board",
       userId: "user-1",
       companyIds: [companyId],
+      memberships: [{ companyId, membershipRole: "admin", status: "active" }],
       source: "session",
       isInstanceAdmin: false,
     });
@@ -489,6 +490,23 @@ describe.sequential("company portability routes", () => {
       expect(res.body.rootPath).toBe("paperclip");
     }
     expect(mockCompanyPortabilityService.exportBundle).toHaveBeenCalledTimes(2);
+  });
+
+  it.sequential("refuses an operator exporting the whole company", async () => {
+    mockCompanyPortabilityService.exportBundle.mockResolvedValue(createExportResult());
+    const app = await createApp({
+      type: "board",
+      userId: "user-ben",
+      companyIds: [companyId],
+      memberships: [{ companyId, membershipRole: "operator", status: "active" }],
+      source: "session",
+      isInstanceAdmin: false,
+    });
+    for (const path of [`/api/companies/${companyId}/export`, `/api/companies/${companyId}/exports`, `/api/companies/${companyId}/exports/preview`]) {
+      const res = await request(app).post(path).send(exportRequest);
+      expect(res.status).toBe(403);
+    }
+    expect(mockCompanyPortabilityService.exportBundle).not.toHaveBeenCalled();
   });
 
   it.sequential("requires instance-admin access when a company export includes external instructions", async () => {
