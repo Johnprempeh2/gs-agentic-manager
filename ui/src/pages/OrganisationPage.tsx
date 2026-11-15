@@ -184,7 +184,7 @@ export function OrganisationPage() {
         </label>
       ) : null}
 
-      {websiteOrganisationId ? null : <WebsiteLinkNotice />}
+      {websiteOrganisationId ? null : <WebsiteLinkNotice companyId={companyId} />}
 
       <div>
         <Tabs value={tab} onValueChange={(value) => openTab(value as OrganisationHubTab)} className="mb-4">

@@ -86,13 +86,18 @@ function TaskLink({ task }: { task: string }) {
  * The hub's banner when the client has no website organisation id (GRE-2609).
  * The website sections then stay empty: GSAM never matches a client by name or email.
  */
-export function WebsiteLinkNotice() {
+export function WebsiteLinkNotice({ companyId }: { companyId: string }) {
+  // The Website organisation picker only shows once a website is connected, so
+  // until then the notice must not send people to look for it (15 Nov).
+  const { commerce } = useCommerceSite(companyId);
   return (
     <div role="status" className="rounded-lg border border-border bg-muted/40 p-3 text-sm" data-testid="organisation-not-linked">
       <p className="font-medium">Not linked to a website organisation</p>
       <p className="mt-0.5 text-muted-foreground">
         Client users, Commerce and website activity are read from the website by its organisation id, never by name or email.
-        Link it under Website organisation on the Overview tab.
+        {commerce
+          ? " Link it under Website organisation on the Overview tab."
+          : " Connect the website first, under Website then Releases. You can then link this client on the Overview tab."}
       </p>
     </div>
   );
