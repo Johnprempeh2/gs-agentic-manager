@@ -186,6 +186,7 @@ import {
   resolveApprovalSchema,
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
+  escalateToOwnerSchema,
   addApprovalCommentSchema,
   // Cost / budget
   createCostEventSchema,
@@ -7633,6 +7634,47 @@ registry.registerPath({
     body: jsonBody(requestApprovalRevisionSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/approvals/{id}/escalate",
+  tags: ["approvals"],
+  summary: "Escalate an approval to the owner with a short note",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(escalateToOwnerSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/escalate",
+  tags: ["issues"],
+  summary: "Escalate a task, or a review waiting on you, to the owner with a short note",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(escalateToOwnerSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/members/{userId}/activity",
+  tags: ["activity"],
+  summary: "One member's activity trail (owner only): actions, decisions, escalations, comments, runs, chats, sign-ins",
+  request: {
+    params: z.object({ companyId: z.string(), userId: z.string() }),
+    query: z.object({
+      from: z.string().optional(),
+      to: z.string().optional(),
+      types: z.string().optional(),
+      limit: z.string().optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
