@@ -18,6 +18,7 @@ import { CommandPalette } from "./CommandPalette";
 import { FocusTitleTip } from "./FocusTitleTip";
 import { AskEverestPanel } from "./AskEverestPanel";
 import { EverestOrb } from "./EverestOrb";
+import { OnboardingQuestHost } from "./OnboardingQuestHost";
 import { OnDemandCreateDialogs } from "./OnDemandDialogs";
 import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
 import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
@@ -890,6 +891,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <FocusTitleTip />
       <AskEverestPanel />
       <EverestOrb />
+      <OnboardingQuestHost />
       <OnDemandCreateDialogs />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />

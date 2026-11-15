@@ -8998,6 +8998,46 @@ registry.registerPath({
   },
 });
 
+const questState = z.object({
+  role: z.string(),
+  roleLabel: z.string(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  done: z.number().int(),
+  total: z.number().int(),
+  autoOpen: z.boolean(),
+  practiceIssueId: z.string().nullable(),
+  practiceArchived: z.boolean(),
+  features: z.record(z.string(), z.boolean()),
+  chapters: z.array(z.record(z.string(), z.unknown())),
+  control: z.record(z.string(), z.unknown()),
+});
+for (const [method, path, summary, body] of [
+  ["get", "/api/companies/{companyId}/onboarding/me", "The current user's Getting started quest, progress and what they control", null],
+  ["post", "/api/companies/{companyId}/onboarding/me/start", "Start Getting started: the start mark and one practice task, idempotent", null],
+  ["post", "/api/companies/{companyId}/onboarding/me/visits", "Record a page visit that completes a visit step", z.object({ step: z.string() })],
+  ["post", "/api/companies/{companyId}/onboarding/me/chapters", "Skip a chapter, or bring it back", z.object({ chapter: z.string(), skipped: z.boolean() })],
+  ["post", "/api/companies/{companyId}/onboarding/me/practice/clear", "Archive the current user's practice items", null],
+  ["post", "/api/companies/{companyId}/onboarding/me/replay", "Clear Getting started and start again with fresh practice items", null],
+  ["get", "/api/companies/{companyId}/members/{memberId}/onboarding", "A member's Getting started progress, for people who manage access", null],
+] as const) {
+  registry.registerPath({
+    method,
+    path,
+    tags: ["access"],
+    summary,
+    description: "People only; agents cannot call it.",
+    ...(body ? { request: { body: jsonBody(body) } } : {}),
+    responses: {
+      200: { ...r.ok(questState), headers: privateNoStoreHeaders },
+      400: r.badRequest,
+      401: r.unauthorized,
+      403: r.forbidden,
+      404: r.notFound,
+    },
+  });
+}
+
 registry.registerPath({
   method: "get",
   path: "/api/sidebar-preferences/me/sections",
