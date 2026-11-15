@@ -156,8 +156,9 @@ export function TeamChat() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      {/* Desktop: the header also covers the page's top padding so messages never show above it. */}
-      <header className="sticky top-0 z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
+      {/* Phone: it sticks under the app's top bar (back and the chat's name), never over it.
+          Desktop: the header also covers the page's top padding so messages never show above it. */}
+      <header className="sticky top-(--mobile-ptr-top) z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
         <div className="flex items-start justify-between gap-2">
           <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
             {summary.members.map((member) => (
