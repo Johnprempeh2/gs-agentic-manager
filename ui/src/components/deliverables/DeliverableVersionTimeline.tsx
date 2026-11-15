@@ -197,6 +197,8 @@ export function DeliverableProjectAssignment({
   const [targetId, setTargetId] = useState("");
   const choices = projects.filter((choice) => choice.id !== project?.id);
   const target = choices.find((choice) => choice.id === targetId) ?? null;
+  // "Another" only makes sense when it is already in one.
+  const moveLabel = project ? "Move to another project" : "Move to a project";
   return (
     <div className="flex flex-col gap-2" data-testid="deliverable-project-assignment">
       <dl className="flex flex-col gap-2">
@@ -223,13 +225,13 @@ export function DeliverableProjectAssignment({
           }}
           data-testid="deliverable-move-open"
         >
-          <FolderOpen /> Move to another project
+          <FolderOpen /> {moveLabel}
         </Button>
       ) : null}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Move to another project</DialogTitle>
+            <DialogTitle>{moveLabel}</DialogTitle>
             <DialogDescription>
               Every release of "{title}" moves together. It shows under the new project and its client, and the move is
               recorded in the activity log.
@@ -252,7 +254,11 @@ export function DeliverableProjectAssignment({
           </label>
           {target ? (
             <p className="text-sm" data-testid="deliverable-move-summary">
-              Move from <strong>{project?.name ?? "no project"}</strong> to <strong>{target.name}</strong>?
+              {project ? (
+                <>Move from <strong>{project.name}</strong> to <strong>{target.name}</strong>?</>
+              ) : (
+                <>Move to <strong>{target.name}</strong>?</>
+              )}
             </p>
           ) : null}
           <DialogFooter>
