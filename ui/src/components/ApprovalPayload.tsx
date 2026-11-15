@@ -175,6 +175,7 @@ export function scopeTypeLabel(value: unknown): unknown {
 }
 
 const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
+  "agents:allowlist": "Limit which agents they work with",
   "agents:create": "Add new agents",
   "agents:configure": "Change agent settings",
   "agents:suggest-changes": "Suggest changes to agents",

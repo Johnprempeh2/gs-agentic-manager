@@ -81,8 +81,10 @@ export function taskSearchScore(search: TaskSearch): SQL<number> {
  * Uses existing pg_trgm indexes and current rows: no derived corpus or worker.
  * The tagged comment/document sets are evaluated once, not once per task.
  */
-export function taskSearchCtes(companyId: string, search: TaskSearch, includeContext = true, fallbackFilters?: SQL): SQL {
+export function taskSearchCtes(companyId: string, search: TaskSearch, includeContext = true, fallbackFilters?: SQL, visibility?: SQL): SQL {
   const n = search.tokens.length;
+  // Extra visibility for this viewer (someone else's agent chat), applied to every candidate.
+  const visible = visibility ? sql`${visibleIssueCondition()} AND ${visibility}` : visibleIssueCondition();
   const comments = n === 0 || !includeContext ? sql`SELECT NULL::uuid AS issue_id, 0 AS ord WHERE false`
     : sql.join(search.patterns.map((_, index) => sql`
       SELECT c.issue_id, ${index}::int AS ord FROM issue_comments c
@@ -172,7 +174,7 @@ export function taskSearchCtes(companyId: string, search: TaskSearch, includeCon
       UNION SELECT issue_id FROM document_matches
     ), search_flags AS MATERIALIZED (
       ${flags(sql`false`)}
-      WHERE issues.company_id = ${companyId} AND ${visibleIssueCondition()}
+      WHERE issues.company_id = ${companyId} AND ${visible}
         AND issues.id IN (SELECT id FROM literal_candidates)
     ), literal_matches AS MATERIALIZED (
       SELECT * FROM search_flags
@@ -184,7 +186,7 @@ export function taskSearchCtes(companyId: string, search: TaskSearch, includeCon
         JOIN issues ON issues.id = literal.id
         ${fallbackFilters ? sql`WHERE ${fallbackFilters}` : sql``}
       )
-        AND issues.company_id = ${companyId} AND ${visibleIssueCondition()}
+        AND issues.company_id = ${companyId} AND ${visible}
         AND ${fuzzy}
     ), matched AS MATERIALIZED (
       SELECT * FROM literal_matches

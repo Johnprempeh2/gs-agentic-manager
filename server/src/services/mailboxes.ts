@@ -4,6 +4,8 @@ import { simpleParser, type AddressObject } from "mailparser";
 import {
   type Db,
   agents,
+  companyMemberships,
+  heartbeatRuns,
   issues,
   toolConnections,
   toolConnectionInstalls,
@@ -223,9 +225,58 @@ export function mailboxService(
       .sort((a, b) => a.label.localeCompare(b.label));
   }
 
-  async function assigned(companyId: string, agentId: string) {
+  /**
+   * The person an agent run acts for, and whether they are owner or admin.
+   * Null when the run acts for nobody (scheduled or system work).
+   */
+  async function runResponsibleUser(companyId: string, runId: string | undefined) {
+    if (!runId) return null;
+    const [run] = await db
+      .select({
+        companyId: heartbeatRuns.companyId,
+        responsibleUserId: heartbeatRuns.responsibleUserId,
+        activeIdentityContextId: heartbeatRuns.activeIdentityContextId,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+      })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, runId));
+    if (!run || run.companyId !== companyId) return null;
+    const snapshot = (run.contextSnapshot ?? {}) as Record<string, unknown>;
+    const issue = (snapshot.paperclipIssue ?? {}) as Record<string, unknown>;
+    const fromSnapshot = [snapshot.responsibleUserId, issue.responsibleUserId]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const userId = run.activeIdentityContextId ? run.responsibleUserId : (fromSnapshot ?? run.responsibleUserId);
+    if (!userId) return null;
+    const [membership] = await db
+      .select({ role: companyMemberships.membershipRole })
+      .from(companyMemberships)
+      .where(and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalId, userId),
+        eq(companyMemberships.status, "active"),
+      ));
+    return { userId, isAdmin: membership?.role === "owner" || membership?.role === "admin" };
+  }
+
+  /**
+   * An agent acting for a person reaches only that person's own mailboxes,
+   * unless the person is the owner or an admin.
+   */
+  function personMayUse(
+    person: { userId: string; isAdmin: boolean } | null,
+    connection: { createdByUserId: string | null },
+  ) {
+    return !person || person.isAdmin || connection.createdByUserId === person.userId;
+  }
+
+  async function assigned(companyId: string, agentId: string, runId?: string) {
+    const person = await runResponsibleUser(companyId, runId);
+    const own = new Map((await rows(companyId)).map((row) => [row.id, row]));
     return (await list(companyId)).filter(
-      (mailbox) => mailbox.allAgents || mailbox.agentIds.includes(agentId),
+      (mailbox) =>
+        (mailbox.allAgents || mailbox.agentIds.includes(agentId)) &&
+        personMayUse(person, { createdByUserId: own.get(mailbox.id)?.createdByUserId ?? null }),
     );
   }
 
@@ -241,6 +292,9 @@ export function mailboxService(
       );
       // Same answer as a missing mailbox: do not confirm another agent's mailbox.
       if (!allowed) throw notFound("Mailbox not found");
+      if (!personMayUse(await runResponsibleUser(companyId, reader.runId), connection)) {
+        throw notFound("Mailbox not found");
+      }
     }
     return connection;
   }

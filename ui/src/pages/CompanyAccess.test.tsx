@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CompanyAccess, CompanyAccessLegacyRoute } from "./CompanyAccess";
+import { CompanyAccess, CompanyAccessLegacyRoute, memberAgentAllowList, withAgentAllowList } from "./CompanyAccess";
 
 const listMembersMock = vi.hoisted(() => vi.fn());
 const listJoinRequestsMock = vi.hoisted(() => vi.fn());
@@ -743,5 +743,19 @@ describe("CompanyAccess invites tab", () => {
     const secondRoot = await renderPage(cloudClient(null));
     expect(container.textContent).not.toContain("Invite people");
     await act(async () => secondRoot.unmount());
+  });
+});
+
+describe("agent allow-list grant", () => {
+  const base = [{ permissionKey: "tasks:assign", scope: null }] as never[];
+  it("reads no grant as no limit, and a grant as the listed agents", () => {
+    expect(memberAgentAllowList({ grants: base } as never)).toBeNull();
+    const limited = withAgentAllowList(base, ["b", "a"]);
+    expect(memberAgentAllowList({ grants: limited } as never)).toEqual(["a", "b"]);
+    expect(limited).toHaveLength(2);
+  });
+  it("removes the limit when set back to every agent", () => {
+    const limited = withAgentAllowList(base, ["a"]);
+    expect(withAgentAllowList(limited, null)).toEqual(base);
   });
 });

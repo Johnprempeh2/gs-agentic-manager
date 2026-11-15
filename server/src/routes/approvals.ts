@@ -47,6 +47,7 @@ import {
 } from "../services/permission-grant-requests.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { forbidden, unprocessable } from "../errors.js";
+import { assertCanApproveAsPerson } from "../services/approval-authority.js";
 import { REVIEW_PATH_RECOVERY_INSTRUCTION } from "../services/recovery/review-path-recovery.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
@@ -235,7 +236,11 @@ export function approvalRoutes(
   async function assertCanDecideSpendingApproval(req: Request, approval: { type: string; companyId: string; payload: unknown }) {
     if (approval.type === "budget_override_required") {
       const authority = await budgetAuthorityService(db).get(approval.companyId);
-      assertCanResolveBudgetOverride(authority, { userId: req.actor.userId ?? null, operator: isHostingOperator(req) });
+      assertCanResolveBudgetOverride(authority, {
+        userId: req.actor.userId ?? null,
+        operator: isHostingOperator(req),
+        clientAdmin: hasCompanyOwnerOrAdminRole(req, approval.companyId),
+      });
       return;
     }
     // GRE-1371: a top-up card is decided only by the side it waits on.
@@ -431,6 +436,8 @@ export function approvalRoutes(
     await commercePublish.assertCanDecide(req.actor, existing);
     await websiteAccess.assertCanDecide(req.actor, existing);
     await commerceChanges.assertCanDecide(req.actor, existing);
+    // After the type checks, so a refusal names the most specific reason.
+    await assertCanApproveAsPerson(db, access, req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const resolved = await svc.approve(id, decidedByUserId, req.body.decisionNote);
     const { applied } = resolved;

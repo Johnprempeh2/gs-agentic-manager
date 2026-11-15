@@ -1231,6 +1231,10 @@ export const PERMISSION_KEYS = [
   "strategy:board_chair",
   // Intelligence page: write daily reports, board snapshots and recommendations.
   "intelligence:write",
+  // A limit, not a right: the agents this person may wake, chat with or assign
+  // work to. Scope: { agentIds: string[] }. No row = every agent (owners and
+  // admins are never limited). People only; set by the owner.
+  "agents:allowlist",
   // Approve or send back a review that waits on someone else. People only:
   // owners hold it implicitly, anyone else needs a grant.
   "reviews:override",

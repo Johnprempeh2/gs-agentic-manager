@@ -90,6 +90,8 @@ export function CompanyAccess() {
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
   const [draftReviewOverride, setDraftReviewOverride] = useState(false);
+  // null = every agent (no limit); a list = only these agents.
+  const [draftAgentAllowList, setDraftAgentAllowList] = useState<string[] | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -247,6 +249,7 @@ export function CompanyAccess() {
     setDraftRole(editingMember.membershipRole);
     setDraftStatus(isEditableMemberStatus(editingMember.status) ? editingMember.status : "suspended");
     setDraftReviewOverride(memberHasReviewOverrideGrant(editingMember));
+    setDraftAgentAllowList(memberAgentAllowList(editingMember));
   }, [editingMember]);
 
   if (!selectedCompanyId) {
@@ -558,6 +561,14 @@ export function CompanyAccess() {
                   </span>
                 </label>
               ) : null}
+              {access?.canManageMembers && editingMember.principalType === "user" ? (
+                <AgentAllowListField
+                  role={draftRole}
+                  agents={agentsQuery.data ?? []}
+                  value={draftAgentAllowList}
+                  onChange={setDraftAgentAllowList}
+                />
+              ) : null}
             </div>
           )}
           <DialogFooter>
@@ -568,13 +579,17 @@ export function CompanyAccess() {
               onClick={() => {
                 if (!editingMember) return;
                 const reviewOverrideChanged = draftReviewOverride !== memberHasReviewOverrideGrant(editingMember);
+                const allowListChanged =
+                  JSON.stringify(draftAgentAllowList) !== JSON.stringify(memberAgentAllowList(editingMember));
+                let grants = reviewOverrideChanged
+                  ? withReviewOverrideGrant(editingMember.grants, draftReviewOverride)
+                  : editingMember.grants;
+                if (allowListChanged) grants = withAgentAllowList(grants, draftAgentAllowList);
                 updateMemberMutation.mutate({
                   memberId: editingMember.id,
                   membershipRole: draftRole,
                   status: draftStatus,
-                  grants: reviewOverrideChanged
-                    ? withReviewOverrideGrant(editingMember.grants, draftReviewOverride)
-                    : undefined,
+                  grants: reviewOverrideChanged || allowListChanged ? grants : undefined,
                 });
               }}
               disabled={updateMemberMutation.isPending}
@@ -688,6 +703,83 @@ export function CompanyAccessLegacyRoute() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const AGENT_ALLOW_LIST_KEY = "agents:allowlist";
+
+/** The agents this member may work with, or null when there is no limit. */
+export function memberAgentAllowList(member: CompanyMember): string[] | null {
+  const grant = member.grants.find((item) => item.permissionKey === AGENT_ALLOW_LIST_KEY);
+  if (!grant) return null;
+  const ids = (grant.scope as { agentIds?: unknown } | null)?.agentIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string").sort() : [];
+}
+
+/** The member's grants with the agent allow-list set (a list) or removed (null); the route replaces the whole set. */
+export function withAgentAllowList(grants: CompanyMember["grants"], agentIds: string[] | null): CompanyMember["grants"] {
+  const others = grants.filter((grant) => grant.permissionKey !== AGENT_ALLOW_LIST_KEY);
+  if (agentIds === null) return others;
+  return [
+    ...others,
+    { permissionKey: AGENT_ALLOW_LIST_KEY, scope: { agentIds: [...agentIds].sort() } } as unknown as CompanyMember["grants"][number],
+  ];
+}
+
+function AgentAllowListField({
+  role,
+  agents,
+  value,
+  onChange,
+}: {
+  role: CompanyMember["membershipRole"];
+  agents: Array<{ id: string; name: string; status?: string | null }>;
+  value: string[] | null;
+  onChange: (next: string[] | null) => void;
+}) {
+  if (role === "owner" || role === "admin") {
+    return (
+      <div className="space-y-0.5 text-sm">
+        <span className="block font-medium">Agents they work with</span>
+        <span className="block text-muted-foreground">Owners and admins can work with every agent.</span>
+      </div>
+    );
+  }
+  const limited = value !== null;
+  const choosable = agents.filter((agent) => agent.status !== "terminated");
+  return (
+    <div className="space-y-2 text-sm">
+      <label className="flex items-start gap-2">
+        <Checkbox
+          checked={limited}
+          onCheckedChange={(checked) => onChange(checked === true ? value ?? [] : null)}
+          aria-label="Limit which agents they work with"
+        />
+        <span className="space-y-0.5">
+          <span className="block font-medium">Limit which agents they work with</span>
+          <span className="block text-muted-foreground">
+            {limited
+              ? "They can wake, chat with and give work to only the agents ticked below."
+              : "Off: they can work with every agent."}
+          </span>
+        </span>
+      </label>
+      {limited ? (
+        <div className="grid max-h-56 gap-1 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2" role="group" aria-label="Agents they work with">
+          {choosable.map((agent) => (
+            <label key={agent.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-accent/50">
+              <Checkbox
+                checked={value!.includes(agent.id)}
+                onCheckedChange={(checked) =>
+                  onChange(checked === true ? [...value!, agent.id] : value!.filter((id) => id !== agent.id))
+                }
+              />
+              <span className="truncate">{agent.name}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

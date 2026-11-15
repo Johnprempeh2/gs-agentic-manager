@@ -74,6 +74,7 @@ import {
   assertBoard,
   assertCompanyAccess,
   assertCompanyOwnerOrAdmin,
+  assertOwnerOrAdminForPerson,
   assertInstanceAdmin,
   getActorInfo,
   hasCompanyAccess,
@@ -551,6 +552,8 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
   router.post("/:companyId/export", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
+    // The whole company leaves in an export: owners and admins only.
+    assertOwnerOrAdminForPerson(req, companyId);
     const body = companyPortabilityExportSchema.parse(req.body);
     const allowExternalInstructions = await assertExternalInstructionExportAllowed(req, companyId, body);
     const result = await portability.exportBundle(companyId, body, { allowExternalInstructions });
@@ -1147,6 +1150,8 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
   router.post("/:companyId/exports/preview", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
+    // The whole company leaves in an export: owners and admins only.
+    assertOwnerOrAdminForPerson(req, companyId);
     const body = companyPortabilityExportSchema.parse(req.body);
     const allowExternalInstructions = await assertExternalInstructionExportAllowed(req, companyId, body);
     const preview = await portability.previewExport(companyId, body, { allowExternalInstructions });
@@ -1156,6 +1161,8 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
   router.post("/:companyId/exports", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
+    // The whole company leaves in an export: owners and admins only.
+    assertOwnerOrAdminForPerson(req, companyId);
     const body = companyPortabilityExportSchema.parse(req.body);
     const allowExternalInstructions = await assertExternalInstructionExportAllowed(req, companyId, body);
     const result = await portability.exportBundle(companyId, body, { allowExternalInstructions });
@@ -1194,12 +1201,13 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
       mode: "agent_safe",
       sourceCompanyId: companyId,
       pauseAutomations: body.pauseAutomations === true,
-      // An agent importing new agents is hiring, so it needs agents:create
-      // like the hire routes: the CEO role does not override a denial.
-      ...(req.actor.type === "agent" ? { assertCanCreateAgents: async () => {
+      // Importing new agents is hiring, so it needs agents:create like the
+      // hire routes, for people and agents alike: the CEO role does not
+      // override a denial.
+      assertCanCreateAgents: async () => {
         const decision = await access.decide({ actor: req.actor, action: "agents:create", resource: { type: "company", companyId } });
-        if (!decision.allowed) throw forbidden(`${decision.explanation} Importing new agents is hiring; a board user can import them instead.`, authorizationDeniedDetails(decision));
-      } } : {}),
+        if (!decision.allowed) throw forbidden(`${decision.explanation} Importing new agents is hiring.`, authorizationDeniedDetails(decision));
+      },
     });
     await logActivity(db, {
       companyId: result.company.id,

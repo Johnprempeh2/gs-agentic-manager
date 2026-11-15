@@ -85,6 +85,7 @@ export function memoryCallerFromRequest(req: Request, companyId: string): Memory
     userId: actor.actorType === "user" ? actor.actorId : null,
     runId,
     isBoardAdmin: hasCompanyOwnerOrAdminRole(req, companyId),
+    responsibleUserId: req.actor.type === "agent" ? req.actor.onBehalfOfUserId ?? null : null,
     ...memoryCallerApp(req.actor, runId),
   };
 }

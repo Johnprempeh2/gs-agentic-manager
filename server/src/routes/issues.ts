@@ -305,8 +305,11 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
   getActorInfo,
+  assertOwnerOrAdminForPerson,
+  canSeeAgentChat,
   hasCompanyAccess,
   hasCompanyBoardRole,
+  privateChatViewerUserId,
 } from "./authz.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
@@ -391,11 +394,13 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
-import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
+import type { PermissionKey } from "@greatstone/shared";
+import { isActiveCompanyOwner, userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
 import {
   authorizeReviewOverride,
   describeReviewOverride,
   issueReviewOverrideFieldsSchema,
+  REVIEW_OVERRIDE_PERMISSION,
 } from "../services/review-override.js";
 import { prepareReviewLoopNotice } from "../services/review-loop-notice.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
@@ -592,6 +597,7 @@ type CompanySearchService = {
   search(
     companyId: string,
     query: CompanySearchQuery,
+    opts?: { chatViewerUserId?: string | null },
   ): Promise<CompanySearchResponse>;
 };
 type ActivityIssueRelationSummary = {
@@ -2231,6 +2237,32 @@ function actorMatchesExecutionParticipant(
  * `board-identity.ts`). Undefined when the actor is not a user or is the
  * participant itself.
  */
+/**
+ * May this board actor take a task out of a review that waits on a named
+ * person? Only that person (or an alias they answer for), the owner, or a
+ * `reviews:override` holder who gives a reason. Agents keep their own rules.
+ */
+async function mayClearPersonReview(
+  db: Db,
+  access: { hasPermission: (companyId: string, principalType: "user", principalId: string, key: PermissionKey) => Promise<boolean> },
+  req: Request,
+  issue: { companyId: string; executionState: unknown },
+  reason: unknown,
+): Promise<boolean> {
+  if (req.actor.type !== "board") return true;
+  const state = parseIssueExecutionState(issue.executionState);
+  const reviewer = state?.status === "pending" ? state.currentParticipant : null;
+  if (!reviewer || reviewer.type !== "user" || !reviewer.userId) return true;
+  const userId = req.actor.userId;
+  if (req.actor.source === "local_implicit") return true;
+  if (!userId) return false;
+  if (userId === reviewer.userId) return true;
+  if (await userMatchesPrincipal(db, issue.companyId, userId, reviewer.userId)) return true;
+  if (await isActiveCompanyOwner(db, issue.companyId, userId)) return true;
+  const hasReason = typeof reason === "string" && reason.trim().length > 0;
+  return hasReason && (await access.hasPermission(issue.companyId, "user", userId, REVIEW_OVERRIDE_PERMISSION));
+}
+
 async function stageParticipantAliasesForActor(
   db: Db,
   companyId: string,
@@ -5563,8 +5595,13 @@ export function issueRoutes(
   async function assertIssueReadAllowed(
     req: Request,
     res: Response,
-    issue: Parameters<typeof decideIssueAccess>[1],
+    issue: Parameters<typeof decideIssueAccess>[1] & { conversationAgentId?: string | null; conversationUserId?: string | null },
   ) {
+    // Someone else's agent chat answers like a missing task.
+    if (!canSeeAgentChat(req, issue)) {
+      res.status(404).json({ error: "Issue not found" });
+      return false;
+    }
     const key = `${issue.id}:${issue.companyId}:${issue.projectId ?? ""}:${issue.parentId ?? ""}:${issue.assigneeAgentId ?? ""}:${issue.assigneeUserId ?? ""}:${issue.status}`;
     const value = memoizeIssueReadDecision(req, key, () =>
       decideIssueAccess(req, issue, "issue:read"),
@@ -5734,9 +5771,16 @@ export function issueRoutes(
       reviewPolicy?: IssueReviewPolicy | null;
       /** Used only to name the task in denial copy (plan §6). */
       identifier?: string | null;
+      conversationAgentId?: string | null;
+      conversationUserId?: string | null;
     },
     options: { allowVisibleIssueWrite?: boolean } = {},
   ) {
+    // Someone else's agent chat answers like a missing task.
+    if (!canSeeAgentChat(req, issue)) {
+      res.status(404).json({ error: "Issue not found" });
+      return false;
+    }
     if (req.actor.type !== "agent") return true;
     const actorAgentId = req.actor.agentId;
     if (!actorAgentId) {
@@ -7053,6 +7097,21 @@ export function issueRoutes(
    * the reply of its agent from a run that serves this chat. Lets the write
    * past the viewer rule; nothing else on the chat is opened up.
    */
+  /**
+   * A chat message wakes its agent, so the owner's agent allow-list
+   * (`agents:allowlist`) applies. Only the list: who may chat at all is
+   * unchanged. Owners and admins are never limited.
+   */
+  async function assertMayChatWithAgent(req: Request, companyId: string, agentId: string) {
+    if (req.actor.type !== "board" || !req.actor.userId || !privateChatViewerUserId(req, companyId)) return;
+    const grants = await access.listPrincipalGrants(companyId, "user", req.actor.userId);
+    const list = grants.find((grant) => grant.permissionKey === "agents:allowlist");
+    if (!list) return;
+    const ids = (list.scope as { agentIds?: unknown } | null)?.agentIds;
+    if (Array.isArray(ids) && ids.includes(agentId)) return;
+    throw forbidden("The owner has not added this agent to the agents you work with.");
+  }
+
   async function boardChatWriteAllowed(
     req: Request,
     issue: { id: string; companyId: string; originKind?: string | null; conversationAgentId: string | null; conversationUserId: string | null },
@@ -8841,7 +8900,9 @@ export function issueRoutes(
       });
       return;
     }
-    const result = await getSearchService().search(companyId, query);
+    const result = await getSearchService().search(companyId, query, {
+      chatViewerUserId: privateChatViewerUserId(req, companyId),
+    });
     res.json(result);
   });
 
@@ -9117,6 +9178,7 @@ export function issueRoutes(
       hasPlanDocument,
       work,
       q: req.query.q as string | undefined,
+      chatViewerUserId: privateChatViewerUserId(req, companyId),
       limit,
       offset,
       sortField: sortField === "updated" || sortField === "id" ? sortField : undefined,
@@ -10576,6 +10638,7 @@ export function issueRoutes(
                 lockedIssue.executionState,
               ),
               allowBoardOverride: req.actor.type === "board",
+              mayClearPersonReview: await mayClearPersonReview(tx as unknown as Db, access, req, lockedIssue, null),
               commentBody: resolutionNote ?? null,
             });
             Object.assign(updateFields, transition.patch);
@@ -14818,6 +14881,7 @@ export function issueRoutes(
         actor,
         existing.executionState,
       );
+      const mayClearReview = await mayClearPersonReview(db, access, req, existing, overrideReason);
       // Owner, or a person granted reviews:override, decides a review that
       // waits on someone else. Only when asked for explicitly, with a reason.
       const reviewOverride = reviewOverrideRequested === true
@@ -14851,6 +14915,7 @@ export function issueRoutes(
           userId: actor.actorType === "user" ? actor.actorId : null,
         },
         allowBoardOverride: req.actor.type === "board",
+        mayClearPersonReview: mayClearReview,
         commentBody: reviewOverride ? (commentBody || reviewOverride.reason) : commentBody,
         actorUserIdAliases,
         reviewOverride: Boolean(reviewOverride),
@@ -17013,6 +17078,8 @@ export function issueRoutes(
       "Issue not found",
     );
     if (!existing) return;
+    // Hard delete is for the owner and admins; others cancel or archive.
+    assertOwnerOrAdminForPerson(req, existing.companyId);
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
     const attachments = await svc.listAttachments(id);
     const dependentIssueIds = await listDependentIssueIds(existing.companyId, id);
@@ -19658,6 +19725,7 @@ export function issueRoutes(
       const existing = await svc.getConversation(companyId, agent.id, req.actor.userId);
       if (existing && !(await assertIssueReadAllowed(req, res, existing))) return;
       if (existing || method === "get") { res.json(existing); return; }
+      await assertMayChatWithAgent(req, companyId, agent.id);
       const issue = await svc.create(companyId, {
         title: `Chat with ${agent.name}`, assigneeAgentId: agent.id,
         conversationAgentId: agent.id, conversationUserId: req.actor.userId,
@@ -19694,6 +19762,7 @@ export function issueRoutes(
           throw forbidden("Only the conversation owner can start a new session");
         }
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
+        await assertMayChatWithAgent(req, issue.companyId, issue.conversationAgentId);
         if (!(await assertAgentIssueCommentAllowed(req, res, issue))) return;
         if (req.body.body.trim() !== "/new" && !(await assertBoardCommentNotPaused(req, res, issue))) return;
         const actor = getActorInfo(req);

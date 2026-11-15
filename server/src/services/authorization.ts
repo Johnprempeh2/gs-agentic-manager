@@ -733,6 +733,37 @@ export function authorizationService(db: Db | DbTransaction) {
       .then((rows) => rows[0] ?? null);
   }
 
+  /**
+   * The owner's per-person agent allow-list (`agents:allowlist`, scope
+   * { agentIds }). A deny when the target agent of a wake or an assignment is
+   * not on the person's list; null when the person has no list, is owner or
+   * admin, or the action has no agent target.
+   */
+  async function denyOutsideAgentAllowList(
+    companyId: string,
+    userId: string,
+    input: { action: AuthorizationAction; resource: AuthorizationResource },
+  ): Promise<AuthorizationDecision | null> {
+    const targetAgentId =
+      input.action === "agent:wake" && input.resource.type === "agent"
+        ? input.resource.agentId
+        : input.action === "tasks:assign" && input.resource.type === "issue"
+          ? input.resource.assigneeAgentId ?? null
+          : null;
+    if (!targetAgentId) return null;
+    const grant = await findGrant(companyId, "user", userId, "agents:allowlist");
+    if (!grant) return null;
+    const membership = await getActiveMembership(companyId, "user", userId);
+    if (membership?.membershipRole === "owner" || membership?.membershipRole === "admin") return null;
+    const allowed = scopeValueList((grant.scope ?? {})["agentIds"]);
+    if (allowed.includes(targetAgentId)) return null;
+    return deny({
+      action: input.action,
+      reason: "deny_scope",
+      explanation: "The owner has not added this agent to the agents this person works with.",
+    });
+  }
+
   async function decidePrincipalGrant(input: {
     companyId: string;
     principalType: PrincipalType;
@@ -1855,6 +1886,8 @@ export function authorizationService(db: Db | DbTransaction) {
           explanation: "Board user id is required.",
         });
       }
+      const allowListDeny = await denyOutsideAgentAllowList(companyId, input.actor.userId, input);
+      if (allowListDeny) return allowListDeny;
       if (input.action === "tasks:assign") {
         if (!(await assignmentTargetIsInCompany(input.resource))) {
           return deny({
@@ -2478,6 +2511,13 @@ export function authorizationService(db: Db | DbTransaction) {
     }
 
     const companyId = companyIdForResource(input.resource);
+    // An agent acting for a person works only with that person's agents
+    // (itself excepted: a chat agent always answers its own chat).
+    const targetIsSelf = input.resource.type === "agent" && input.resource.agentId === input.actor.agentId;
+    if (!targetIsSelf) {
+      const allowListDeny = await denyOutsideAgentAllowList(companyId, responsibleUserId, input);
+      if (allowListDeny) return allowListDeny;
+    }
     const snapshot = await getResponsibleUserSnapshot({
       actor: input.actor,
       companyId,

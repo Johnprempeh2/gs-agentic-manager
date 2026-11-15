@@ -198,7 +198,7 @@ import {
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
 import { carryWaitingDateMarker } from "./recovery/waiting-date.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { agentChatVisibleTo, visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import {
@@ -1928,6 +1928,8 @@ export function parseStatusFilter(
 
 export interface IssueFilters {
   attention?: "blocked";
+  /** Only this person's agent chats (plus non-chat tasks); null or unset sees all. */
+  chatViewerUserId?: string | null;
   status?: string | readonly string[];
   /**
    * Filter by assignee agent ID.
@@ -8314,6 +8316,8 @@ export function issueService(db: Db) {
         eq(issues.companyId, companyId),
         visibleIssueCondition(),
       ];
+      const chatVisible = agentChatVisibleTo(filters?.chatViewerUserId);
+      if (chatVisible) conditions.push(chatVisible);
       if (!filters?.q?.trim()) {
         conditions.push(isNull(issues.conversationAgentId));
         if (!filters?.touchedByUserId && !filters?.unreadForUserId && !filters?.inboxArchivedByUserId) {
@@ -8480,7 +8484,7 @@ export function issueService(db: Db) {
       const issueSource = db.select(issueListSelect).from(issues);
       const searchedSource = hasSearch
         ? issueSource.innerJoin(sql`(
-            ${taskSearchCtes(companyId, taskSearch, true, and(...conditions))}
+            ${taskSearchCtes(companyId, taskSearch, true, and(...conditions), agentChatVisibleTo(filters?.chatViewerUserId))}
             SELECT m.id, ${taskSearchScore(taskSearch)} AS score FROM matched m
           ) task_search`, sql`task_search.id = ${issues.id}`)
         : issueSource;

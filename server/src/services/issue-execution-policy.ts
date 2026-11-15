@@ -16,7 +16,10 @@ import {
   issueExecutionPolicySchema,
   issueExecutionStateSchema,
 } from "@greatstone/shared";
-import { unprocessable } from "../errors.js";
+import { forbidden, unprocessable } from "../errors.js";
+
+export const PERSON_REVIEW_CLEAR_REFUSAL =
+  "This task is waiting on a named person's review. Only they, the owner, or someone allowed to decide reviews for others (with a reason) can take it out of review.";
 
 type AssigneeLike = {
   assigneeAgentId?: string | null;
@@ -70,6 +73,12 @@ type TransitionInput = {
    * were its current participant.
    */
   reviewOverride?: boolean;
+  /**
+   * False when the board actor may not take the task out of a review that
+   * waits on a named person: only that person, the owner, or a
+   * `reviews:override` holder giving a reason may. Unset means allowed.
+   */
+  mayClearPersonReview?: boolean;
 };
 
 type TransitionResult = {
@@ -978,6 +987,9 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         requestedStatus !== "in_review" &&
         requestedStatus !== input.issue.status
       ) {
+        if (input.mayClearPersonReview === false && currentParticipant?.type === "user") {
+          throw forbidden(PERSON_REVIEW_CLEAR_REFUSAL);
+        }
         patch.executionState = null;
         return { patch };
       }

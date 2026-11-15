@@ -60,13 +60,14 @@ export function memoryToolRoutes(
       if (!(await isLiveMemoryLink(db, actor.companyId, actor.agentId))) {
         throw forbidden(MEMORY_KEY_NOT_LINKED_MESSAGE, { code: MEMORY_KEY_NOT_LINKED_CODE });
       }
-      return { companyId: actor.companyId, agentId: actor.agentId, runId: null, ...memoryCallerApp(actor, null) };
+      return { companyId: actor.companyId, agentId: actor.agentId, runId: null, responsibleUserId: null, ...memoryCallerApp(actor, null) };
     }
     const context = await projectToolContext(db, actor, false, "Memory");
     return {
       companyId: context.run.companyId,
       agentId: context.run.agentId,
       runId: context.run.id,
+      responsibleUserId: context.run.responsibleUserId ?? null,
       ...memoryCallerApp(actor, context.run.id),
     };
   }
@@ -77,7 +78,7 @@ export function memoryToolRoutes(
 
   router.post("/mcp/memory-tools", async (req, res) => {
     if (req.actor.type === "none" && options.signInChallenge) return options.signInChallenge(req, res);
-    const { companyId, agentId, runId, app, sessionId } = await memoryToolIdentity(req);
+    const { companyId, agentId, runId, responsibleUserId, app, sessionId } = await memoryToolIdentity(req);
     assertCompanyAccess(req, companyId);
     if (!(await gateway.getSettings(companyId)).enabled) throw notFound(MEMORY_DISABLED_MESSAGE);
 
@@ -117,6 +118,7 @@ export function memoryToolRoutes(
           userId: null,
           runId,
           isBoardAdmin: false,
+          responsibleUserId,
           app,
           sessionId,
         },

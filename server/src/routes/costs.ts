@@ -39,6 +39,8 @@ import {
   getActorInfo,
   hasCompanyOwnerOrAdminRole,
   isHostingOperator,
+  OWNER_OR_ADMIN_REQUIRED_CODE,
+  OWNER_OR_ADMIN_REQUIRED_MESSAGE,
 } from "./authz.js";
 import {
   assertBudgetWithinAuthority,
@@ -51,7 +53,7 @@ import {
 import { budgetTopUpService, type TopUpActor } from "../services/budget-top-ups.js";
 import type { BudgetServiceHooks } from "../services/budgets.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
-import { badRequest } from "../errors.js";
+import { badRequest, forbidden } from "../errors.js";
 import { usageBreakdown } from "../services/usage-breakdown.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
@@ -105,11 +107,23 @@ export function costRoutes(
   const topUps = budgetTopUpService(db, budgetHooks);
 
   function topUpActor(req: Parameters<typeof assertCompanyAccess>[0], companyId: string): TopUpActor {
-    return { ...spendingActor(req), clientAdmin: hasCompanyOwnerOrAdminRole(req, companyId) };
+    return { ...spendingActor(req, companyId), clientAdmin: hasCompanyOwnerOrAdminRole(req, companyId) };
   }
 
-  function spendingActor(req: Parameters<typeof assertCompanyAccess>[0]): SpendingActor {
-    return { userId: req.actor.userId ?? null, operator: isHostingOperator(req) };
+  function spendingActor(req: Parameters<typeof assertCompanyAccess>[0], companyId: string): SpendingActor {
+    return {
+      userId: req.actor.userId ?? null,
+      operator: isHostingOperator(req),
+      clientAdmin: hasCompanyOwnerOrAdminRole(req, companyId),
+    };
+  }
+
+  /** Budget writes are for the owner, admins and the hosting operator. */
+  function assertBudgetWriter(req: Parameters<typeof assertCompanyAccess>[0], companyId: string) {
+    if (isHostingOperator(req)) return;
+    if (!hasCompanyOwnerOrAdminRole(req, companyId)) {
+      throw forbidden(OWNER_OR_ADMIN_REQUIRED_MESSAGE, { code: OWNER_OR_ADMIN_REQUIRED_CODE });
+    }
   }
 
   /**
@@ -121,7 +135,8 @@ export function costRoutes(
     companyId: string,
     change: BudgetChange & { scopeId: string },
   ) {
-    const actor = spendingActor(req);
+    assertBudgetWriter(req, companyId);
+    const actor = spendingActor(req, companyId);
     const current = await authority.get(companyId);
     assertBudgetWithinAuthority(current, change, actor);
     if (!canResolveBudgetOverride(current, actor)
@@ -564,7 +579,7 @@ export function costRoutes(
       const companyId = req.params.companyId as string;
       const incidentId = req.params.incidentId as string;
       assertCompanyAccess(req, companyId);
-      const actor = spendingActor(req);
+      const actor = spendingActor(req, companyId);
       const current = await authority.get(companyId);
       assertCanResolveBudgetOverride(current, actor);
       const incident = await budgets.resolveIncident(

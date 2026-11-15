@@ -1,5 +1,5 @@
 import { nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
-import { and, isNull, ne, type SQL } from "drizzle-orm";
+import { and, eq, isNull, ne, or, type SQL } from "drizzle-orm";
 import { issues } from "@greatstone/db";
 import { TEAM_CHAT_ORIGIN_KIND } from "@greatstone/shared";
 
@@ -20,4 +20,10 @@ export function visibleIssueSql(alias = "issues") {
 /** Work queues and execution totals omit persistent conversation containers. */
 export function executionIssueCondition(): SQL {
   return and(visibleIssueCondition(), isNull(issues.conversationAgentId), nonIdleSlackIssueCondition())!;
+}
+
+/** Agent chats other people started stay out of this viewer's lists and search. Null viewer sees every chat. */
+export function agentChatVisibleTo(viewerUserId: string | null | undefined): SQL | undefined {
+  if (viewerUserId === null || viewerUserId === undefined) return undefined;
+  return or(isNull(issues.conversationAgentId), isNull(issues.conversationUserId), eq(issues.conversationUserId, viewerUserId))!;
 }

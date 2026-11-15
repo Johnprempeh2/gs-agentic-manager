@@ -41,7 +41,7 @@ import {
 } from "@greatstone/shared";
 import { companyArtifactsService } from "./company-artifacts.js";
 import { companySearchExtractService } from "./company-search-extract.js";
-import { visibleIssueCondition, visibleIssueSql } from "./issue-visibility.js";
+import { agentChatVisibleTo, visibleIssueCondition, visibleIssueSql } from "./issue-visibility.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore, taskSearchFieldMatch, taskSearchTermMatch } from "./task-search.js";
 
 const SNIPPET_MAX_CHARS = 240;
@@ -684,7 +684,13 @@ export function companySearchService(db: Db) {
   const extractService = companySearchExtractService(db);
   return {
     extract: extractService.extract,
-    search: async (companyId: string, query: CompanySearchQuery): Promise<CompanySearchResponse> => {
+    search: async (
+      companyId: string,
+      query: CompanySearchQuery,
+      opts: { chatViewerUserId?: string | null } = {},
+    ): Promise<CompanySearchResponse> => {
+      // Someone else's agent chat never shows up in this viewer's search.
+      const chatVisible = agentChatVisibleTo(opts.chatViewerUserId);
       const taskSearch = parseTaskSearch(query.q);
       const normalizedQuery = taskSearch.normalizedQuery;
       const hasSearchText = normalizedQuery.length > 0;
@@ -715,6 +721,7 @@ export function companySearchService(db: Db) {
       const tokenCount = tokens.length;
 
       const issueFilters = issueFilterConditions(companyId, query);
+      if (chatVisible) issueFilters.push(chatVisible);
       const hasIssueOnlyFilters = issueOnlyFiltersActive(query);
 
       // Scope conditions over precomputed flag columns (alias-qualified).
@@ -863,7 +870,7 @@ export function companySearchService(db: Db) {
         }
 
         const resultRows = await db.execute(sql`
-          ${taskSearchCtes(companyId, taskSearch, scope !== "issues", and(...issueFilters))}
+          ${taskSearchCtes(companyId, taskSearch, scope !== "issues", and(...issueFilters), chatVisible)}
           ${sql.join(branches, sql` UNION ALL `)}
         `) as unknown as Array<SearchAggregateRow & Omit<IssueSearchRow, "commentSnippet" | "commentId" | "documentSnippet" | "documentTitle" | "documentKey">>;
 
@@ -1050,6 +1057,7 @@ export function companySearchService(db: Db) {
       async function countArtifacts(filters: CompanySearchQuery = query) {
         if (!hasSearchText) return 0;
         const artifactIssueFilters = issueFilterConditions(companyId, filters);
+        if (chatVisible) artifactIssueFilters.push(chatVisible);
         const artifactIssueConditions = [
           eq(issues.companyId, companyId),
           visibleIssueCondition(),
@@ -1183,13 +1191,13 @@ export function companySearchService(db: Db) {
             .select({ body: issueComments.body })
             .from(issueComments)
             .innerJoin(issues, and(eq(issues.id, issueComments.issueId), eq(issues.companyId, issueComments.companyId)))
-            .where(and(eq(issueComments.companyId, companyId), visibleIssueCondition(), altCondition(sql`${issueComments.body}`)))
+            .where(and(eq(issueComments.companyId, companyId), visibleIssueCondition(), chatVisible, altCondition(sql`${issueComments.body}`)))
             .orderBy(desc(issueComments.createdAt))
             .limit(50),
           db
             .select({ body: issues.description })
             .from(issues)
-            .where(and(eq(issues.companyId, companyId), visibleIssueCondition(), altCondition(sql`coalesce(${issues.description}, '')`)))
+            .where(and(eq(issues.companyId, companyId), visibleIssueCondition(), chatVisible, altCondition(sql`coalesce(${issues.description}, '')`)))
             .orderBy(desc(issues.updatedAt))
             .limit(50),
         ]);
