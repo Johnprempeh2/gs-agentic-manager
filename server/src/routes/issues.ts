@@ -112,6 +112,7 @@ import {
 } from "@greatstone/db";
 import {
   addIssueCommentSchema,
+  escalateToOwnerSchema,
   acceptIssueThreadInteractionSchema,
   stepsProgressSchema,
   attachmentArtifactWorkProductMetadataSchema,
@@ -396,6 +397,7 @@ import {
 } from "../services/issue-execution-policy.js";
 import type { PermissionKey } from "@greatstone/shared";
 import { isActiveCompanyOwner, userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
+import { companyOwnerUserId, personName } from "../services/approval-authority.js";
 import {
   authorizeReviewOverride,
   describeReviewOverride,
@@ -19710,6 +19712,77 @@ export function issueRoutes(
       };
     });
     res.json(summaries);
+  });
+
+  // "Escalate to owner" (Ben's access, Nov 2026). A review waiting on the
+  // caller moves to the owner (added to the stage so it stays with them);
+  // any other task is handed to the owner with a card on their Desk. Both
+  // leave a comment and an activity row.
+  router.post("/issues/:id/escalate", validate(escalateToOwnerSchema), async (req, res) => {
+    assertBoard(req);
+    const issue = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Issue not found");
+    if (!issue) return;
+    const userId = req.actor.userId;
+    if (!userId) throw forbidden("A person escalates.");
+    if (issue.conversationAgentId) throw unprocessable("A chat cannot be escalated");
+    if (issue.status === "done" || issue.status === "cancelled") throw unprocessable("This task is closed");
+    const ownerId = await companyOwnerUserId(db, issue.companyId);
+    if (!ownerId) throw unprocessable("This company has no owner to escalate to");
+    if (ownerId === userId) throw unprocessable("You are the owner");
+    const note = String(req.body.note).trim();
+    const owner = { type: "user" as const, userId: ownerId };
+    const state = parseIssueExecutionState(issue.executionState);
+    const reviewer = state?.status === "pending" ? state.currentParticipant : null;
+    const policy = normalizeIssueExecutionPolicy(issue.executionPolicy ?? null);
+    let kind: "review" | "task";
+    if (reviewer && policy && state) {
+      // Only the person it waits on hands their review to the owner.
+      if (reviewer.type !== "user" || reviewer.userId !== userId) {
+        throw forbidden("Only the reviewer can hand this review to the owner.");
+      }
+      const stages = policy.stages.map((stage) =>
+        stage.id === state.currentStageId && !stage.participants.some((p) => p.type === "user" && p.userId === ownerId)
+          ? { ...stage, participants: [...stage.participants, owner] }
+          : stage);
+      await svc.update(issue.id, {
+        executionPolicy: { ...policy, stages },
+        executionState: { ...state, currentParticipant: owner },
+        assigneeUserId: ownerId,
+        assigneeAgentId: null,
+        actorUserId: userId,
+      });
+      kind = "review";
+    } else {
+      await svc.update(issue.id, { assigneeUserId: ownerId, assigneeAgentId: null, actorUserId: userId });
+      // The comment goes first: a later person comment would expire the card.
+      await svc.addComment(issue.id, `Escalated to ${await personName(db, ownerId)}: ${note}`, { userId });
+      await issueThreadInteractionsSvc.create(issue, {
+        kind: "request_confirmation",
+        title: "Escalated to you",
+        continuationPolicy: "none",
+        addresseeUserId: ownerId,
+        resolverUserIds: [ownerId],
+        payload: {
+          version: 1,
+          prompt: `Escalated to you by ${await personName(db, userId)}: ${note}`,
+          acceptLabel: "I'll take it",
+          rejectLabel: "Send it back",
+          allowDeclineReason: true,
+        },
+      } as never, { userId });
+      kind = "task";
+    }
+    if (kind === "review") await svc.addComment(issue.id, `Escalated to ${await personName(db, ownerId)}: ${note}`, { userId });
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "issue.escalated",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { kind, toUserId: ownerId, fromAssigneeUserId: issue.assigneeUserId, fromAssigneeAgentId: issue.assigneeAgentId, note },
+    });
+    res.json(await svc.getById(issue.id));
   });
 
   // Resolving an unused chat is read-only. POST is used only by first send/upload.

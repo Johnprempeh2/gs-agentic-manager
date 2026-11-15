@@ -77,7 +77,7 @@ import { logger } from "../middleware/logger.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { accessService } from "./access.js";
 import { authorizationService, type AuthorizationActor } from "./authorization.js";
-import { assertCanApproveAsPerson } from "./approval-authority.js";
+import { assertCanApproveAsPerson, assertMayDecideRouted } from "./approval-authority.js";
 import { redactEventPayload, sanitizeRecord } from "../redaction.js";
 import type { WorkerHostCallContext } from "@greatstone/plugin-sdk";
 import {
@@ -2669,6 +2669,9 @@ export function buildHostServices(
           throw new Error("actorUserId is required to decide an approval on behalf of a board user");
         }
         await requireActiveHumanMember(companyId, params.actorUserId);
+        await assertMayDecideRouted(db, {
+          type: "board", userId: params.actorUserId, source: "session", companyIds: [companyId], isInstanceAdmin: false,
+        } as AuthorizationActor, existing);
         if (params.action === "approve") {
           await assertCanApproveAsPerson(db, authorization, {
             type: "board",

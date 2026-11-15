@@ -15,6 +15,7 @@ import {
   requestApprovalRevisionSchema,
   resolveApprovalSchema,
   resubmitApprovalSchema,
+  escalateToOwnerSchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
@@ -47,7 +48,14 @@ import {
 } from "../services/permission-grant-requests.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { forbidden, unprocessable } from "../errors.js";
-import { assertCanApproveAsPerson } from "../services/approval-authority.js";
+import {
+  assertCanApproveAsPerson,
+  assertMayDecideRouted,
+  companyOwnerUserId,
+  personName as personNameOf,
+  routeApprovalTo,
+} from "../services/approval-authority.js";
+import { approvals as approvalsTable } from "@greatstone/db";
 import { REVIEW_PATH_RECOVERY_INSTRUCTION } from "../services/recovery/review-path-recovery.js";
 import { websitePublishApprovals } from "../services/website/publish-approval.js";
 import { commerceRefundApprovals } from "../services/website/commerce-refund-approval.js";
@@ -263,6 +271,35 @@ export function approvalRoutes(
     }
   }
 
+  const personName = (userId: string | null | undefined) => personNameOf(db, userId);
+
+  /**
+   * The owner (or an admin) deciding an approval routed to someone else takes
+   * it over: recorded on the row, as a comment the routed person sees, and in
+   * activity.
+   */
+  async function recordTakeOver(
+    req: Request,
+    approval: { id: string; companyId: string; approverUserId?: string | null },
+    decision: string,
+  ) {
+    const deciderId = req.actor.userId ?? null;
+    const routedTo = approval.approverUserId ?? null;
+    if (!deciderId || !routedTo || routedTo === deciderId) return;
+    await db.update(approvalsTable).set({ decidedOnBehalfOfUserId: routedTo }).where(eq(approvalsTable.id, approval.id));
+    const [decider, routed] = await Promise.all([personName(deciderId), personName(routedTo)]);
+    await svc.addComment(approval.id, `${decider} took this over and ${decision} it on behalf of ${routed}.`, { userId: deciderId });
+    await logActivity(db, {
+      companyId: approval.companyId,
+      actorType: "user",
+      actorId: deciderId,
+      action: "approval.taken_over",
+      entityType: "approval",
+      entityId: approval.id,
+      details: { onBehalfOfUserId: routedTo, decision },
+    });
+  }
+
   async function requireApprovalAccess(req: Request, id: string) {
     const approval = await svc.getById(id);
     if (!approval || !hasCompanyAccess(req, approval.companyId)) {
@@ -377,12 +414,18 @@ export function approvalRoutes(
         : approvalInput.payload;
 
     const actor = getActorInfo(req);
+    const requestedByAgentId = approvalInput.requestedByAgentId ?? (actor.actorType === "agent" ? actor.actorId : null);
     const approval = await svc.create(companyId, {
       ...approvalInput,
       payload: normalizedPayload,
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
-      requestedByAgentId:
-        approvalInput.requestedByAgentId ?? (actor.actorType === "agent" ? actor.actorId : null),
+      requestedByAgentId,
+      // An agent working on a person's task asks that person; anything else asks the owner.
+      approverUserId: await routeApprovalTo(db, companyId, {
+        requestedByAgentId: actor.actorType === "agent" ? requestedByAgentId : null,
+        issueIds: uniqueIssueIds,
+        runId: actor.actorType === "agent" ? actor.runId ?? null : null,
+      }),
       status: "pending",
       decisionNote: null,
       decidedByUserId: null,
@@ -438,6 +481,7 @@ export function approvalRoutes(
     await commerceChanges.assertCanDecide(req.actor, existing);
     // After the type checks, so a refusal names the most specific reason.
     await assertCanApproveAsPerson(db, access, req.actor, existing);
+    await assertMayDecideRouted(db, req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const resolved = await svc.approve(id, decidedByUserId, req.body.decisionNote);
     const { applied } = resolved;
@@ -556,6 +600,7 @@ export function approvalRoutes(
         requestedByUserId: req.actor.userId ?? "board",
       });
     }
+    if (applied) await recordTakeOver(req, existing, "approved");
 
     res.json(redactApprovalPayload(approval));
   });
@@ -575,9 +620,11 @@ export function approvalRoutes(
     await commercePublish.assertCanDecide(req.actor, existing);
     await websiteAccess.assertCanDecide(req.actor, existing);
     await commerceChanges.assertCanDecide(req.actor, existing);
+    await assertMayDecideRouted(db, req.actor, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const rejected = await svc.reject(id, decidedByUserId, req.body.decisionNote);
     const { applied } = rejected;
+    if (applied) await recordTakeOver(req, existing, "rejected");
     const approval = applied ? await commerceRefunds.applyDecision(rejected.approval, "rejected", decidedByUserId) : rejected.approval;
     if (applied) await commercePublish.applyRejection(approval, decidedByUserId, req.body.decisionNote);
     if (applied) await websiteAccess.applyRejection(approval, decidedByUserId, req.body.decisionNote);
@@ -640,8 +687,10 @@ export function approvalRoutes(
       }
       await assertCanDecideSpendingApproval(req, existing);
       await websitePublish.assertCanDecide(req.actor, existing);
+      await assertMayDecideRouted(db, req.actor, existing);
       const decidedByUserId = req.actor.userId ?? "board";
       const approval = await svc.requestRevision(id, decidedByUserId, req.body.decisionNote);
+      await recordTakeOver(req, existing, "sent back");
 
       await logActivity(db, {
         companyId: approval.companyId,
@@ -656,6 +705,43 @@ export function approvalRoutes(
       res.json(redactApprovalPayload(approval));
     },
   );
+
+  // "Escalate to owner": the person it waits on hands it to the owner with a
+  // short note. The owner's Desk shows it; activity records who and why.
+  router.post("/approvals/:id/escalate", validate(escalateToOwnerSchema), async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const existing = await requireApprovalAccess(req, id);
+    if (!existing) {
+      res.status(404).json({ error: "Approval not found" });
+      return;
+    }
+    if (existing.status !== "pending" && existing.status !== "revision_requested") {
+      throw unprocessable("Only an open approval can be escalated");
+    }
+    const userId = req.actor.userId;
+    if (!userId) throw forbidden("A person escalates.");
+    const ownerId = await companyOwnerUserId(db, existing.companyId);
+    if (!ownerId) throw unprocessable("This company has no owner to escalate to");
+    if (ownerId === existing.approverUserId) throw unprocessable("This is already with the owner");
+    const note = String(req.body.note).trim();
+    const [updated] = await db
+      .update(approvalsTable)
+      .set({ approverUserId: ownerId, escalatedByUserId: userId, escalationNote: note, updatedAt: new Date() })
+      .where(eq(approvalsTable.id, existing.id))
+      .returning();
+    await svc.addComment(existing.id, `Escalated to ${await personName(ownerId)} by ${await personName(userId)}: ${note}`, { userId });
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "approval.escalated",
+      entityType: "approval",
+      entityId: existing.id,
+      details: { fromUserId: existing.approverUserId ?? null, toUserId: ownerId, note },
+    });
+    res.json(redactApprovalPayload(updated!));
+  });
 
   router.post("/approvals/:id/resubmit", validate(resubmitApprovalSchema), async (req, res) => {
     const id = req.params.id as string;

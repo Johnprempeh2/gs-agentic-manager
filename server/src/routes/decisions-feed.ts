@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { issueComments, issues } from "@greatstone/db";
+import { companyMemberships, issueComments, issues } from "@greatstone/db";
 import type { DecisionClarityResponse, DecisionsFeedCount } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
@@ -12,7 +12,14 @@ import { issueService } from "../services/issues.js";
 import { DECISIONS_CLARITY_SOURCE, decisionsFeedService } from "../services/decisions-feed.js";
 import { needsMeService } from "../services/needs-me.js";
 import type { AttentionServiceOptions } from "../services/attention.js";
-import { assertBoard, assertCompanyAccess } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  hasCompanyOwnerOrAdminRole,
+  OWNER_OR_ADMIN_REQUIRED_CODE,
+  OWNER_OR_ADMIN_REQUIRED_MESSAGE,
+} from "./authz.js";
+import { forbidden, notFound } from "../errors.js";
 
 type Heartbeat = ReturnType<typeof heartbeatService>;
 
@@ -29,6 +36,27 @@ function boardUserId(req: Request, res: Response, companyId: string) {
     return null;
   }
   return req.actor.userId;
+}
+
+/**
+ * "View Ben That's Desk": an owner or admin may read a member's Desk as that
+ * member sees it (`?member=<userId>`). Returns whose Desk to build.
+ */
+async function deskSubject(db: Db, req: Request, companyId: string, viewerUserId: string) {
+  const member = typeof req.query.member === "string" ? req.query.member.trim() : "";
+  if (!member || member === viewerUserId) return { userId: viewerUserId, asMember: false };
+  if (!hasCompanyOwnerOrAdminRole(req, companyId)) throw forbidden(OWNER_OR_ADMIN_REQUIRED_MESSAGE, { code: OWNER_OR_ADMIN_REQUIRED_CODE });
+  const [row] = await db
+    .select({ id: companyMemberships.id })
+    .from(companyMemberships)
+    .where(and(
+      eq(companyMemberships.companyId, companyId),
+      eq(companyMemberships.principalType, "user"),
+      eq(companyMemberships.principalId, member),
+      eq(companyMemberships.status, "active"),
+    ));
+  if (!row) throw notFound("Member not found");
+  return { userId: member, asMember: true };
 }
 
 function clarityCommentBody(question: string) {
@@ -49,7 +77,7 @@ export function decisionsFeedRoutes(
     const companyId = req.params.companyId as string;
     const userId = boardUserId(req, res, companyId);
     if (!userId) return;
-    res.json(await feeds.build(companyId, { userId }));
+    res.json(await feeds.build(companyId, await deskSubject(db, req, companyId, userId)));
   });
 
   router.get("/companies/:companyId/decisions-feed/count", async (req, res) => {
@@ -67,7 +95,7 @@ export function decisionsFeedRoutes(
     const companyId = req.params.companyId as string;
     const userId = boardUserId(req, res, companyId);
     if (!userId) return;
-    res.json(await needsMe.build(companyId, { userId }));
+    res.json(await needsMe.build(companyId, await deskSubject(db, req, companyId, userId)));
   });
 
   // Ask for clarity: post the board's short question on the task and wake the

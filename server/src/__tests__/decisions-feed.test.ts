@@ -1499,9 +1499,9 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
           companyId: elsewhereId, principalType: "user", principalId: strangerId, status: "active", membershipRole: "owner",
         });
 
+        // Review cards go to the person they wait on (Ben's access, Nov 2026): a stranger gets none.
         const card = cardFor(await decisionsFeedService(db).build(seeded.companyId, { userId: strangerId }), seeded.issueId);
-        expect(card?.reviewer).toEqual(expect.objectContaining({ id: "local-board", isYou: false }));
-        expect(card!.actions.map((candidate) => candidate.id)).not.toContain("approve");
+        expect(card).toBeNull();
       });
 
       it("counts the owner's local-board tasks as theirs in Needs me and the my-tasks list", async () => {

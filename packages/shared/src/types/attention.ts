@@ -273,7 +273,15 @@ export interface AttentionResolverAudience {
   createdByAgentName: string | null;
 }
 
+/** The person a routed card waits on, when it is not the viewer (Ben's access, Nov 2026). */
+export interface AttentionRoutedTo {
+  userId: string;
+  name: string;
+}
+
 export interface AttentionItem {
+  /** Set on approval and review cards that wait on someone other than the viewer. */
+  routedTo?: AttentionRoutedTo | null;
   id: string;
   companyId: string;
   sourceKind: AttentionSourceKind;

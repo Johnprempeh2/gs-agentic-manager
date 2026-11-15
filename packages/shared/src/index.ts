@@ -2539,6 +2539,8 @@ export {
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
   addApprovalCommentSchema,
+  escalateToOwnerSchema,
+  type EscalateToOwner,
   type CreateApproval,
   type UpsertBudgetPolicy,
   type ResolveBudgetIncident,

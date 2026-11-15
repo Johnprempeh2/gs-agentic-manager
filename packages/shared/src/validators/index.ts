@@ -697,6 +697,8 @@ export {
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
   addApprovalCommentSchema,
+  escalateToOwnerSchema,
+  type EscalateToOwner,
   type CreateApproval,
   type ResolveApproval,
   type RequestApprovalRevision,

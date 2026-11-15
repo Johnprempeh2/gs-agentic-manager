@@ -32,7 +32,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
   const feeds = decisionsFeedService(db, serviceOptions);
 
   return {
-    build: async (companyId: string, options: { userId: string; now?: Date }): Promise<NeedsMe> => {
+    build: async (companyId: string, options: { userId: string; asMember?: boolean; now?: Date }): Promise<NeedsMe> => {
       const now = options.now ?? new Date();
       // An owner also answers for the legacy `local-board` user (board-identity.ts).
       const viewerUserIds = await viewerPrincipalUserIds(db, companyId, options.userId);

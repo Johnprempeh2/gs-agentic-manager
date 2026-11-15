@@ -9,6 +9,7 @@ import { budgetService } from "./budgets.js";
 import { notifyHireApproved } from "./hire-hook.js";
 import { applyAiRouteChange, requestedAiRoute } from "./ai-route-change.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { routeApprovalTo } from "./approval-authority.js";
 
 export function approvalService(db: Db) {
   const agentsSvc = agentService(db);
@@ -116,12 +117,18 @@ export function approvalService(db: Db) {
       return rows[0] ?? null;
     },
 
-    create: (companyId: string, data: Omit<typeof approvals.$inferInsert, "companyId">) =>
-      db
+    // Every approval is routed to a person (Ben's access, Nov 2026): the
+    // caller's choice, or the owner.
+    create: async (companyId: string, data: Omit<typeof approvals.$inferInsert, "companyId">) => {
+      const approverUserId = data.approverUserId !== undefined
+        ? data.approverUserId
+        : await routeApprovalTo(db, companyId, { requestedByAgentId: data.requestedByAgentId ?? null });
+      return db
         .insert(approvals)
-        .values({ ...data, companyId })
+        .values({ ...data, approverUserId, companyId })
         .returning()
-        .then((rows) => rows[0]),
+        .then((rows) => rows[0]);
+    },
 
     // Cancel an open (pending/revision_requested) approval without a board
     // decision — e.g. when its paired agent is terminated during duplicate
