@@ -1,4 +1,4 @@
-import type { AgentAppearance, MemoryActorRef, MemoryGraphNode } from "@greatstone/shared";
+import type { AgentAppearance, MemoryActorRef, MemoryGraphContributor, MemoryGraphNode } from "@greatstone/shared";
 import { actorLabel } from "./memoryLabels";
 
 /**
@@ -58,27 +58,43 @@ export function findCeoAgentId(agents: MemoryAgentInfo[], contributors: MemoryAc
   return contributor?.agentId ?? null;
 }
 
-/** One row per contributor in the data, the main agent first, then by entry count. */
-export function listContributors(nodes: MemoryGraphNode[], agents: MemoryAgentInfo[]): MemoryContributor[] {
+/**
+ * One row per contributor, the main agent first, then by entry count. `totals` are the
+ * server's counts over every matching entry; with them, a contributor whose entries are
+ * all older than the loaded ones still gets a row and its real count.
+ */
+export function listContributors(
+  nodes: MemoryGraphNode[],
+  agents: MemoryAgentInfo[],
+  totals?: MemoryGraphContributor[],
+): MemoryContributor[] {
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
-  const ceoId = findCeoAgentId(agents, nodes.map((node) => node.contributor));
+  const ceoId = findCeoAgentId(agents, [...(totals ?? []).map((total) => total.contributor), ...nodes.map((node) => node.contributor)]);
   const rows = new Map<string, MemoryContributor>();
-  for (const node of nodes) {
-    const key = contributorFocusKey(node.contributor);
+  const add = (actor: MemoryActorRef, count: number) => {
+    const key = contributorFocusKey(actor);
     const existing = rows.get(key);
     if (existing) {
-      existing.count += 1;
-      continue;
+      existing.count += count;
+      return;
     }
-    const agent = node.contributor.actorType === "agent" && node.contributor.agentId ? agentsById.get(node.contributor.agentId) ?? null : null;
+    const agent = actor.actorType === "agent" && actor.agentId ? agentsById.get(actor.agentId) ?? null : null;
     rows.set(key, {
       key,
-      name: agent?.name ?? actorLabel(node.contributor),
-      actorType: node.contributor.actorType,
-      count: 1,
-      isCeo: ceoId !== null && node.contributor.actorType === "agent" && node.contributor.agentId === ceoId,
+      name: agent?.name ?? actorLabel(actor),
+      actorType: actor.actorType,
+      count,
+      isCeo: ceoId !== null && actor.actorType === "agent" && actor.agentId === ceoId,
       agent,
     });
+  };
+  if (totals) {
+    for (const total of totals) add(total.contributor, total.count);
+    // Loaded entries the totals missed (a write since the count); never double counted.
+    const counted = new Set(rows.keys());
+    for (const node of nodes) if (!counted.has(contributorFocusKey(node.contributor))) add(node.contributor, 1);
+  } else {
+    for (const node of nodes) add(node.contributor, 1);
   }
   return [...rows.values()].sort((a, b) => Number(b.isCeo) - Number(a.isCeo) || b.count - a.count || a.name.localeCompare(b.name));
 }

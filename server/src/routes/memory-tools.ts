@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@greatstone/db";
+import { MEMORY_AGENT_INSTRUCTIONS } from "@greatstone/shared";
 import { forbidden, HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import {
@@ -93,6 +94,8 @@ export function memoryToolRoutes(
         protocolVersion: "2025-03-26",
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "paperclip-memory-tools", version: "1" },
+        // Agents only: the connected apps choose for themselves when to use memory.
+        ...(isExternalApp({ app }) ? {} : { instructions: MEMORY_AGENT_INSTRUCTIONS }),
       });
     }
     if (method === "ping") return send({});

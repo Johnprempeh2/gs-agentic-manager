@@ -23,6 +23,7 @@ import {
   MEMORY_HARD_BOUNDARY_KINDS,
   MEMORY_MY_WORK_SCOPE_REF,
   MEMORY_REVIEW_EXPIRED_DAYS,
+  MEMORY_CONTRIBUTION_DEFERRED_MESSAGE,
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
   type CreateMemoryScope,
@@ -870,7 +871,7 @@ export function memoryGatewayService(
     return {
       record: toRecord(synced, scope),
       engineAvailable,
-      message: engineAvailable ? null : MEMORY_UNAVAILABLE_MESSAGE,
+      message: engineAvailable ? null : MEMORY_CONTRIBUTION_DEFERRED_MESSAGE,
       possibleConflicts,
       conflictNote: possibleConflicts.length > 0 ? MEMORY_CONFLICT_NOTE : null,
       flags,

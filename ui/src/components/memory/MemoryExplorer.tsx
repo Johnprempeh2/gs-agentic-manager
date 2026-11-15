@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, type ReactNode } from "react";
 import { Box, Link2, List } from "lucide-react";
-import type { MemoryGraphEdge, MemoryGraphNode, MemoryRecordStatus } from "@greatstone/shared";
+import type { MemoryGraphContributor, MemoryGraphEdge, MemoryGraphNode, MemoryRecordStatus } from "@greatstone/shared";
 import { Button } from "../ui/button";
 import { MemoryGraphLegend } from "./MemoryGraphLegend";
 import { listContributors, type MemoryAgentInfo, type MemoryContributor } from "./memoryContributors";
@@ -33,6 +33,8 @@ export function deriveMemoryExplorer(input: {
   nodes: MemoryGraphNode[];
   edges: MemoryGraphEdge[];
   agents: MemoryAgentInfo[];
+  /** The server's full counts per contributor, when it sent them. */
+  totals?: MemoryGraphContributor[];
   groupBy: MemoryGraphGroupBy;
   showSuggested: boolean;
   focusKeys: string[];
@@ -42,7 +44,7 @@ export function deriveMemoryExplorer(input: {
     showSuggested: input.showSuggested,
     agents: input.agents,
   });
-  const contributors = listContributors(input.nodes, input.agents);
+  const contributors = listContributors(input.nodes, input.agents, input.totals);
   const known = new Set(contributors.map((contributor) => contributor.key));
   const focusKeys = input.focusKeys.filter((key) => known.has(key));
   const focusIds = focusNodeIds(graph3d, focusKeys);
@@ -53,11 +55,11 @@ export function deriveMemoryExplorer(input: {
 }
 
 export function useMemoryExplorer(input: Parameters<typeof deriveMemoryExplorer>[0]): MemoryExplorerData {
-  const { nodes, edges, agents, groupBy, showSuggested, focusKeys } = input;
+  const { nodes, edges, agents, totals, groupBy, showSuggested, focusKeys } = input;
   const focusKey = focusKeys.join(",");
   return useMemo(
-    () => deriveMemoryExplorer({ nodes, edges, agents, groupBy, showSuggested, focusKeys: focusKey ? focusKey.split(",") : [] }),
-    [nodes, edges, agents, groupBy, showSuggested, focusKey],
+    () => deriveMemoryExplorer({ nodes, edges, agents, totals, groupBy, showSuggested, focusKeys: focusKey ? focusKey.split(",") : [] }),
+    [nodes, edges, agents, totals, groupBy, showSuggested, focusKey],
   );
 }
 

@@ -120,6 +120,9 @@ describeEmbeddedPostgres("agent memory tools (MCP)", () => {
 
     await request(board).patch(`/api/companies/${companyId}/memory/settings`).send({ enabled: true });
     expect(await companyMemoryEnabled(ctx.db, companyId)).toBe(true);
+    // Agents are told when to use memory; Claude hides the tools until asked.
+    const init = await rpc(app, "initialize");
+    expect(init.body.result.instructions).toMatch(/memory_recall[\s\S]*memory_contribute/);
     const list = await rpc(app, "tools/list");
     expect(list.status).toBe(200);
     expect(list.body.result.tools.map((tool: { name: string }) => tool.name)).toEqual([

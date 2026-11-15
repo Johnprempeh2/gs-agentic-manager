@@ -260,6 +260,12 @@ describeEmbeddedPostgres("memory graph and contribution activity (GRE-864)", () 
     expect((await ok<MemoryGraph>(f.board, `${f.base}/graph?scopeId=${f.org.id}`)).nodes).toHaveLength(5);
     const limited = await ok<MemoryGraph>(f.board, `${f.base}/graph?limit=2`);
     expect(limited.truncated).toBe(true);
+    // Contributor counts cover every matching entry, not just the two returned.
+    expect(limited.contributors!.reduce((sum, row) => sum + row.count, 0)).toBe(5);
+    expect(limited.contributors!.find((row) => row.contributor.agentId === f.mason.id)).toMatchObject({
+      count: 2,
+      contributor: { actorType: "agent", name: "Mason" },
+    });
     const kept = new Set(limited.nodes.map((node) => node.id));
     expect(limited.edges.every((edge) => kept.has(edge.from) && kept.has(edge.to))).toBe(true);
   });
