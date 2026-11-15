@@ -395,9 +395,9 @@ describe.sequential("company route cross-company authorization", () => {
     expect(mockCompanyService.update).not.toHaveBeenCalled();
     expect(mockCompanyService.archive).not.toHaveBeenCalled();
     expect(mockCompanyService.remove).not.toHaveBeenCalled();
-    // Export and the safe import are unchanged in this PR.
-    await request(memberApp).post(`/api/companies/${companyBId}/export`).send(exportRequest).expect(200);
-    await request(memberApp).post(`/api/companies/${companyBId}/exports/preview`).send(exportRequest).expect(200);
+    // Exporting the whole company is for owners and admins too (Ben's access, Nov 2026).
+    await request(memberApp).post(`/api/companies/${companyBId}/export`).send(exportRequest).expect(403);
+    await request(memberApp).post(`/api/companies/${companyBId}/exports/preview`).send(exportRequest).expect(403);
     await request(memberApp).post(`/api/companies/${companyBId}/imports/preview`).send(importRequest()).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/imports/apply`).send(importRequest()).expect(200);
 
