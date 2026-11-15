@@ -14,6 +14,7 @@ import {
   issueComments,
   issueReadStates,
   issues,
+  principalPermissionGrants,
   userTourDismissals,
 } from "@greatstone/db";
 import {
@@ -169,7 +170,7 @@ describeEmbeddedPostgres("Getting started quest", () => {
   });
 
   it("says what an operator can and cannot do, and names the owner to ask; an owner sees the rest", async () => {
-    const { companyId, john, ben } = await seed();
+    const { companyId, leadId, john, ben } = await seed();
     const op = await request(app(ben, companyId)).get(`/api/companies/${companyId}/onboarding/me`).expect(200);
     expect(op.body.roleLabel).toBe("Operator");
     const opCan = op.body.control.can.map((l: any) => l.key);
@@ -177,11 +178,20 @@ describeEmbeddedPostgres("Getting started quest", () => {
     expect(opCan).toEqual(expect.arrayContaining(["read", "act", "assign"]));
     expect(opCannot).toEqual(expect.arrayContaining(["invite", "access", "agents", "company", "website-deploy"]));
     expect(op.body.control.askFirst).toEqual([{ name: "John Prempeh", role: "Owner" }]);
+    expect(opCannot).toContain("self-approve");
+    expect(opCan).not.toContain("agent-list"); // no allow-list: every agent
+
+    // The owner's per-person agent allow-list is read back in plain words.
+    await db.insert(principalPermissionGrants).values({
+      companyId, principalType: "user", principalId: ben, permissionKey: "agents:allowlist", scope: { agentIds: [leadId] },
+    });
+    const listed = await request(app(ben, companyId)).get(`/api/companies/${companyId}/onboarding/me`).expect(200);
+    expect(listed.body.control.can).toContainEqual({ key: "agent-list", text: "Wake and give work to these agents only: Everest" });
 
     const owner = await request(app(john, companyId)).get(`/api/companies/${companyId}/onboarding/me`).expect(200);
     expect(owner.body.roleLabel).toBe("Owner");
     expect(owner.body.autoOpen).toBe(false); // joined before launch
-    expect(owner.body.control.can.map((l: any) => l.key)).toEqual(expect.arrayContaining(["invite", "access", "agents", "company"]));
+    expect(owner.body.control.can.map((l: any) => l.key)).toEqual(expect.arrayContaining(["invite", "access", "agents", "company", "self-approve"]));
     expect(owner.body.control.askFirst).toEqual([]);
     expect(owner.body.chapters.map((c: any) => c.key)).toContain("running-the-team");
   });

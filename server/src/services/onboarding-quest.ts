@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, gte, inArray, isNull, like, min, ne } from "drizzle-orm";
 import {
+  agents,
   authUsers,
   companyMemberships,
   issueComments,
   issueReadStates,
   issues,
+  principalPermissionGrants,
   userTourDismissals,
   type Db,
 } from "@greatstone/db";
@@ -76,11 +78,21 @@ interface ControlContext {
   role: HumanCompanyMembershipRole;
   rights: ReadonlySet<string>;
   features: QuestFeatures;
+  /** The owner's agent allow-list for this person (agent names), or null when they may direct every agent. */
+  agentList: string[] | null;
 }
 
 /** "What you control", line by line. Each line is true or false for this person; nothing is assumed from the role name alone. */
-const CONTROL_LINES: Array<{ key: string; text: string; can: (ctx: ControlContext) => boolean; when?: (ctx: ControlContext) => boolean }> = [
+const CONTROL_LINES: Array<{ key: string; text: string | ((ctx: ControlContext) => string); can: (ctx: ControlContext) => boolean; when?: (ctx: ControlContext) => boolean }> = [
   { key: "read", text: "Read tasks, projects, Messages and your Desk", can: () => true },
+  {
+    key: "agent-list",
+    text: (ctx) => ctx.agentList!.length
+      ? `Wake and give work to these agents only: ${ctx.agentList!.join(", ")}`
+      : "Wake or give work to an agent: your list of agents is empty",
+    can: (ctx) => ctx.agentList!.length > 0,
+    when: (ctx) => ctx.role !== "viewer" && ctx.agentList !== null,
+  },
   { key: "act", text: "Message agents, reply on tasks and give agents work", can: (ctx) => ctx.role !== "viewer" },
   { key: "assign", text: "Assign tasks to people and agents", can: (ctx) => ctx.rights.has("tasks:assign") },
   { key: "invite", text: "Invite new people", can: (ctx) => ctx.rights.has("users:invite") },
@@ -90,12 +102,8 @@ const CONTROL_LINES: Array<{ key: string; text: string; can: (ctx: ControlContex
   { key: "website-publish", text: "Approve and publish the website to staging", can: (ctx) => ctx.rights.has("website:publish") },
   { key: "website-deploy", text: "Deploy the website live", can: (ctx) => ctx.rights.has("website:deploy") },
   { key: "company", text: "Change company settings, and release or roll back GSAM", can: (ctx) => isCompanyOwnerOrAdminRole(ctx.role) },
-  {
-    key: "self-approve",
-    text: "Approve your own requests",
-    can: (ctx) => ctx.role === "owner",
-    when: (ctx) => ctx.features.routedApprovals,
-  },
+  // The self-approval rule is on main (operator safety floor, PR 1191): only an owner approves their own request.
+  { key: "self-approve", text: "Approve your own requests", can: (ctx) => ctx.role === "owner" },
 ];
 
 export interface QuestControl {
@@ -233,10 +241,30 @@ export function onboardingQuestService(db: Db, opts: { features?: () => QuestFea
     const askFirst = [...people.filter((p) => p.role === "owner"), ...people.filter((p) => p.role === "admin")]
       .map((p) => ({ name: p.name, role: HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS[normalizeHumanRole(p.role)] }));
     return {
-      can: lines.filter((line) => line.can(ctx)).map(({ key, text }) => ({ key, text })),
-      cannot: lines.filter((line) => !line.can(ctx)).map(({ key, text }) => ({ key, text })),
+      can: lines.filter((line) => line.can(ctx)).map((line) => ({ key: line.key, text: typeof line.text === "string" ? line.text : line.text(ctx) })),
+      cannot: lines.filter((line) => !line.can(ctx)).map((line) => ({ key: line.key, text: typeof line.text === "string" ? line.text : line.text(ctx) })),
       askFirst,
     };
+  }
+
+  /** The agent allow-list (grant agents:allowlist, scope { agentIds }); owners and admins are never limited by one. */
+  async function agentListOf(companyId: string, userId: string, role: HumanCompanyMembershipRole): Promise<string[] | null> {
+    if (role === "owner" || role === "admin") return null;
+    const grant = await db
+      .select({ scope: principalPermissionGrants.scope })
+      .from(principalPermissionGrants)
+      .where(and(
+        eq(principalPermissionGrants.companyId, companyId),
+        eq(principalPermissionGrants.principalType, "user"),
+        eq(principalPermissionGrants.principalId, userId),
+        eq(principalPermissionGrants.permissionKey, "agents:allowlist"),
+      ))
+      .then((rows) => rows[0] ?? null);
+    if (!grant) return null;
+    const ids = Array.isArray(grant.scope?.agentIds) ? (grant.scope!.agentIds as unknown[]).filter((id): id is string => typeof id === "string") : [];
+    if (!ids.length) return [];
+    const rows = await db.select({ id: agents.id, name: agents.name }).from(agents).where(and(eq(agents.companyId, companyId), inArray(agents.id, ids)));
+    return rows.map((row) => row.name).sort();
   }
 
   async function viewerOf(companyId: string, userId: string) {
@@ -292,7 +320,7 @@ export function onboardingQuestService(db: Db, opts: { features?: () => QuestFea
       stored = await marks(userId);
       progress = questProgress(visible, doneAt, skipped, startedAt, stored.get(DONE) ?? null);
     }
-    const ctx = { role: viewer.role, rights: viewer.rights, features: viewer.features };
+    const ctx = { role: viewer.role, rights: viewer.rights, features: viewer.features, agentList: await agentListOf(companyId, userId, viewer.role) };
     return {
       ...progress,
       role: viewer.role,
