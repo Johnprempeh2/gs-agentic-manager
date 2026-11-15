@@ -1746,7 +1746,8 @@ export function TaskChatComposer({
                     : "Send"
               }
               className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100",
+                // A thumb-sized send on phones (44px), the drawn 32px with a mouse.
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100 pointer-coarse:size-11",
                 streamlined
                   ? "gs-btn-primary bg-primary text-primary-foreground disabled:bg-muted disabled:text-subtle-foreground disabled:shadow-none disabled:opacity-100"
                   : "bg-primary text-primary-foreground disabled:bg-muted disabled:text-muted-foreground",
