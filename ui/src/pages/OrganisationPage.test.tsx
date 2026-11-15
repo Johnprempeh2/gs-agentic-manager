@@ -695,6 +695,17 @@ describe("Organisation company page", () => {
       expect(rows[2]!.querySelector('a[href="/api/files/e1"]')).not.toBeNull();
     });
 
+    it("before a website is connected, does not send people to a link control that is not there yet", async () => {
+      mockCommerce.site = null;
+      mockApi.get.mockResolvedValue(detail());
+      mockApi.history.mockResolvedValue(history());
+      await render();
+      const notice = container.querySelector('[data-testid="organisation-not-linked"]')?.textContent ?? "";
+      expect(notice).toContain("Connect the website first");
+      expect(notice).not.toContain("Link it under Website organisation");
+      expect(container.querySelector('[data-testid="organisation-website-link"]')).toBeNull();
+    });
+
     it("shows a client with no website organisation id as not linked, never matched by name", async () => {
       mockCommerce.site = { site: { id: "site-1" }, feature: { id: "f-shop" } };
       mockApi.get.mockResolvedValue(detail());

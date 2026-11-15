@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, MessageSquarePlus, Palette, RefreshCw } from "lucide-react";
+import { WebsiteConnectFirst } from "./WebsiteConnectFirst";
 import type {
   WebsiteProperty,
   WebsiteSite,
@@ -649,9 +650,8 @@ export function WebsiteStyleTab({ companyId, property }: { companyId: string; pr
   if (isLoading) return <StyleLoading />;
   if (!site) {
     return (
-      <div className="rounded-xl border border-dashed p-8 text-center" data-testid="website-style-no-site">
-        <p className="text-sm font-medium">Connect the site first</p>
-        <p className="text-sm text-muted-foreground">The Style tab reads the connected site's stylesheet and release theme.</p>
+      <div data-testid="website-style-no-site">
+        <WebsiteConnectFirst icon={Palette} message="The Style tab reads the connected site's stylesheet and release theme. Connect a site under Releases." />
       </div>
     );
   }

@@ -1126,8 +1126,10 @@ function PipelinesIndex() {
 
   return (
     <div className="w-full max-w-6xl px-6 py-8">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div data-tour="pipelines-title">
+      {/* Wraps by the space there is: at tablet width beside the sidebar a row
+          squeezed the title's sentence to two words a line (15 Nov). */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div data-tour="pipelines-title" className="min-w-0 flex-1 basis-72">
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Work</p>
           <h1 className="text-2xl font-semibold text-foreground">Pipelines</h1>
           <p className="mt-1 text-sm text-muted-foreground">
