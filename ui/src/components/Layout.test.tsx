@@ -140,6 +140,10 @@ vi.mock("./EverestOrb", () => ({
   EverestOrb: () => null,
 }));
 
+vi.mock("./OnboardingQuestHost", () => ({
+  OnboardingQuestHost: () => null,
+}));
+
 vi.mock("./MessagesPane", () => ({
   MessagesPane: () => <div>Messages list</div>,
 }));
