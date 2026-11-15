@@ -5,6 +5,7 @@ import { BrowserRouter } from "@/lib/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { restoreSnapshots } from "./lib/offline-snapshot";
 import { prefetchColdIssueDetail } from "./lib/issueDetailCache";
+import { shouldRetryQuery } from "./lib/query-retry";
 import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { SentryGate } from "./components/SentryGate";
@@ -51,6 +52,8 @@ const queryClient = new QueryClient({
       // tuning point if we need to trim the cache footprint further.
       gcTime: 5 * 60_000,
       refetchOnWindowFocus: true,
+      // A "not found" or "not allowed" is the answer, so it shows at once.
+      retry: shouldRetryQuery,
     },
   },
 });
