@@ -559,6 +559,63 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
   );
 
   it(
+    "copy engine writes COPY blocks, honours row filters, and restores through psql",
+    async () => {
+      const sourceConnectionString = await createTempDatabase();
+      const restoreConnectionString = await createSiblingDatabase(sourceConnectionString, "paperclip_copy_engine_restore");
+      const backupDir = createTempDir("paperclip-db-copy-engine-");
+      const sourceSql = postgres(sourceConnectionString, { max: 1, onnotice: () => {} });
+      const restoreSql = postgres(restoreConnectionString, { max: 1, onnotice: () => {} });
+      const originalPgDumpPath = process.env.GSAM_PG_DUMP_PATH;
+      process.env.GSAM_PG_DUMP_PATH = "/bin/false"; // must never be used by the copy engine
+
+      try {
+        await sourceSql.unsafe(`
+          CREATE TABLE "public"."copy_events" ("id" serial PRIMARY KEY, "note" text, "meta" jsonb, "created_at" timestamptz NOT NULL);
+          CREATE INDEX "copy_events_created_idx" ON "public"."copy_events" ("created_at");
+          INSERT INTO "public"."copy_events" ("note", "meta", "created_at") VALUES
+            (E'tab\there\nnew line \\\\ back', '{"path":"/x/y"}', now()),
+            ('old', NULL, now() - interval '30 days'),
+            (NULL, '{"a":"\u00e9"}', now());
+        `);
+
+        const result = await runDatabaseBackup({
+          connectionString: sourceConnectionString,
+          backupDir,
+          retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+          filenamePrefix: "paperclip-copy-engine",
+          backupEngine: "copy",
+          rowFilters: { copy_events: "created_at > now() - interval '14 days'" },
+        });
+
+        const backupSql = gunzipSync(await fs.promises.readFile(result.backupFile)).toString("utf8");
+        expect(backupSql).toContain(" FROM stdin;");
+        expect(backupSql).toContain("-- Data for: public.copy_events (2 rows)");
+
+        await runDatabaseRestore({ connectionString: restoreConnectionString, backupFile: result.backupFile });
+
+        const rows = await restoreSql.unsafe<{ note: string | null; meta: unknown }[]>(
+          `SELECT "note", "meta" FROM "public"."copy_events" ORDER BY "id"`,
+        );
+        expect(rows).toEqual([
+          { note: "tab\there\nnew line \\ back", meta: { path: "/x/y" } },
+          { note: null, meta: { a: "\u00e9" } },
+        ]);
+        const next = await restoreSql.unsafe<{ id: number }[]>(
+          `INSERT INTO "public"."copy_events" ("created_at") VALUES (now()) RETURNING "id"`,
+        );
+        expect(next[0]?.id).toBe(4);
+      } finally {
+        if (originalPgDumpPath === undefined) delete process.env.GSAM_PG_DUMP_PATH;
+        else process.env.GSAM_PG_DUMP_PATH = originalPgDumpPath;
+        await sourceSql.end();
+        await restoreSql.end();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "backs up and restores CHECK constraints, keeping NOT VALID ones not validated",
     async () => {
       const sourceConnectionString = await createTempDatabase();

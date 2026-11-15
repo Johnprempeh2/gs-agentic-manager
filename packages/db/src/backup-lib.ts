@@ -27,7 +27,10 @@ export type RunDatabaseBackupOptions = {
   includeMigrationJournal?: boolean;
   excludeTables?: string[];
   nullifyColumns?: Record<string, string[]>;
-  backupEngine?: "auto" | "pg_dump" | "javascript";
+  /** Table -> SQL condition: only rows matching it are copied (the table and its schema still are). */
+  rowFilters?: Record<string, string>;
+  /** "copy" is the built-in engine with COPY data blocks, never pg_dump: fast to restore with psql. */
+  backupEngine?: "auto" | "pg_dump" | "javascript" | "copy";
 };
 
 export type RunDatabaseBackupResult = {
@@ -252,7 +255,8 @@ function nonSystemSchemaPredicate(identifier: string): string {
 
 function hasBackupTransforms(opts: RunDatabaseBackupOptions): boolean {
   return (opts.excludeTables?.length ?? 0) > 0 ||
-    Object.keys(opts.nullifyColumns ?? {}).length > 0;
+    Object.keys(opts.nullifyColumns ?? {}).length > 0 ||
+    Object.keys(opts.rowFilters ?? {}).length > 0;
 }
 
 function formatPostgresArrayElement(value: unknown): string {
@@ -533,6 +537,9 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
   const canUsePgDump = !hasBackupTransforms(opts);
   const excludedTableNames = normalizeTableNameSet(opts.excludeTables);
   const nullifiedColumnsByTable = normalizeNullifyColumnMap(opts.nullifyColumns);
+  const rowFilterByTable = new Map(
+    Object.entries(opts.rowFilters ?? {}).map(([table, condition]) => [normalizeTableSelector(table), condition]),
+  );
   let sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
   let sqlClosed = false;
   const closeSql = async () => {
@@ -944,7 +951,9 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     for (const { schema_name, tablename } of tables) {
       const currentTableKey = tableKey(schema_name, tablename);
       const qualifiedTableName = quoteQualifiedName(schema_name, tablename);
-      const count = await sql.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${qualifiedTableName}`);
+      const rowFilter = rowFilterByTable.get(currentTableKey);
+      const rowSource = rowFilter ? `${qualifiedTableName} WHERE ${rowFilter}` : qualifiedTableName;
+      const count = await sql.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${rowSource}`);
       if (excludedTableNames.has(currentTableKey) || (count[0]?.n ?? 0) === 0) continue;
 
       // Get column info for this table
@@ -965,7 +974,9 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         const copySql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
         try {
           const copyStream = await copySql
-            .unsafe(`COPY ${qualifiedTableName} (${colNames}) TO STDOUT`)
+            .unsafe(rowFilter
+              ? `COPY (SELECT ${colNames} FROM ${rowSource}) TO STDOUT`
+              : `COPY ${qualifiedTableName} (${colNames}) TO STDOUT`)
             .readable();
           for await (const chunk of copyStream) {
             await writer.writeRaw(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
@@ -980,7 +991,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       }
 
       const rowCursor = sql
-        .unsafe(`SELECT * FROM ${qualifiedTableName}`)
+        .unsafe(`SELECT * FROM ${rowSource}`)
         .values()
         .cursor(BACKUP_DATA_CURSOR_ROWS) as AsyncIterable<unknown[][]>;
       for await (const rows of rowCursor) {
