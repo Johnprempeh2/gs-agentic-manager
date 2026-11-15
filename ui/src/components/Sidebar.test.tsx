@@ -491,6 +491,20 @@ describe("Sidebar", () => {
       flushSync(() => expanded.unmount());
     });
 
+    it("leaves focus off the group row after an item is clicked, so the rail does not open under the pointer", async () => {
+      const root = await renderSidebar();
+
+      await hover(railDesk());
+      const item = document.body.querySelector<HTMLElement>('[role="menu"] a[href="/dashboard"]');
+      expect(item).not.toBeNull();
+      item!.focus();
+      await click(item);
+      expect(deskFlyoutOpen()).toBe(false);
+      expect(document.activeElement).not.toBe(railDesk());
+
+      flushSync(() => root.unmount());
+    });
+
     it("still closes when the pointer goes down outside the flyout", async () => {
       const root = await renderSidebar();
 

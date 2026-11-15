@@ -204,6 +204,27 @@ describe("SidebarShell", () => {
     expect(panel().className).toContain("z-chrome");
   });
 
+  it("lets clicks through while a closing peek eases back to the rail", async () => {
+    window.localStorage.setItem("test.sidebar.width", "300");
+    const render = (peeking: boolean) => act(() => {
+      root.render(
+        <SidebarShell open collapsed peeking={peeking} storageKey="test.sidebar.width">
+          <div>Sidebar</div>
+        </SidebarShell>,
+      );
+    });
+    render(true);
+    expect(panel().className).not.toContain("pointer-events-none");
+    render(false);
+    // Still sliding back over the page: a quick click must reach the page.
+    expect(panel().className).toContain("pointer-events-none");
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    // Back to a rail: its icons take clicks again.
+    expect(panel().className).not.toContain("pointer-events-none");
+  });
+
   it("floats the sidebar in one liquid-glass panel inside an inset", () => {
     act(() => {
       root.render(

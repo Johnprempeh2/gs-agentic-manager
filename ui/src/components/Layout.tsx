@@ -2,6 +2,7 @@ import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -426,7 +427,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     pointerInsidePanel.current = false;
     suppressPeekRef.current = false; // pointer left — re-arm peek for the next hover
     clearPeekTimer();
-    if (!flyoutOpenRef.current) setPeeking(false);
+    // Committed before the next pointer event: a mouse leave is not a discrete
+    // event, so React would otherwise let a click that follows within a frame
+    // hit the still-open overlay instead of the list beside it.
+    if (!flyoutOpenRef.current) flushSync(() => setPeeking(false));
   }, [clearPeekTimer, setPeeking]);
   // When the flyout closes (an item chosen, a click outside, Escape) the peek
   // closes too unless the pointer is back over the sidebar.

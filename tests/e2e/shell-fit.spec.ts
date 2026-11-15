@@ -296,6 +296,8 @@ test("a group flyout holds still while the pointer moves into it, from the rail 
   await menu.getByRole("menuitem", { name: /Decisions/ }).click();
   await expect(page).toHaveURL(/\/desk#desk-needs-me$/);
   await expect(menu).toHaveCount(0);
+  await page.waitForTimeout(400);
+  expect(await glassWidth(), "choosing an item does not open the rail under the pointer").toBeLessThan(100);
 
   // From the peek: rest on the rail away from a group, then click Desk in the open sidebar.
   await page.mouse.move(1400, 400);
@@ -314,4 +316,17 @@ test("a group flyout holds still while the pointer moves into it, from the rail 
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect.poll(glassWidth, { message: "the peek folds once the flyout closes" }).toBeLessThan(100);
+
+  // Hovering down the rail swaps one flyout for the next: never two at once.
+  await page.mouse.move(1400, 400);
+  await page.waitForTimeout(400); // the closing peek lets clicks through until it settles
+  await page.mouse.move(icon.x + 60, icon.y, { steps: 4 });
+  await page.mouse.move(icon.x, icon.y, { steps: 4 });
+  await expect(menu).toHaveCount(1);
+  const team = (await page.locator('button[aria-label^="Team"]').boundingBox())!;
+  await page.mouse.move(icon.x, team.y + team.height / 2, { steps: 12 });
+  await page.waitForTimeout(400);
+  await expect(menu).toHaveCount(1);
+  await expect(menu.getByRole("menuitem").first()).toHaveText(/Agents/);
+  await page.keyboard.press("Escape");
 });

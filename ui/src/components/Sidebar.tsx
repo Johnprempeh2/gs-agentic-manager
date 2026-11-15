@@ -156,10 +156,11 @@ function SidebarNavGroup({
   label: string;
   badge?: number;
 }) {
-  const { collapsed, peeking, setFlyoutOpen } = useSidebar();
+  const { collapsed, peeking, openFlyout, setFlyoutOpen } = useSidebar();
   const rail = collapsed && !peeking;
   const [open, setOpenState] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const closedByKey = useRef(false);
   const hasBadge = badge != null && badge > 0;
   // The layout holds the peek still while a flyout is open (see Layout.tsx), so
   // the sidebar never opens or folds under the menu and drags it away.
@@ -168,6 +169,11 @@ function SidebarNavGroup({
     setFlyoutOpen(label, next);
   }, [label, setFlyoutOpen]);
   useEffect(() => () => setFlyoutOpen(label, false), [label, setFlyoutOpen]);
+  // One flyout at a time: hovering down the rail opens the next group's and
+  // closes this one.
+  useEffect(() => {
+    if (openFlyout != null && openFlyout !== label) setOpenState(false);
+  }, [openFlyout, label]);
   if (entries.length === 0) return null;
 
   // In the rail, hovering opens the flyout, so a click on the icon must only ever
@@ -227,6 +233,16 @@ function SidebarNavGroup({
         // that moves focus on its own, such as a chat focusing its composer as it
         // loads, must not shut it under the pointer.
         onFocusOutside={(event) => event.preventDefault()}
+        // Focus goes back to the group row only when the menu was closed from
+        // the keyboard. After a click the row would take focus as if tabbed
+        // to, and in the rail that opens the hover peek under the pointer.
+        onKeyDown={(event) => {
+          closedByKey.current = event.key === "Escape" || event.key === "Enter" || event.key === " ";
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!closedByKey.current) event.preventDefault();
+          closedByKey.current = false;
+        }}
       >
         <SidebarNavExpandedProvider>
           {entries.map((entry) => {
