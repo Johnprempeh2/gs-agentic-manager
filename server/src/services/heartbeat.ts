@@ -660,6 +660,7 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { extractSkillMentionIds, isUuidLike } from "@greatstone/shared";
 import { isIssueTabledById } from "./issue-tabling.js";
+import { isPracticeIssueById } from "./practice-issues.js";
 import { evaluateCodexCredentialReadiness } from "@greatstone/adapter-codex-local/server";
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
@@ -29541,6 +29542,13 @@ export function heartbeatService(
     if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
       await writeSkippedRequest("issue_tabled", {
         error: "This task is tabled (Not now). Bring it back to resume work.",
+      });
+      return null;
+    }
+    // Getting started: a new person's practice task is theirs alone and wakes no agent, even when it names one.
+    if (issueId && isUuidLike(issueId) && await isPracticeIssueById(db, issueId)) {
+      await writeSkippedRequest("issue_onboarding_practice", {
+        error: "This is a Getting started practice task; no agent works on it.",
       });
       return null;
     }

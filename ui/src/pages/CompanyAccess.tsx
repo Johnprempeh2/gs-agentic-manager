@@ -36,6 +36,7 @@ import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { InvitesSection } from "@/components/access/InvitesSection";
 import { MemberHandoverDialog } from "@/components/access/MemberHandoverDialog";
+import { MemberOnboardingProgress } from "@/components/access/MemberOnboardingProgress";
 import { formatDateTime, formatShortDate } from "@/lib/utils";
 
 const LEGACY_BOARD_USER_ID = "local-board";
@@ -567,6 +568,14 @@ export function CompanyAccess() {
                   agents={agentsQuery.data ?? []}
                   value={draftAgentAllowList}
                   onChange={setDraftAgentAllowList}
+                />
+              ) : null}
+              {editingMember.principalType === "user" && editingMember.status === "active" && selectedCompanyId ? (
+                <MemberOnboardingProgress
+                  companyId={selectedCompanyId}
+                  memberId={editingMember.id}
+                  name={memberDisplayName(editingMember)}
+                  self={editingMember.principalId === access?.currentUserId}
                 />
               ) : null}
             </div>

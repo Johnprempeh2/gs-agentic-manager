@@ -230,7 +230,8 @@ export const ISSUE_UNBLOCK_WAITING_ON = ["client", "board", "outside"] as const;
 export type IssueUnblockWaitingOn = (typeof ISSUE_UNBLOCK_WAITING_ON)[number];
 export const ISSUE_WORK_MODES = ["standard", "ask", "planning", "skill_test"] as const;
 export type IssueWorkMode = (typeof ISSUE_WORK_MODES)[number];
-export const ISSUE_HARNESS_KINDS = ["skill_test"] as const;
+// onboarding_practice: a new person's Getting started practice task. Hidden from every list, never wakes an agent.
+export const ISSUE_HARNESS_KINDS = ["skill_test", "onboarding_practice"] as const;
 export type IssueHarnessKind = (typeof ISSUE_HARNESS_KINDS)[number];
 export const MAX_ISSUE_REQUEST_DEPTH = 1024;
 

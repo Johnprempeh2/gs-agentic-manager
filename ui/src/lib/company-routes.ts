@@ -65,6 +65,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "website",
   "commerce",
   "tutorials",
+  "getting-started",
   "whats-new",
   "intelligence",
   "runs",

@@ -818,6 +818,8 @@ export const queryKeys = {
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },
   tourDismissals: (userId: string) => ["tour-dismissals", userId] as const,
+  onboarding: (companyId: string) => ["onboarding", companyId] as const,
+  memberOnboarding: (companyId: string, memberId: string) => ["onboarding", companyId, "member", memberId] as const,
   resourceMemberships: {
     mine: (companyId: string) =>
       ["resource-memberships", companyId, "me"] as const,

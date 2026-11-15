@@ -4,6 +4,7 @@ import {
   Bell,
   ChevronsUpDown,
   Flag,
+  Footprints,
   GraduationCap,
   LogOut,
   Rocket,
@@ -25,6 +26,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useCanRelease } from "../hooks/useReleases";
 import { openSidebarCustomise } from "../lib/sidebar-layout";
 import { useWhatsNewUnseen } from "../lib/whats-new";
+import { useOnboardingQuest } from "../hooks/useOnboardingQuest";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -140,6 +142,8 @@ export function SidebarAccountMenu({
   // Releasing is the board's decision (GRE-119): agents never see the page.
   const { canRelease } = useCanRelease(selectedCompanyId);
   const whatsNewUnseen = useWhatsNewUnseen();
+  const { state: quest } = useOnboardingQuest();
+  const questTag = quest?.startedAt && !quest.finishedAt ? `${quest.done} of ${quest.total}` : undefined;
   const rail = collapsed && !peeking && !forceExpanded;
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -243,6 +247,7 @@ export function SidebarAccountMenu({
               {canRelease ? (
                 <MenuAction label="Releases" icon={Rocket} href="/releases" onClick={closeNavigationChrome} />
               ) : null}
+              <MenuAction label="Getting started" icon={Footprints} href="/getting-started" onClick={closeNavigationChrome} tag={questTag} />
               <MenuAction label="Tutorials" icon={GraduationCap} href="/tutorials" onClick={closeNavigationChrome} />
               <MenuAction
                 label="What's new"
