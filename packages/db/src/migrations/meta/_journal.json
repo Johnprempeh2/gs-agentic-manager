@@ -2955,6 +2955,13 @@
       "when": 1794610531399,
       "tag": "0423_website_release_sent_live",
       "breakpoints": true
+    },
+    {
+      "idx": 424,
+      "version": "7",
+      "when": 1794700611510,
+      "tag": "0424_heartbeat_runs_paperclip_issue_idx",
+      "breakpoints": true
     }
   ]
 }
