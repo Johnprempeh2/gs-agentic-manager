@@ -4611,6 +4611,13 @@ async function listIssueBlockerAttentionMap(
       );
     });
     if (topLevelEdges.length === 0) {
+      if (activeIssueIds.has(root.id)) {
+        attentionMap.set(
+          root.id,
+          createIssueBlockerAttention({ state: "covered", blockingTreeLive: true }),
+        );
+        continue;
+      }
       attentionMap.set(
         root.id,
         createIssueBlockerAttention({
