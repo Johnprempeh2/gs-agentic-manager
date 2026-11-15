@@ -33,7 +33,10 @@ export function digestCountsSentence(counts: AgentWorkDigestCounts): string {
   const parts: string[] = [];
   if (counts.tasksFinished) parts.push(`${plural(counts.tasksFinished, "task", "tasks")} finished`);
   if (counts.tasksStarted) parts.push(parts.length ? `${counts.tasksStarted} started` : `${plural(counts.tasksStarted, "task", "tasks")} started`);
-  if (counts.decisionsRaised) parts.push(plural(counts.decisionsRaised, "decision for you", "decisions for you"));
+  // Past tense like the rest of the line: these were raised in the window, and
+  // some may be answered already. "2 decisions for you" read as waiting now and
+  // disagreed with the live Decisions count beside it (15 Nov).
+  if (counts.decisionsRaised) parts.push(`${plural(counts.decisionsRaised, "decision", "decisions")} asked of you`);
   if (counts.failures) parts.push(plural(counts.failures, "failed run", "failed runs"));
   return parts.length ? parts.join(", ") : "No agent work";
 }
