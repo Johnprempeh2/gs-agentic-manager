@@ -18,6 +18,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState, errorStateMessage } from "../ErrorState";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
+import { Database } from "lucide-react";
+import { WebsiteConnectFirst } from "./WebsiteConnectFirst";
 import { useCanManageWebsite } from "./WebsiteSetup";
 import { WebsiteRedirects } from "./WebsiteRedirects";
 import { WebsiteMediaLibrary } from "./WebsiteMediaLibrary";
@@ -247,7 +249,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
   });
   if (error) return <ErrorState error={error} />;
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading collections</p>;
-  if (!site) return <p className="text-sm text-muted-foreground">Connect a site under Releases before editing collections.</p>;
+  if (!site) return <WebsiteConnectFirst icon={Database} message="Products, posts and other entries are edited here once the site is connected. Connect it under Releases." />;
   const selected = COLLECTIONS.find((item) => item.key === collection) ?? COLLECTIONS[0];
   const shown = (entries.data ?? []).filter((entry) => entryMatches(entry, search));
   return <WebsiteContentLiveContext.Provider value={onLive}><div className="space-y-5" data-testid="website-collections">

@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsiteEntry, WebsiteEntrySummary, WebsiteProperty } from "@greatstone/shared";
 
@@ -16,7 +17,8 @@ vi.mock("../../api/website", async () => {
   const actual = await vi.importActual<typeof import("../../api/website")>("../../api/website");
   return { ...actual, websiteModuleApi: moduleApiMock };
 });
-vi.mock("./WebsiteSiteConnection", () => ({ useWebsiteSite: () => ({ site: { id: "site-1" }, isLoading: false, error: null }) }));
+const siteMock = vi.hoisted(() => ({ site: { id: "site-1" } as { id: string } | null }));
+vi.mock("./WebsiteSiteConnection", () => ({ useWebsiteSite: () => ({ site: siteMock.site, isLoading: false, error: null }) }));
 vi.mock("./WebsiteSetup", () => ({ useCanManageWebsite: () => ({ canManage: true }) }));
 vi.mock("./WebsiteRedirects", () => ({ WebsiteRedirects: () => null }));
 vi.mock("./WebsiteMediaLibrary", () => ({ WebsiteMediaLibrary: () => null }));
@@ -46,7 +48,7 @@ async function flush() {
 async function render() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
-    root.render(<QueryClientProvider client={client}><WebsiteCollectionsTab companyId="co-1" property={{ id: "prop-1" } as WebsiteProperty} /></QueryClientProvider>);
+    root.render(<MemoryRouter><QueryClientProvider client={client}><WebsiteCollectionsTab companyId="co-1" property={{ id: "prop-1" } as WebsiteProperty} /></QueryClientProvider></MemoryRouter>);
   });
   await flush();
 }
@@ -79,6 +81,17 @@ afterEach(() => {
 });
 
 describe("WebsiteCollectionsTab", () => {
+  it("before a site is connected, says so and offers Releases like the other tabs", async () => {
+    siteMock.site = null;
+    try {
+      await render();
+      expect(container.textContent).toContain("Connect the site first");
+      expect([...container.querySelectorAll("button")].some((button) => button.textContent?.includes("Open Releases"))).toBe(true);
+    } finally {
+      siteMock.site = { id: "site-1" };
+    }
+  });
+
   it("lists a product by name, one line, vendor, category and price, with the code as small print", async () => {
     await render();
     const [words, pdf, bare] = rows();

@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Building2, KeyRound, Lock, ShieldCheck, Users } from "lucide-react";
+import { WebsiteConnectFirst } from "./WebsiteConnectFirst";
 import {
   WEBSITE_CLIENT_MEMBER_ROLES,
   WEBSITE_STAFF_ROLES,
@@ -537,11 +538,7 @@ export function WebsitePeopleTab({ companyId, property }: { companyId: string; p
   if (isLoading) return <PageSkeleton variant="list" />;
   if (!site) {
     return (
-      <EmptyState
-        icon={Users}
-        title="Connect the site first"
-        message="People and access reads the connected site's staff and client companies. Connect a site under Releases."
-      />
+      <WebsiteConnectFirst icon={Users} message="People and access reads the connected site's staff and client companies. Connect a site under Releases." />
     );
   }
   return <WebsitePeople companyId={companyId} siteId={site.id} />;

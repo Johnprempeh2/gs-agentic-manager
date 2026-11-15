@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, FileText, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
+import { WebsiteConnectFirst } from "./WebsiteConnectFirst";
 import {
   WEBSITE_PORTAL_DOCUMENT_ACTIONS,
   WEBSITE_PORTAL_DOCUMENT_KINDS,
@@ -644,11 +645,7 @@ export function WebsitePortalDocumentsTab({ companyId, property }: { companyId: 
   if (isLoading) return <PageSkeleton variant="list" />;
   if (!site) {
     return (
-      <EmptyState
-        icon={FileText}
-        title="Connect the site first"
-        message="Portal documents are read from and written to the connected site. Connect a site under Releases."
-      />
+      <WebsiteConnectFirst icon={FileText} message="Portal documents are read from and written to the connected site. Connect a site under Releases." />
     );
   }
   return <WebsitePortalDocuments companyId={companyId} siteId={site.id} />;
