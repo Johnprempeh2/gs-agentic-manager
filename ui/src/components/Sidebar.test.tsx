@@ -94,6 +94,7 @@ const mockSidebar = vi.hoisted(() => ({
   peeking: false,
   toggleCollapsed: vi.fn(),
   setCollapsed: vi.fn(),
+  setFlyoutOpen: vi.fn(),
 }));
 
 vi.mock("../context/SidebarContext", () => ({
@@ -457,6 +458,37 @@ describe("Sidebar", () => {
       expect(deskFlyoutOpen()).toBe(true);
 
       flushSync(() => root.unmount());
+    });
+
+    it("tells the layout while its flyout is open, and never blocks the page under it", async () => {
+      // The layout holds the peek still while a flyout is open (John, 15 Nov),
+      // and a modal menu would swallow the first click on the page after it.
+      mockSidebar.setFlyoutOpen.mockClear();
+      const root = await renderSidebar();
+
+      await hover(railDesk());
+      expect(mockSidebar.setFlyoutOpen).toHaveBeenLastCalledWith("Desk", true);
+      expect(document.body.style.pointerEvents).not.toBe("none");
+      // The page moving focus on its own (a chat focusing its composer) leaves it open.
+      const elsewhere = document.createElement("button");
+      document.body.appendChild(elsewhere);
+      elsewhere.focus();
+      await flushReact();
+      expect(deskFlyoutOpen()).toBe(true);
+      elsewhere.remove();
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      await flushReact();
+      expect(mockSidebar.setFlyoutOpen).toHaveBeenLastCalledWith("Desk", false);
+
+      // Expanded, a click opens it, still without blocking the page.
+      mockSidebar.collapsed = false;
+      flushSync(() => root.unmount());
+      const expanded = await renderSidebar();
+      await click(textButton("Desk"));
+      expect(deskFlyoutOpen()).toBe(true);
+      expect(document.body.style.pointerEvents).not.toBe("none");
+
+      flushSync(() => expanded.unmount());
     });
 
     it("still closes when the pointer goes down outside the flyout", async () => {

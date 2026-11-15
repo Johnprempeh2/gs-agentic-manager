@@ -23,6 +23,11 @@ interface SidebarContextValue {
   // Fine-pointer devices can temporarily peek the full sidebar from the rail.
   peeking: boolean;
   setPeeking: (next: boolean) => void;
+  // The nav group whose flyout menu is open, if any. While one is open the
+  // peek holds still (neither opens nor closes under it), so the menu stays
+  // put while the pointer crosses into it.
+  openFlyout: string | null;
+  setFlyoutOpen: (group: string, open: boolean) => void;
   // A route can force the compact rail for focused surfaces.
   forceCollapsed: boolean;
   setForceCollapsed: (next: boolean) => void;
@@ -65,6 +70,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const [routeRequestsCollapsed, setRouteRequestsCollapsed] = useState(false);
   const [forceCollapsed, setForceCollapsed] = useState(false);
   const [rawPeeking, setRawPeeking] = useState(false);
+  const [openFlyout, setOpenFlyout] = useState<string | null>(null);
   const [pointerCanPeek, setPointerCanPeek] = useState(
     () => typeof window.matchMedia === "function" && window.matchMedia(PEEK_POINTER_QUERY).matches,
   );
@@ -101,6 +107,9 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     setCollapsed(!pinnedOrRequested);
   }, [forceCollapsed, pinnedOrRequested, setCollapsed]);
   const setPeeking = useCallback((next: boolean) => setRawPeeking(next), []);
+  const setFlyoutOpen = useCallback((group: string, open: boolean) => {
+    setOpenFlyout((current) => (open ? group : current === group ? null : current));
+  }, []);
 
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
 
@@ -116,6 +125,8 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       collapseLocked,
       peeking,
       setPeeking,
+      openFlyout,
+      setFlyoutOpen,
       forceCollapsed,
       setForceCollapsed,
       routeRequestsCollapsed,
@@ -132,6 +143,8 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       collapseLocked,
       peeking,
       setPeeking,
+      openFlyout,
+      setFlyoutOpen,
       forceCollapsed,
       setForceCollapsed,
       routeRequestsCollapsed,

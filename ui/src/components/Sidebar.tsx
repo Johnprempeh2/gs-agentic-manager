@@ -70,7 +70,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
@@ -156,17 +156,26 @@ function SidebarNavGroup({
   label: string;
   badge?: number;
 }) {
-  const { collapsed, peeking } = useSidebar();
+  const { collapsed, peeking, setFlyoutOpen } = useSidebar();
   const rail = collapsed && !peeking;
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hasBadge = badge != null && badge > 0;
+  // The layout holds the peek still while a flyout is open (see Layout.tsx), so
+  // the sidebar never opens or folds under the menu and drags it away.
+  const setOpen = useCallback((next: boolean) => {
+    setOpenState(next);
+    setFlyoutOpen(label, next);
+  }, [label, setFlyoutOpen]);
+  useEffect(() => () => setFlyoutOpen(label, false), [label, setFlyoutOpen]);
   if (entries.length === 0) return null;
 
   // In the rail, hovering opens the flyout, so a click on the icon must only ever
-  // open it. A modal menu would read that click as outside and shut it (GRE-5326).
+  // open it. A modal menu would read that click as outside and shut it
+  // (GRE-5326), and would swallow the first click on the page after it, so the
+  // menu is never modal: a click outside closes it and still lands.
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen} modal={!rail}>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>
         <button
           ref={triggerRef}
@@ -214,6 +223,10 @@ function SidebarNavGroup({
         onPointerDownOutside={(event) => {
           if (rail && triggerRef.current?.contains(event.target as Node)) event.preventDefault();
         }}
+        // Only the person closes it (a click outside, Escape, or an item). A page
+        // that moves focus on its own, such as a chat focusing its composer as it
+        // loads, must not shut it under the pointer.
+        onFocusOutside={(event) => event.preventDefault()}
       >
         <SidebarNavExpandedProvider>
           {entries.map((entry) => {
