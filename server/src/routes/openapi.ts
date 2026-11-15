@@ -9027,7 +9027,10 @@ for (const [method, path, summary, body] of [
     tags: ["access"],
     summary,
     description: "People only; agents cannot call it.",
-    ...(body ? { request: { body: jsonBody(body) } } : {}),
+    request: {
+      params: path.includes("{memberId}") ? z.object({ companyId: z.string(), memberId: z.string() }) : z.object({ companyId: z.string() }),
+      ...(body ? { body: jsonBody(body) } : {}),
+    },
     responses: {
       200: { ...r.ok(questState), headers: privateNoStoreHeaders },
       400: r.badRequest,
