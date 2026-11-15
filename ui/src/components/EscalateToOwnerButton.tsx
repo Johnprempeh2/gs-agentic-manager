@@ -35,6 +35,7 @@ export function EscalateToOwnerButton({
   const [note, setNote] = useState("");
   const noteId = useId();
   const owner = ownerName?.trim() || "the owner";
+  const Owner = owner.charAt(0).toUpperCase() + owner.slice(1);
   const mutation = useMutation({
     mutationFn: () => onEscalate(note.trim()),
     onSuccess: () => {
@@ -57,9 +58,9 @@ export function EscalateToOwnerButton({
             <DialogTitle>Escalate this {what} to {owner}</DialogTitle>
             <DialogDescription>
               {what === "review"
-                ? `${owner} becomes the reviewer instead of you.`
+                ? `${Owner} becomes the reviewer instead of you.`
                 : what === "approval"
-                  ? `${owner} decides it instead of you.`
+                  ? `${Owner} decides it instead of you.`
                   : `The task is handed to ${owner}, with a card on their Desk.`}{" "}
               They see your note, and it is recorded in the activity log.
             </DialogDescription>
