@@ -11,6 +11,7 @@ export const LIVE_KIND_GUIDANCE: Record<DeliverableKind, string | undefined> = {
   mockup:
     "This is a UI mockup for GSAM or a client product. Keep it a realistic screen at its intended width; change layout and styling freely, but keep the data shown plausible and the controls labelled.",
   report: "This is a report. Keep its headings, figures and sources exactly as written unless John changes them, and the print layout for A4.",
+  prototype: undefined,
   brief: undefined,
   plan: undefined,
   other: undefined,

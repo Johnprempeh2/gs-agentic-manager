@@ -31,6 +31,7 @@ export const PALETTE_PAGES: readonly PaletteDestination[] = [
   { kind: "page", id: "goals", label: "Goals", path: "/goals", keywords: ["objectives", "kpi"] },
   { kind: "page", id: "agents", label: "Agents", path: "/agents", keywords: ["team"] },
   { kind: "page", id: "deliverables", label: "Deliverables", path: "/deliverables", keywords: ["documents"] },
+  { kind: "page", id: "prototypes", label: "Prototypes", path: "/prototypes", keywords: ["demos", "netlify", "clickable", "mockups"] },
   { kind: "page", id: "links", label: "Links", path: "/links", keywords: ["netlify", "sites", "urls", "portals", "previews"] },
   { kind: "page", id: "studio", label: "GS Studio", path: "/images", keywords: ["images", "video", "pictures"] },
   { kind: "page", id: "scorecard", label: "Scorecard", path: "/scorecard" },

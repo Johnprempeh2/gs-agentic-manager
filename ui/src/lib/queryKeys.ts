@@ -683,6 +683,10 @@ export const queryKeys = {
     detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
     comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
   },
+  prototypes: {
+    all: (companyId: string) => ["prototypes", companyId] as const,
+    list: (companyId: string, params: Record<string, string | undefined>) => ["prototypes", companyId, "list", params] as const,
+  },
   intelligence: {
     all: (companyId: string) => ["intelligence", companyId] as const,
     report: (companyId: string, date: string, kind: string) => ["intelligence", companyId, "report", date, kind] as const,

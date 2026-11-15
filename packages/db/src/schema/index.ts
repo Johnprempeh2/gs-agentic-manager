@@ -122,6 +122,7 @@ export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks
 export { calendarFeeds } from "./calendar_feeds.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
+export { prototypePortalShares } from "./prototype_portal_shares.js";
 export { websiteProperties, websitePulls } from "./website.js";
 export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption, websiteFeature, websiteBridgeInboundNonces } from "./website_module.js";
 export { websiteActivityCursors, websiteActivityEvents } from "./website_activity.js";

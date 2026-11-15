@@ -13,7 +13,7 @@ import { mergeSectionOrder } from "./sidebar-section-order";
 
 const EVERY_DESTINATION = [
   "decisions", "my-tasks", "inbox", "calendar", "chats",
-  "organisations", "commerce", "pipelines", "deep-dive", "deliverables", "links", "images",
+  "organisations", "commerce", "pipelines", "deep-dive", "deliverables", "prototypes", "links", "images",
   "dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory",
   "agents", "scorecard", "weekly-report", "conference-room", "status",
   "skills", "connectors", "routines", "workflows", "workspaces", "artifacts", "cases",

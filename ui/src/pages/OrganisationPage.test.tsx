@@ -459,7 +459,7 @@ describe("Organisation company page", () => {
       const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
       expect(tabs).toEqual([
         "Overview", "Executive Discovery", "Interviews", "Deep Dive", "Documents",
-        "Deliverables", "Commerce", "Billing", "Activity", "Client view",
+        "Deliverables", "Prototypes", "Commerce", "Billing", "Activity", "Client view",
       ]);
       expect(container.querySelector('[data-testid="organisation-tab-overview"]')).not.toBeNull();
       const engagement = container.querySelector('[data-testid="organisation-engagement"]')!;

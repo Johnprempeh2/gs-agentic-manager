@@ -52,6 +52,7 @@ const DELIVERABLE_KIND_TO_LINK_TYPE: Record<string, LinkType> = {
   deck: "deck",
   proposal: "proposal",
   mockup: "demo",
+  prototype: "demo",
 };
 
 /** Work product types that carry a shareable URL and are captured as previews. */

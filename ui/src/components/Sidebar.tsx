@@ -25,6 +25,7 @@ import {
   Users,
   CreditCard,
   FileCheck2,
+  FlaskConical,
   Link2,
   ImageIcon,
   Brain,
@@ -554,6 +555,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     "deep-dive": gated(showDeepDive, link("/deep-dive", "Deep Dive", Microscope, { textBadge: "beta" })),
     // GRE-585: finished documents, now with the client work.
     deliverables: link("/deliverables", "Deliverables", FileCheck2),
+    // Prototypes (14 Nov): every prototype site, by client; shown in a portal only when a person says so.
+    prototypes: link("/prototypes", "Prototypes", FlaskConical),
     // GRE-4252: every shared link, by client and project.
     links: link("/links", "Links", Link2),
     images: link("/images", "GS Studio", ImageIcon),
@@ -612,7 +615,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const groups = {
     "my-tasks": { label: "Desk", icon: UserCheck, items: ["my-tasks", "decisions", "inbox", "dashboard"] },
     organisations: { label: "Clients", icon: Building2, items: ["organisations", "pipelines"] },
-    deliverables: { label: "Deliverables", icon: FileCheck2, items: ["deliverables", "links", "artifacts"] },
+    deliverables: { label: "Deliverables", icon: FileCheck2, items: ["deliverables", "prototypes", "links", "artifacts"] },
     agents: { label: "Team", icon: Users, items: ["agents", "scorecard", "weekly-report", "status", "conference-room"] },
     skills: { label: "Build", icon: Boxes, items: ["skills", "connectors", "routines", "workflows", "releases", "activity"] },
   } as const;

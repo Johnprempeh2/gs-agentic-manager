@@ -30,6 +30,7 @@ import {
   useEngagementCase,
 } from "@/components/OrganisationHub";
 import { PageTabBar } from "@/components/PageTabBar";
+import { PrototypeList } from "@/components/prototypes/PrototypeList";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,7 +129,7 @@ export function OrganisationPage() {
   const websiteOrganisationId = websiteOrganisationIdOf(organisation);
   // Until the engagement is known, a tab cannot tell "no engagement" from "not loaded yet".
   const engagementLoading = history.isLoading || (Boolean(caseId) && engagement.query.isLoading);
-  const needsEngagement = !["overview", "interviews", "billing", "commerce"].includes(tab);
+  const needsEngagement = !["overview", "interviews", "billing", "commerce", "prototypes"].includes(tab);
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
@@ -208,6 +209,7 @@ export function OrganisationPage() {
             <DocumentsPanel caseId={clientCaseId} organisationId={organisation.id} history={history.data} shared={shared} />
           ) : null}
           {!engagementLoading && tab === "deliverables" ? <DeliverablesPanel caseId={clientCaseId} companyId={companyId} /> : null}
+          {tab === "prototypes" ? <PrototypeList companyId={companyId} organisationId={organisation.id} /> : null}
           {tab === "commerce" ? <CommercePanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {tab === "billing" ? <BillingPanel companyId={companyId} websiteOrganisationId={websiteOrganisationId} /> : null}
           {!engagementLoading && tab === "activity" ? <ActivityPanel detail={engagement.detail} stages={engagement.stages} history={history.data} websiteOrganisationId={websiteOrganisationId} /> : null}

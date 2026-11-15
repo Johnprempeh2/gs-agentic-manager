@@ -11,9 +11,11 @@ import {
   WEBSITE_CLIENT_MEMBER_ROLES,
   WEBSITE_STAFF_ROLES,
   deepDiveSyncSitePath,
+  portalPrototypesSitePath,
   websiteAccessChangeCall,
   websiteActivityBatchSchema,
   type DeepDiveSyncPayload,
+  type PortalPrototypesPayload,
   type WebsiteAccessChange,
   type WebsiteCommerceResource,
   type WebsiteDataResource,
@@ -215,6 +217,7 @@ export const bridgePaymentReportSchema = z.object({
   nextCursor: z.string().nullable(),
 }).passthrough().refine((value) => !STRIPE_ID_RE.test(JSON.stringify(value)), "the payment report carried a Stripe id or key");
 export const bridgeSyncAckSchema = z.object({ ok: z.literal(true), tenantId: z.string() });
+export const bridgePrototypesAckSchema = z.object({ ok: z.literal(true), customerId: z.string() });
 /** A write's answer: the row as it is after the change (`imports/:id/apply` adds the apply result). */
 export const bridgeWriteSchema = z.object({ item: z.record(z.string(), z.unknown()), result: z.unknown().optional() });
 /**
@@ -424,6 +427,9 @@ export function createWebsiteBridgeClient(options: WebsiteBridgeClientOptions) {
     /** Deep Dive sync (GRE-2439): replace one tenant's snapshot on the site. Needs a `write` key. */
     putDeepDiveTenant: (tenantId: string, payload: DeepDiveSyncPayload, actor: WebsiteBridgeActor) =>
       call("PUT", deepDiveSyncSitePath(tenantId), {}, JSON.stringify(payload), actor, bridgeSyncAckSchema),
+    /** Prototypes (14 Nov): replace one client's shared prototypes in its portal. Needs a `write` key. */
+    putPortalPrototypes: (customerId: string, payload: PortalPrototypesPayload, actor: WebsiteBridgeActor) =>
+      call("PUT", portalPrototypesSitePath(customerId), {}, JSON.stringify(payload), actor, bridgePrototypesAckSchema),
     /**
      * A commerce write (GRE-2354 2c(b)) on the `write` key: `path` is after `/api/admin/v1/`, e.g. `offerings/<id>`.
      * Needs a write key; the site refuses it on any other.

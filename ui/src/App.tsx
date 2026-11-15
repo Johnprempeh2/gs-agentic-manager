@@ -88,6 +88,7 @@ const Releases = lazyPage(() => import("./pages/Releases"), "Releases");
 const Billing = lazyPage(() => import("./pages/Billing"), "Billing");
 const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
 const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverables");
+const Prototypes = lazyPage(() => import("./pages/Prototypes"), "Prototypes");
 const Links = lazyPage(() => import("./pages/Links"), "Links");
 const Website = lazyPage(() => import("./pages/Website"), "Website");
 const WebsiteEditorPage = lazyPage(() => import("./pages/WebsiteEditorPage"), "WebsiteEditorPage");
@@ -447,6 +448,7 @@ function boardRoutes() {
         element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="prototypes" element={<Prototypes />} />
       <Route path="links" element={<Links />} />
       <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
@@ -909,6 +911,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="prototypes" element={<UnprefixedBoardRedirect />} />
           <Route path="links" element={<UnprefixedBoardRedirect />} />
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />

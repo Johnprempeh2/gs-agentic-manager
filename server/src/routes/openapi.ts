@@ -57,6 +57,9 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   moveDeliverableSchema,
+  prototypesQuerySchema,
+  setPrototypeStatusSchema,
+  setPrototypeVisibilitySchema,
   createGeneratedImageSchema,
   createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
@@ -5412,6 +5415,51 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Move every version of a deliverable to another project. People only: agents get 403. Logged as issue.deliverable_moved",
   request: { params: z.object({ companyId: z.string(), id: z.string() }), body: jsonBody(moveDeliverableSchema) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/screenshot/upload",
+  tags: ["issues"],
+  summary: "Upload a screenshot for a link deliverable (multipart field file: PNG, JPEG or WebP), for a site the browser cannot reach",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/prototypes",
+  tags: ["issues"],
+  summary: "List prototypes (link deliverables of kind prototype) with client, status, owner and whether the client sees it in their portal",
+  request: { params: z.object({ companyId: z.string() }), query: prototypesQuerySchema },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/prototypes/{id}",
+  tags: ["issues"],
+  summary: "Get one prototype",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/prototypes/{id}/status",
+  tags: ["issues"],
+  summary: "Set a prototype to draft, in_review or retired. Retiring takes it out of the client portal",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }), body: jsonBody(setPrototypeStatusSchema) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/prototypes/{id}/visibility",
+  tags: ["issues"],
+  summary: "Show or hide a prototype in its client's website portal. People only: agents get 403. organisationId must be the prototype's client. Logged as issue.prototype_shared or issue.prototype_unshared",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }), body: jsonBody(setPrototypeVisibilitySchema) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
