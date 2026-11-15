@@ -16,6 +16,7 @@ export const ORGANISATION_HUB_TABS = [
   { value: "deep-dive", label: "Deep Dive" },
   { value: "documents", label: "Documents" },
   { value: "deliverables", label: "Deliverables" },
+  { value: "prototypes", label: "Prototypes" },
   { value: "commerce", label: "Commerce" },
   { value: "billing", label: "Billing" },
   { value: "activity", label: "Activity" },

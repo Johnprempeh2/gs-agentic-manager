@@ -501,6 +501,7 @@ export {
 export * from "./validators/status-card.js";
 export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
+export * from "./prototypes.js";
 export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
 export * from "./types/links.js";

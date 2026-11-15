@@ -22,6 +22,7 @@ export const DELIVERABLE_KIND_LABELS: Record<DeliverableKind, string> = {
   proposal: "Proposal",
   email: "Email",
   mockup: "Mockup",
+  prototype: "Prototype",
   other: "Other",
 };
 

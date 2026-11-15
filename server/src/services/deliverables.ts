@@ -53,7 +53,7 @@ const FACET_SCAN_LIMIT = 2_000;
 const TITLE_MAX_LENGTH = 200;
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 
-const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "proposal", "email", "mockup", "other"]);
+const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "proposal", "email", "mockup", "prototype", "other"]);
 const CONFIDENTIALITY = new Set<DeliverableConfidentiality>(["internal", "client", "public"]);
 /** Link deliverables carry this content type: a URL, not a stored file. */
 const LINK_CONTENT_TYPE = "text/uri-list";
@@ -714,6 +714,10 @@ export function deliverableService(db: Db, storage?: StorageService) {
                   deliverableStatus: fields.status ?? (previous ? readStatus(previousMetadata) : "final"),
                   confidentiality: fields.confidentiality ?? readConfidentiality(previousMetadata),
                   ...(restricted ? { restricted: true } : {}),
+                  // A prototype's status (draft, in review, retired) belongs to the prototype, not one version.
+                  ...(metadataString(previousMetadata, "prototypeStatus")
+                    ? { prototypeStatus: metadataString(previousMetadata, "prototypeStatus") }
+                    : {}),
                   ...(isProjectMoved(previousMetadata) ? { projectMoved: previousMetadata!.projectMoved } : {}),
                   createdByAgentId,
                   searchText: searchText ?? (url ? url : null),

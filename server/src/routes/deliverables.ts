@@ -1,4 +1,6 @@
 import { Router, type Request } from "express";
+import multer from "multer";
+import sharp from "sharp";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { heartbeatRuns, issueWorkProducts } from "@greatstone/db";
@@ -9,6 +11,9 @@ import {
   HTML_ATTACHMENT_CSP,
   markDeliverableSchema,
   moveDeliverableSchema,
+  prototypesQuerySchema,
+  setPrototypeStatusSchema,
+  setPrototypeVisibilitySchema,
   updateDeliverableCommentSchema,
   updateDeliverableSchema,
   type CreateDeliverableComment,
@@ -19,6 +24,8 @@ import {
   type UpdateDeliverable,
   type UpdateDeliverableComment,
   type Deliverable,
+  type SetPrototypeVisibility,
+  type SetPrototypeVisibilityResponse,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
@@ -30,6 +37,8 @@ import { injectDeliverableReviewScript } from "../services/deliverable-review-sc
 import { deliverableService } from "../services/deliverables.js";
 import { captureSiteScreenshot, enqueueScreenshot, type SiteScreenshotter } from "../services/deliverable-links.js";
 import type { StorageService } from "../storage/types.js";
+import { prototypeService, type PortalPrototypesPush } from "../services/prototypes.js";
+import type { WebsiteBridgeActor } from "../services/website/data-bridge-client.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
 
 // Deliverables (GRE-388). Agents register a finished document on an issue they
@@ -51,6 +60,8 @@ export function deliverableRoutes(
     screenshot?: SiteScreenshotter;
     /** Public origin of the app, for absolute deliverable links. Defaults to the request's own origin. */
     publicBaseUrl?: string;
+    /** Test seam: sends a prototype list to a site. */
+    prototypePush?: PortalPrototypesPush;
   } = {},
 ) {
   const router = Router();
@@ -61,6 +72,23 @@ export function deliverableRoutes(
   const issuesSvc = issueService(db);
   const access = accessService(db);
   const screenshot = opts.screenshot ?? captureSiteScreenshot;
+  const prototypes = prototypeService(db, storage, { push: opts.prototypePush });
+  const screenshotUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
+
+  function bridgeActor(req: Request): WebsiteBridgeActor {
+    const info = getActorInfo(req);
+    return info.actorType === "agent"
+      ? { type: "agent", id: info.agentId ?? info.actorId, runId: info.runId ?? null }
+      : { type: "user", id: info.actorId };
+  }
+
+  /** A shared prototype's portal follows a move or a new version at once; a failure is logged, never thrown. */
+  function resyncPrototype(req: Request, companyId: string, deliverable: { kind: string; issue: { id: string }; key: string }) {
+    if (deliverable.kind !== "prototype") return;
+    void prototypes.resyncIfShared(companyId, deliverable.issue.id, deliverable.key, bridgeActor(req))
+      .then((sync) => { if (sync?.error) logger.warn({ error: sync.error }, "prototype portal resync failed"); })
+      .catch((err) => logger.warn({ err }, "prototype portal resync failed"));
+  }
 
   /** Absolute link to the deliverable in the app, so an agent can hand it straight to John. */
   function withAppUrl<T extends Deliverable>(req: Request, deliverable: T): T {
@@ -223,7 +251,29 @@ export function deliverableRoutes(
     }
     const updated = await svc.getDetail(companyId, current.id);
     if (!updated) throw notFound("Deliverable not found");
+    if (moved) resyncPrototype(req, companyId, updated);
     res.json(withAppUrl(req, updated));
+  });
+
+  // Upload a screenshot by hand, for a site the browser cannot reach (password protected, or no browser here).
+  router.post("/companies/:companyId/deliverables/:id/screenshot/upload", screenshotUpload.single("file"), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const current = await svc.getDetail(companyId, req.params.id as string);
+    if (!current) throw notFound("Deliverable not found");
+    await assertMayEditDeliverable(req, current.issue.id);
+    if (!current.external) throw unprocessable("Only link deliverables have a site screenshot");
+    const file = (req as Request & { file?: { buffer: Buffer } }).file;
+    if (!file) throw unprocessable("Send the image as the form field \"file\"");
+    let image: Buffer;
+    try {
+      image = await sharp(file.buffer).resize(1280, 720, { fit: "cover", position: "top" }).jpeg({ quality: 70 }).toBuffer();
+    } catch {
+      throw unprocessable("That file is not a PNG, JPEG or WebP image");
+    }
+    await svc.saveScreenshot(companyId, current.id, image);
+    resyncPrototype(req, companyId, current);
+    res.json(withAppUrl(req, (await svc.getDetail(companyId, current.id)) ?? current));
   });
 
   router.post("/companies/:companyId/deliverables/:id/screenshot", async (req, res) => {
@@ -273,10 +323,13 @@ export function deliverableRoutes(
     });
     await logRegistered(req, deliverable, "issue.deliverable_registered");
     if (deliverable.external) {
-      // The card shows a placeholder until the screenshot lands.
-      void refreshScreenshot(issue.companyId, deliverable).catch((err) => {
-        logger.warn({ err, deliverableId: deliverable.id }, "deliverable screenshot failed");
-      });
+      // The card shows a placeholder until the screenshot lands. A shared
+      // prototype's portal is pushed once its new version has its picture.
+      void refreshScreenshot(issue.companyId, deliverable)
+        .catch((err) => {
+          logger.warn({ err, deliverableId: deliverable.id }, "deliverable screenshot failed");
+        })
+        .finally(() => resyncPrototype(req, issue.companyId, deliverable));
     }
     res.status(201).json(withAppUrl(req, deliverable));
   });
@@ -335,6 +388,63 @@ export function deliverableRoutes(
     });
     await logRegistered(req, deliverable, "issue.deliverable_marked");
     res.status(201).json(deliverable);
+  });
+
+  // Prototypes (John, 14 Nov). Registering is the link deliverable route
+  // above with kind "prototype", always Internal. Only a person shows one to a
+  // client, after a confirm that names the client; agents get 403.
+
+  router.get("/companies/:companyId/prototypes", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const list = await prototypes.list(companyId, prototypesQuerySchema.parse(req.query));
+    res.json({ prototypes: list.map((item) => withAppUrl(req, item)) });
+  });
+
+  router.get("/companies/:companyId/prototypes/:id", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(withAppUrl(req, await prototypes.get(companyId, req.params.id as string)));
+  });
+
+  router.patch("/companies/:companyId/prototypes/:id/status", validate(setPrototypeStatusSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const current = await prototypes.get(companyId, req.params.id as string);
+    await assertMayEditDeliverable(req, current.issue.id);
+    const { status } = req.body as { status: "draft" | "in_review" | "retired" };
+    const result = await prototypes.setStatus(companyId, current.id, status, bridgeActor(req));
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId, actorType: actor.actorType, actorId: actor.actorId, agentId: actor.agentId, runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId, action: "issue.prototype_status_set", entityType: "issue", entityId: current.issue.id,
+      details: { workProductId: current.id, key: current.key, title: current.title, from: current.prototypeStatus, to: status,
+        unsharedFrom: result.unshared ? current.client?.name ?? null : null },
+    });
+    res.json({ prototype: withAppUrl(req, result.prototype), portal: result.portal });
+  });
+
+  router.post("/companies/:companyId/prototypes/:id/visibility", validate(setPrototypeVisibilitySchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "agent") throw forbidden("Only a person can show a prototype to a client");
+    assertBoard(req);
+    const actor = getActorInfo(req);
+    const body = req.body as SetPrototypeVisibility;
+    const result = await prototypes.setVisibility(companyId, req.params.id as string, { ...body, userId: actor.actorId });
+    if (result.changed) {
+      await logActivity(db, {
+        companyId, actorType: actor.actorType, actorId: actor.actorId, agentId: actor.agentId, runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: body.visible ? "issue.prototype_shared" : "issue.prototype_unshared",
+        entityType: "issue", entityId: result.prototype.issue.id,
+        details: { workProductId: result.prototype.id, key: result.prototype.key, title: result.prototype.title,
+          url: result.prototype.url, organisationId: result.client.id, clientName: result.client.name,
+          portalSites: result.portal.sites, portalError: result.portal.error },
+      });
+    }
+    const response: SetPrototypeVisibilityResponse = { prototype: withAppUrl(req, result.prototype), portal: result.portal };
+    res.json(response);
   });
 
   // Deliverable comments (GRE-982). Anyone who may read the deliverable sees

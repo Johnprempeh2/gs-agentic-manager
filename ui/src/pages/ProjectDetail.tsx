@@ -51,6 +51,7 @@ import { ErrorState } from "../components/ErrorState";
 import { ProjectClientChips } from "../components/ProjectClientChips";
 import { ProjectGitAuthorization } from "../components/ProjectGitAuthorization";
 import { ProjectDeliverablesTab, useProjectDeliverables } from "../components/deliverables/ProjectDeliverables";
+import { ProjectPrototypes } from "../components/prototypes/PrototypeList";
 
 /* ── Top-level tab types ── */
 
@@ -931,7 +932,10 @@ export function ProjectDetail() {
       )}
 
       {activeTab === "deliverables" && project?.id && resolvedCompanyId ? (
-        <ProjectDeliverablesTab companyId={resolvedCompanyId} projectId={project.id} />
+        <div className="space-y-8">
+          <ProjectPrototypes companyId={resolvedCompanyId} projectId={project.id} />
+          <ProjectDeliverablesTab companyId={resolvedCompanyId} projectId={project.id} />
+        </div>
       ) : null}
 
       {activeTab === "plugin-operations" && project?.id && resolvedCompanyId && project.managedByPlugin && (
