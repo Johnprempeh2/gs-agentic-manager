@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { MemberActivityDialog } from "../components/access/MemberActivityDialog";
 import { membershipStatusLabel } from "@/lib/membership-labels";
 import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS,
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
   hidesCompanyPage,
 } from "@greatstone/shared";
@@ -87,6 +89,7 @@ export function CompanyAccess() {
   // dialog still shows the result.
   const [handingOverMember, setHandingOverMember] = useState<CompanyMember | null>(null);
   const [resettingTwoStepMember, setResettingTwoStepMember] = useState<CompanyMember | null>(null);
+  const [activityMember, setActivityMember] = useState<CompanyMember | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
   const [draftReviewOverride, setDraftReviewOverride] = useState(false);
@@ -440,6 +443,11 @@ export function CompanyAccess() {
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit
                         </Button>
+                        {access?.currentUserRole === "owner" && member.principalType === "user" ? (
+                          <Button size="sm" variant="outline" onClick={() => setActivityMember(member)}>
+                            Activity
+                          </Button>
+                        ) : null}
                         {member.twoStep?.canReset ? (
                           <Button size="sm" variant="outline" onClick={() => setResettingTwoStepMember(member)}>
                             <KeyRound className="mr-1 h-3.5 w-3.5" />
@@ -527,6 +535,11 @@ export function CompanyAccess() {
                       </option>
                     ))}
                   </select>
+                  {draftRole ? (
+                    <span className="block text-muted-foreground" data-role-description>
+                      {HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS[draftRole]}
+                    </span>
+                  ) : null}
                 </label>
                 <label className="space-y-2 text-sm">
                   <span className="font-medium">Membership status</span>
@@ -626,6 +639,14 @@ export function CompanyAccess() {
         </DialogContent>
       </Dialog>
 
+      {selectedCompanyId ? (
+        <MemberActivityDialog
+          companyId={selectedCompanyId}
+          member={activityMember ? { userId: activityMember.principalId, name: memberDisplayName(activityMember) } : null}
+          open={!!activityMember}
+          onOpenChange={(open) => !open && setActivityMember(null)}
+        />
+      ) : null}
       <MemberHandoverDialog
         companyId={selectedCompanyId}
         member={handingOverMember}

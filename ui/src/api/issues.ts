@@ -179,6 +179,8 @@ function issueListSearchParams(filters?: IssueListFilters) {
 }
 
 export const issuesApi = {
+  /** Hand a task, or a review waiting on you, to the owner with a short note. */
+  escalate: (id: string, note: string) => api.post<Issue>(`/issues/${id}/escalate`, { note }),
   /** Fetch every page for bounded task-detail relations, not just the default first page. */
   listAll: async (companyId: string, filters: Omit<IssueListFilters, "limit" | "offset" | "sortField" | "sortDir" | "afterId" | "attention">, options?: RequestOptions): Promise<Issue[]> => {
     const pageSize = 500;

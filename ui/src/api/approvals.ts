@@ -9,6 +9,8 @@ export const approvalsApi = {
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Approval>(`/companies/${companyId}/approvals`, data),
   get: (id: string) => api.get<Approval>(`/approvals/${id}`),
+  /** Hand it to the owner with a short note (Ben's access, Nov 2026). */
+  escalate: (id: string, note: string) => api.post<Approval>(`/approvals/${id}/escalate`, { note }),
   approve: (id: string, decisionNote?: string) =>
     api.post<Approval>(`/approvals/${id}/approve`, { decisionNote }),
   reject: (id: string, decisionNote?: string) =>

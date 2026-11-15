@@ -120,6 +120,7 @@ import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
 import { taskTimeLine } from "../../lib/time-to-done";
 import { IssueDueDateRow } from "./IssueDueDateRow";
 import { ReviewOverrideActions } from "./ReviewOverrideActions";
+import { IssueEscalateRow } from "./IssueEscalateRow";
 import {
   buildWorkspaceSelectionUpdate,
   currentWorkspaceSelection,
@@ -2843,6 +2844,7 @@ export function IssueProperties({
             />
           </PropertyRow>
         )}
+        <IssueEscalateRow issue={issue} currentUserId={currentUserId} />
 
         {showScheduledRetryRow && scheduledRetry?.scheduledRetryReason === "workspace_busy" ? (
           <PropertyRow label="Workspace">

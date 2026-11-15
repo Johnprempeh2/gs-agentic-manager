@@ -10,7 +10,7 @@ import {
   type RecentlyOpenedIssue,
 } from "@greatstone/shared";
 import { Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Network, RotateCcw } from "lucide-react";
-import { Link, useActiveCompanyPrefix, useLocation } from "@/lib/router";
+import { Link, useActiveCompanyPrefix, useLocation, useNavigate } from "@/lib/router";
 import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { projectsApi } from "../api/projects";
 import { authApi } from "../api/auth";
 import { accessApi } from "../api/access";
 import { canOverrideReviews } from "../components/issue-properties/ReviewOverrideActions";
+import { MemberDeskView } from "../components/desk/MemberDeskView";
 import { WaitingOutsideButton } from "../components/decisions-feed/WaitingOutsideButton";
 import { DecisionFeedCard, decisionCardTaskId } from "../components/decisions-feed/DecisionFeedCard";
 import { NeedsMeList } from "../components/NeedsMeList";
@@ -137,6 +138,7 @@ export function Desk() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [askOpenId, setAskOpenId] = useState<string | null>(null);
@@ -256,6 +258,23 @@ export function Desk() {
     queryFn: () => accessApi.getCurrentBoardAccess(),
   });
   const mayOverrideReviews = selectedCompanyId ? canOverrideReviews(selectedCompanyId, boardAccess) : false;
+  // The owner can open any member's Desk ("View Ben That's Desk").
+  const isOwner = Boolean(selectedCompanyId && boardAccess && (
+    boardAccess.source === "local_implicit"
+    || boardAccess.memberships?.some((m) => m.companyId === selectedCompanyId && m.status === "active" && m.membershipRole === "owner")
+  ));
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyMembers(selectedCompanyId ?? ""),
+    queryFn: () => accessApi.listMembers(selectedCompanyId!),
+    enabled: !!selectedCompanyId && isOwner,
+  });
+  const otherMembers = useMemo(
+    () => (companyMembers?.members ?? []).filter((m) =>
+      m.principalType === "user" && m.status === "active" && m.principalId !== currentUserId),
+    [companyMembers, currentUserId],
+  );
+  const memberParam = new URLSearchParams(location.search).get("member");
+  const viewedMember = memberParam ? otherMembers.find((m) => m.principalId === memberParam) ?? null : null;
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -803,8 +822,40 @@ export function Desk() {
     </Link>
   );
 
+  const memberPicker = isOwner && otherMembers.length > 0 ? (
+    <label className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground">View a member's Desk</span>
+      <select
+        className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+        value=""
+        aria-label="View a member's Desk"
+        onChange={(event) => {
+          if (event.target.value) navigate(`/desk?member=${encodeURIComponent(event.target.value)}`);
+        }}
+      >
+        <option value="">Choose…</option>
+        {otherMembers.map((m) => (
+          <option key={m.principalId} value={m.principalId}>
+            {m.user?.name || m.user?.email || m.principalId}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : null;
+
+  if (isOwner && viewedMember) {
+    return (
+      <MemberDeskView
+        companyId={selectedCompanyId}
+        member={{ userId: viewedMember.principalId, name: viewedMember.user?.name || viewedMember.user?.email || "This member" }}
+        currentUserId={currentUserId}
+      />
+    );
+  }
+
   const page = (
     <div className="min-w-0 flex-1 space-y-6">
+      {memberPicker ? <div className="flex justify-end" data-desk-member-picker>{memberPicker}</div> : null}
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {decisionsError && (
         <ErrorState

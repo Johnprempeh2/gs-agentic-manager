@@ -21,6 +21,8 @@ import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import type { ApprovalComment } from "@greatstone/shared";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { ApprovalNoteDialog, type ApprovalNoteRequest } from "../components/ApprovalNoteDialog";
+import { EscalateToOwnerButton } from "../components/EscalateToOwnerButton";
+import { accessApi } from "../api/access";
 
 export function ApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -41,6 +43,13 @@ export function ApprovalDetail() {
     enabled: !!approvalId,
   });
   const resolvedCompanyId = approval?.companyId ?? selectedCompanyId;
+  // "Escalate to owner" is for everyone but the owner (Ben's access, Nov 2026).
+  const { data: boardAccess } = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+  });
+  const viewerIsOwner = Boolean(boardAccess && (boardAccess.source === "local_implicit"
+    || boardAccess.memberships?.some((m) => m.companyId === resolvedCompanyId && m.status === "active" && m.membershipRole === "owner")));
 
   const {
     data: comments,
@@ -358,6 +367,13 @@ export function ApprovalDetail() {
               Ask for changes
             </Button>
           )}
+          {(approval.status === "pending" || approval.status === "revision_requested") && boardAccess && !viewerIsOwner ? (
+            <EscalateToOwnerButton
+              what="approval"
+              onEscalate={(note) => approvalsApi.escalate(approval.id, note)}
+              onDone={() => void refetchApproval()}
+            />
+          ) : null}
           {approval.status === "revision_requested" && (
             <Button
               size="sm"

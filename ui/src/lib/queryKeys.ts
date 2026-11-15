@@ -882,6 +882,7 @@ export const queryKeys = {
    *  existing attention invalidation also refreshes the feed and its count. */
   decisionsFeed: {
     feed: (companyId: string) => ["attention", companyId, "decisions-feed"] as const,
+    memberFeed: (companyId: string, memberUserId: string) => ["attention", companyId, "decisions-feed", "member", memberUserId] as const,
     count: (companyId: string) => ["attention", companyId, "decisions-feed", "count"] as const,
     needsMe: (companyId: string) => ["attention", companyId, "needs-me"] as const,
   },
