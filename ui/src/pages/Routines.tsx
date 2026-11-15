@@ -774,7 +774,7 @@ export function Routines() {
             Work that repeats on a schedule, such as a weekly report. Each <HelpTerm term="run" /> makes a <HelpTerm term="task" /> you can follow.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(routines?.length ?? 0) > 0 ? (
             <Button
               variant="outline"
