@@ -1,7 +1,8 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -80,6 +81,15 @@ import { getAppDetailConnectionId } from "../lib/app-detail-route";
 /** How long the pointer rests on the collapsed rail before it opens. */
 const PEEK_INTENT_MS = 180;
 
+/**
+ * A rail flyout is portalled outside the sidebar panel, but React still sends
+ * its mouse enter and leave through the panel's handlers. Only the panel's own
+ * DOM counts as the pointer being over the sidebar.
+ */
+function fromPanel(event: MouseEvent<HTMLDivElement>): boolean {
+  return event.currentTarget.contains(event.target as Node);
+}
+
 /** Focus that came from the keyboard (Tab), not from a click on a rail icon. */
 function isKeyboardFocus(target: EventTarget | null): boolean {
   try {
@@ -102,6 +112,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     collapsed,
     peeking,
     setPeeking,
+    openFlyout,
     isMobile,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
@@ -394,20 +405,41 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     clearPeekTimer();
     peekTimer.current = window.setTimeout(() => setPeeking(false), 120);
   }, [clearPeekTimer, setPeeking]);
+  // A nav group's flyout menu is open (Sidebar.tsx). While it is, the peek holds
+  // still: it neither opens nor closes under the menu, which would move the
+  // group row and drag the menu away from a pointer on its way into it.
+  const flyoutOpenRef = useRef(false);
+  flyoutOpenRef.current = openFlyout != null;
   // Tracked even while expanded so that, at the moment of collapse, we know
   // whether the pointer is over the panel and should suppress the re-peek.
-  const handlePanelPointerEnter = useCallback(() => {
+  const handlePanelPointerEnter = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!fromPanel(event)) return;
     pointerInsidePanel.current = true;
     if (!collapsed || suppressPeekRef.current) return;
     clearPeekTimer();
-    peekTimer.current = window.setTimeout(() => setPeeking(true), PEEK_INTENT_MS);
+    peekTimer.current = window.setTimeout(() => {
+      peekTimer.current = null;
+      if (!flyoutOpenRef.current) setPeeking(true);
+    }, PEEK_INTENT_MS);
   }, [collapsed, clearPeekTimer, setPeeking]);
-  const handlePanelPointerLeave = useCallback(() => {
+  const handlePanelPointerLeave = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!fromPanel(event)) return;
     pointerInsidePanel.current = false;
     suppressPeekRef.current = false; // pointer left — re-arm peek for the next hover
     clearPeekTimer();
-    setPeeking(false);
+    // Committed before the next pointer event: a mouse leave is not a discrete
+    // event, so React would otherwise let a click that follows within a frame
+    // hit the still-open overlay instead of the list beside it.
+    if (!flyoutOpenRef.current) flushSync(() => setPeeking(false));
   }, [clearPeekTimer, setPeeking]);
+  // When the flyout closes (an item chosen, a click outside, Escape) the peek
+  // closes too unless the pointer is back over the sidebar.
+  useEffect(() => {
+    if (openFlyout == null && !pointerInsidePanel.current) {
+      clearPeekTimer();
+      setPeeking(false);
+    }
+  }, [openFlyout, clearPeekTimer, setPeeking]);
   const handlePanelFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
     // React sends focus inside portals (a rail flyout menu) through here too;
     // only focus that lands in the panel itself opens the peek.
@@ -418,7 +450,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   // Clicking a rail/peek nav item moves focus to <main> on navigation; if the
   // mouse is still over the flyout we keep it open until the pointer leaves.
   const handlePanelBlur = useCallback(() => {
-    if (pointerInsidePanel.current) return;
+    if (pointerInsidePanel.current || flyoutOpenRef.current) return;
     closePeek();
   }, [closePeek]);
 

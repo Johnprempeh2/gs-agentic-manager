@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -93,6 +94,9 @@ type SidebarShellProps = {
  * starts (gs-side-reveal). Reduced motion is instant. Dragging the handle is
  * direct (no transition while resizing).
  */
+/** Covers --motion-sidebar-width (220ms) with a frame to spare. */
+const SIDEBAR_SETTLE_MS = 260;
+
 export function SidebarShell({
   children,
   open,
@@ -122,6 +126,24 @@ export function SidebarShell({
   const reservedWidth = !open ? 0 : collapsed ? SIDEBAR_RAIL_WIDTH : expandedWidth;
   const panelWidth = !open ? 0 : collapsed && !peeking ? SIDEBAR_RAIL_WIDTH : expandedWidth;
   const isOverlay = panelWidth > reservedWidth;
+
+  // A closing peek still covers the page while its width eases back to the
+  // rail. For that moment it lets clicks through, so a quick click on what sits
+  // beside the rail (the Messages list) lands there instead of on the fading
+  // sidebar (15 Nov: one in three quick second clicks was lost).
+  const [settling, setSettling] = useState(false);
+  const wasOverlay = useRef(isOverlay);
+  useLayoutEffect(() => {
+    const closed = wasOverlay.current && !isOverlay;
+    wasOverlay.current = isOverlay;
+    if (!closed) {
+      setSettling(false);
+      return;
+    }
+    setSettling(true);
+    const timer = window.setTimeout(() => setSettling(false), SIDEBAR_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [isOverlay]);
 
   // The drag handle can only resize the expanded width, so it is disabled while
   // collapsed (the rail width is a fixed constant, not user-resizable).
@@ -213,6 +235,7 @@ export function SidebarShell({
           // Overlay styling only while the panel is wider than its reserved
           // spacer (i.e. peeking) so it floats above content without reflow.
           isOverlay ? "z-chrome" : "z-page",
+          settling && "pointer-events-none",
         )}
         style={panelStyle}
         data-sidebar-overlay={isOverlay ? "" : undefined}

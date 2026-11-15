@@ -37,6 +37,7 @@ const mockSidebarState = vi.hoisted(() => ({
   isMobile: false,
   collapsed: false,
   peeking: false,
+  openFlyout: null as string | null,
 }));
 let currentPathname = "/PAP/dashboard";
 
@@ -239,6 +240,7 @@ vi.mock("../context/SidebarContext", () => ({
     collapsed: mockSidebarState.collapsed,
     peeking: mockSidebarState.peeking,
     setPeeking: mockSetPeeking,
+    openFlyout: mockSidebarState.openFlyout,
     setForceCollapsed: mockSetForceCollapsed,
     isMobile: mockSidebarState.isMobile,
     routeRequestsCollapsed: false,
@@ -327,6 +329,7 @@ describe("Layout", () => {
     mockSidebarState.isMobile = false;
     mockSidebarState.collapsed = false;
     mockSidebarState.peeking = false;
+    mockSidebarState.openFlyout = null;
     mockSetPeeking.mockClear();
     mockSetForceCollapsed.mockClear();
   });
@@ -546,6 +549,66 @@ describe("Layout", () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it("holds the peek still while a group flyout is open, then closes it with the flyout", async () => {
+    // John, 15 Nov: hovering the rail then clicking Decisions, the flyout went
+    // before he could use it. The peek opened or folded under the open menu
+    // and dragged it away from the pointer on its way in.
+    mockSidebarState.collapsed = true;
+    mockSidebarState.peeking = true;
+    mockSidebarState.openFlyout = "Desk";
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const render = () => act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await render();
+    await flushReact();
+    const panel = [...container.querySelectorAll<HTMLElement>("div")].find(
+      (el) => el.className.includes("inset-y-0") && el.className.includes("pl-2"),
+    );
+    expect(panel).toBeTruthy();
+    const wait = (ms: number) => act(async () => {
+      await new Promise((r) => setTimeout(r, ms));
+    });
+    mockSetPeeking.mockClear();
+
+    // The pointer leaves the sidebar for the menu: the peek stays.
+    await act(async () => {
+      panel!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body }));
+    });
+    expect(mockSetPeeking).not.toHaveBeenCalled();
+
+    // Resting on the rail with a flyout open never opens the peek under it.
+    mockSidebarState.peeking = false;
+    await render();
+    await act(async () => {
+      panel!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body }));
+    });
+    await wait(250);
+    expect(mockSetPeeking).not.toHaveBeenCalledWith(true);
+    await act(async () => {
+      panel!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body }));
+    });
+
+    // The flyout closes with the pointer off the sidebar: the peek closes too.
+    mockSidebarState.peeking = true;
+    mockSidebarState.openFlyout = null;
+    mockSetPeeking.mockClear();
+    await render();
+    expect(mockSetPeeking).toHaveBeenCalledWith(false);
+
+    await act(async () => {
+      root.unmount();
+    });
+    mockSidebarState.peeking = false;
   });
 
   it("replaces the app sidebar with settings navigation on Streamlined settings routes", async () => {

@@ -254,3 +254,79 @@ test("the collapsed sidebar opens on a resting hover and never eats a click mean
   await expect(page).toHaveURL(new RegExp(`/messages/${group.id}$`));
   await expect(groupRow).toHaveAttribute("data-selected", "true");
 });
+
+// 15 Nov, John: hovering the rail then clicking Decisions, the Desk flyout went
+// before he could use it. The hover peek opened or folded under the open menu
+// and dragged it away. The flyout must hold still while the pointer crosses into
+// it, rail or peek, and still close on Escape.
+test("a group flyout holds still while the pointer moves into it, from the rail or the hover peek", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  const { company, group } = await seed(request);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openShell(page, `/${company.issuePrefix}/messages/${group.id}`, { collapsed: true });
+  const menu = page.getByRole("menu");
+  const glassWidth = async () => (await page.locator('[data-slot="sidebar-glass"]').boundingBox())!.width;
+  const travelInto = async (from: { x: number; y: number }) => {
+    await page.waitForTimeout(300); // the menu's own open animation has settled
+    const start = (await menu.boundingBox())!;
+    const to = { x: start.x + 60, y: start.y + 50 };
+    for (let i = 1; i <= 12; i += 1) {
+      await page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12);
+      await page.waitForTimeout(30);
+      const now = await menu.boundingBox();
+      expect(now, `menu still open at step ${i}`).not.toBeNull();
+      expect(now!.x, `menu did not move at step ${i}`).toBe(start.x);
+    }
+    await page.waitForTimeout(400);
+    await expect(menu).toBeVisible();
+  };
+
+  // From the rail: rest on the Desk icon past the peek delay, click it, go to the list.
+  await page.mouse.move(1400, 400);
+  const desk = (await page.locator("button[data-tour=nav-decisions]").boundingBox())!;
+  const icon = { x: desk.x + desk.width / 2, y: desk.y + desk.height / 2 };
+  await page.mouse.move(icon.x + 60, icon.y, { steps: 4 });
+  await page.mouse.move(icon.x, icon.y, { steps: 4 });
+  await page.waitForTimeout(400);
+  await expect(menu).toBeVisible();
+  expect(await glassWidth(), "the rail stays a rail under its flyout").toBeLessThan(100);
+  await page.mouse.down();
+  await page.mouse.up();
+  await travelInto(icon);
+  await menu.getByRole("menuitem", { name: /Decisions/ }).click();
+  await expect(page).toHaveURL(/\/desk#desk-needs-me$/);
+  await expect(menu).toHaveCount(0);
+  await page.waitForTimeout(400);
+  expect(await glassWidth(), "choosing an item does not open the rail under the pointer").toBeLessThan(100);
+
+  // From the peek: rest on the rail away from a group, then click Desk in the open sidebar.
+  await page.mouse.move(1400, 400);
+  const brand = (await page.locator('[data-slot="sidebar-brand-header"]').boundingBox())!;
+  await page.mouse.move(brand.x + 20, brand.y + brand.height / 2, { steps: 6 });
+  await expect.poll(glassWidth).toBeGreaterThan(150);
+  await page.waitForTimeout(400); // the 220ms open ease has settled
+  const row = (await page.locator("button[data-tour=nav-decisions]").boundingBox())!;
+  const label = { x: row.x + 30, y: row.y + row.height / 2 };
+  await page.mouse.move(label.x, label.y, { steps: 4 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(menu).toBeVisible();
+  await travelInto(label);
+  expect(await glassWidth(), "the peek stays open under its flyout").toBeGreaterThan(150);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect.poll(glassWidth, { message: "the peek folds once the flyout closes" }).toBeLessThan(100);
+
+  // Hovering down the rail swaps one flyout for the next: never two at once.
+  await page.mouse.move(1400, 400);
+  await page.waitForTimeout(400); // the closing peek lets clicks through until it settles
+  await page.mouse.move(icon.x + 60, icon.y, { steps: 4 });
+  await page.mouse.move(icon.x, icon.y, { steps: 4 });
+  await expect(menu).toHaveCount(1);
+  const team = (await page.locator('button[aria-label^="Team"]').boundingBox())!;
+  await page.mouse.move(icon.x, team.y + team.height / 2, { steps: 12 });
+  await page.waitForTimeout(400);
+  await expect(menu).toHaveCount(1);
+  await expect(menu.getByRole("menuitem").first()).toHaveText(/Agents/);
+  await page.keyboard.press("Escape");
+});
