@@ -16,6 +16,16 @@ test("Skills cards fit beside both sidebars at tablet width", async ({ page, req
   expect(overflow, "no skill card runs past the screen edge").toEqual([]);
 });
 
+test("Mailboxes keeps its sign-in buttons on screen beside the Connectors menu", async ({ page, request }) => {
+  const company = (await json(await request.post("/api/companies", { data: { name: `Mailboxes fit ${Date.now()}` } }))) as Company;
+  await page.addInitScript(() => localStorage.setItem("paperclip.sidebar.collapsed", "0"));
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto(`/${company.issuePrefix}/apps/mailboxes`);
+  await expect(page.getByRole("heading", { name: "Mailboxes" })).toBeVisible({ timeout: 30_000 });
+  const overflow = await page.locator("header button").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right - innerWidth).filter((d) => d > 0.5));
+  expect(overflow, "no header button runs past the screen edge").toEqual([]);
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
