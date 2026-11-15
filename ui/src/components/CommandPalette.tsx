@@ -2,7 +2,7 @@ import { AgentIdentity } from "@/components/AgentIdentity";
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Issue } from "@greatstone/shared";
+import { AGENT_ROLE_LABELS, type Issue } from "@greatstone/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -164,6 +164,11 @@ const KIND_HINTS: Record<PaletteDestination["kind"], string> = {
   task: "Task",
 };
 const destinationIcon = (d: PaletteDestination) => (d.kind === "page" ? PAGE_ICONS[d.id] : undefined) ?? KIND_ICONS[d.kind];
+
+/** An agent role in words ("QA", "General"), not its stored code. */
+function roleWords(role: string): string {
+  return (AGENT_ROLE_LABELS as Record<string, string>)[role] ?? role;
+}
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -828,7 +833,7 @@ export function CommandPalette() {
                 <CommandItem key={agent.id} onSelect={() => go(agentUrl(agent))}>
                   <Bot className="mr-2 h-4 w-4" />
                   {agent.name}
-                  <span className="text-xs text-muted-foreground ml-2">{agent.role}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{roleWords(agent.role)}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -932,7 +937,7 @@ function TaskQuickActions({
               >
                 <Bot className="mr-2 h-4 w-4" />
                 Assign to {agent.name}
-                {agent.role ? <span className="ml-2 text-xs text-muted-foreground">{agent.role}</span> : null}
+                {agent.role ? <span className="ml-2 text-xs text-muted-foreground">{roleWords(agent.role)}</span> : null}
               </CommandItem>
             ))}
           </CommandGroup>

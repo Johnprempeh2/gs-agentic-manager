@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Users } from "lucide-react";
-import type { Agent } from "@greatstone/shared";
+import { AGENT_ROLE_LABELS, type Agent } from "@greatstone/shared";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { deriveInitials } from "@/components/Identity";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -84,7 +84,7 @@ function NewMessageResults({
                 <span className="gs-convo-avatar flex size-8 items-center justify-center rounded-full"><AgentAvatar agent={agent} size={24} /></span>
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-medium">{agent.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{agent.title ?? agent.role}</span>
+                  <span className="truncate text-xs text-muted-foreground">{agent.title ?? AGENT_ROLE_LABELS[agent.role] ?? agent.role}</span>
                 </span>
               </CommandItem>
             ))}

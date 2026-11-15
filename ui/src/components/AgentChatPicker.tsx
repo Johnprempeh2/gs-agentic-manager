@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Agent } from "@greatstone/shared";
+import { AGENT_ROLE_LABELS, type Agent } from "@greatstone/shared";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -74,7 +74,7 @@ function AgentChatPickerResults({ agents, onSelect, loading, error, onRetry }: O
                 <AgentIcon icon={agent.icon} className="size-4 shrink-0" />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate font-medium">{agent.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{agent.title ?? agent.role}</span>
+                  <span className="truncate text-xs text-muted-foreground">{agent.title ?? AGENT_ROLE_LABELS[agent.role] ?? agent.role}</span>
                 </span>
                 {agent.status === "paused" && <span className="text-xs text-(--status-agent-paused)">Paused</span>}
                 {agent.status === "terminated" && <span className="text-xs text-muted-foreground">Terminated</span>}
