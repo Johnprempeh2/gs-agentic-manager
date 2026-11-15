@@ -1171,6 +1171,17 @@ export const HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS: Record<HumanCompanyMembership
   viewer: "Viewer",
 };
 
+/** What each role can do, in plain words, for the member and invite screens. */
+export const HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS: Record<HumanCompanyMembershipRole, string> = {
+  owner:
+    "Sees and can do everything: decides any approval, can take over anyone's decisions, sees each member's Desk and activity, manages people, money, secrets and settings.",
+  admin:
+    "Runs the company day to day: manages agents, secrets, budgets and settings, and decides any approval. Cannot change people's permissions.",
+  operator:
+    "Works with agents and tasks: decides the approvals and reviews routed to them, can escalate anything to the owner. Cannot hire agents, change secrets or budgets, export the company or delete work.",
+  viewer: "Reads only: can see work and ask the board's agents questions, but cannot change anything.",
+};
+
 export const INSTANCE_USER_ROLES = ["instance_admin"] as const;
 export type InstanceUserRole = (typeof INSTANCE_USER_ROLES)[number];
 

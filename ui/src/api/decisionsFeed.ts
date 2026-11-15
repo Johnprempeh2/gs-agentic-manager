@@ -15,6 +15,9 @@ import { api } from "./client";
  */
 export const decisionsFeedApi = {
   get: (companyId: string) => api.get<DecisionsFeed>(`/companies/${companyId}/decisions-feed`),
+  /** The owner reading a member's Desk as that member sees it. */
+  getForMember: (companyId: string, memberUserId: string) =>
+    api.get<DecisionsFeed>(`/companies/${companyId}/decisions-feed?member=${encodeURIComponent(memberUserId)}`),
   count: (companyId: string) => api.get<DecisionsFeedCount>(`/companies/${companyId}/decisions-feed/count`),
   /** One "needs me" list and count (GRE-355): the feed plus tasks assigned to the user. */
   needsMe: (companyId: string) => api.get<NeedsMe>(`/companies/${companyId}/needs-me`),

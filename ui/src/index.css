@@ -432,6 +432,8 @@
   --sz-memory-list-max: calc(100vh - 8rem);
   --gtc-memory-explorer: 14rem minmax(0, 1fr); /* Memory page: contributors beside the graph or list. */
   --gtc-memory-review: 22rem minmax(0, 1fr); /* Memory review: queue beside the card under review (GRE-1080). */
+  --gtc-member-activity: 9rem 7rem minmax(0, 1fr); /* Member activity trail: when, type, what (Ben's access). */
+  --sz-member-activity-max: 60vh;
   --sz-memory-contributors-phone: 11rem; /* Contributor list height on phones, above the graph. */
 
   /* New-task dialog geometry inputs and gap tokens. The derived top/height

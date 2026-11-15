@@ -33,7 +33,18 @@ const mockAccessService = vi.hoisted(() => ({
   decide: vi.fn(),
 }));
 
+// Who may decide is covered on the real app (operator-safety-floor,
+// owner-desk-escalation); here the mock db cannot answer it.
+const mockApprovalAuthority = vi.hoisted(() => ({
+  assertCanApproveAsPerson: vi.fn(async () => undefined),
+  assertMayDecideRouted: vi.fn(async () => undefined),
+  routeApprovalTo: vi.fn(async () => "user-1"),
+  companyOwnerUserId: vi.fn(async () => "user-1"),
+  personName: vi.fn(async () => "Someone"),
+}));
+
 function registerModuleMocks() {
+  vi.doMock("../services/approval-authority.js", () => mockApprovalAuthority);
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
     approvalService: () => mockApprovalService,

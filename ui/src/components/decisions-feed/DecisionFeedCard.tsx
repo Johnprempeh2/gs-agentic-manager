@@ -110,6 +110,8 @@ export interface DecisionFeedCardProps {
    */
   compact?: boolean;
   className?: string;
+  /** The owner viewing a member's Desk: every card is theirs, decided only by Take over. */
+  viewingMember?: { userId: string; name: string } | null;
 }
 
 /**
@@ -151,6 +153,7 @@ export function DecisionFeedCard({
   quietSuccess = false,
   compact = false,
   className,
+  viewingMember = null,
 }: DecisionFeedCardProps) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
@@ -215,9 +218,18 @@ export function DecisionFeedCard({
   };
 
   const Frame = embedded ? "section" : "article";
+  // A card waiting on someone else (Ben's access): marked as theirs, and the
+  // owner decides it only after pressing Take over.
+  const routedTo = card.routedTo ?? viewingMember ?? null;
+  const [takenOver, setTakenOver] = useState(false);
+  const locked = Boolean(routedTo) && !takenOver;
+  const routedBar = routedTo ? (
+    <RoutedToBar name={routedTo.name} takenOver={takenOver} onTakeOver={() => setTakenOver(true)} />
+  ) : null;
 
   if (compact && !expanded) {
-    const mainAction = compactMainAction(card);
+    // A card waiting on someone else shows no quick action until Take over.
+    const mainAction = locked ? null : compactMainAction(card);
     // The short card says why it waits; what to do is the main action below.
     const reason = card.reason || card.decision;
     return (
@@ -226,9 +238,11 @@ export function DecisionFeedCard({
         data-decision-card={card.id}
         data-decision-kind={card.kind}
         data-decision-compact
+        data-decision-routed={routedTo ? routedTo.userId : undefined}
         aria-label={card.title}
       >
-        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />
+        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", routedTo ? "bg-status-info" : severity.accent)} />
+        {routedBar}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="shrink-0 rounded-full border border-border bg-accent px-2 py-0.5 font-medium text-foreground">
             {decisionKindLabel(card, card.kind)}
@@ -309,9 +323,11 @@ export function DecisionFeedCard({
       id={compact ? detailsId : undefined}
       data-decision-card={card.id}
       data-decision-kind={card.kind}
+      data-decision-routed={routedTo ? routedTo.userId : undefined}
       aria-label={embedded ? "Also on this task" : card.title}
     >
-      {embedded ? null : <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />}
+      {embedded ? null : <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", routedTo ? "bg-status-info" : severity.accent)} />}
+      {routedBar}
 
       {/* Eyebrow: every merged kind, the task, and when it last moved. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -412,7 +428,7 @@ export function DecisionFeedCard({
 
       <DecisionCardImages card={card} />
 
-      {questionItem && focusItemIssueId(questionItem) ? (
+      {questionItem && focusItemIssueId(questionItem) && !locked ? (
         <AttentionInteractionResolver
           companyId={companyId}
           issueId={focusItemIssueId(questionItem)!}
@@ -424,7 +440,7 @@ export function DecisionFeedCard({
         />
       ) : null}
 
-      {decisionItems.map((item) => (
+      {(locked ? [] : decisionItems).map((item) => (
         <DecisionResolver
           key={item.id}
           companyId={companyId}
@@ -444,7 +460,7 @@ export function DecisionFeedCard({
         </p>
       ) : null}
 
-      {actions.length > 0 ? (
+      {actions.length > 0 && !locked ? (
         <CardOptions
           title={answersInPlace ? "Other options" : "Your options"}
           actions={actions}
@@ -992,4 +1008,26 @@ function WebsitePublishChanges({ card }: { card: DecisionCard }) {
   });
   if (data?.type !== "website_publish" || !data.payload) return null;
   return <ApprovalPayloadRenderer type={data.type} payload={data.payload as Record<string, unknown>} />;
+}
+
+/**
+ * Marks a card that waits on someone else, in the info tone (a colour token,
+ * never faded text), with Take over for the owner.
+ */
+function RoutedToBar({ name, takenOver, onTakeOver }: { name: string; takenOver: boolean; onTakeOver: () => void }) {
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-info/40 bg-status-info-soft px-3 py-1.5 text-sm text-status-info-foreground"
+      data-decision-routed-bar
+    >
+      <span className="font-medium">
+        {takenOver ? `Deciding on behalf of ${name}` : `${name} to decide`}
+      </span>
+      {takenOver ? null : (
+        <Button type="button" size="xs" variant="outline" onClick={onTakeOver}>
+          Take over
+        </Button>
+      )}
+    </div>
+  );
 }

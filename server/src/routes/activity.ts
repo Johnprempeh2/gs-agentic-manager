@@ -4,7 +4,8 @@ import type { Db } from "@greatstone/db";
 import { normalizeIssueIdentifier } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { activityService, normalizeActivityLimit } from "../services/activity.js";
-import { assertAuthenticated, assertBoard, assertCompanyAccess, getAccessibleResource, hasCompanyAccess } from "./authz.js";
+import { assertAuthenticated, assertBoard, assertCompanyAccess, getAccessibleResource, hasCompanyAccess, hasCompanyBoardRole } from "./authz.js";
+import { MEMBER_ACTIVITY_TYPES, memberActivityService, type MemberActivityType } from "../services/member-activity.js";
 import { accessService, heartbeatService, issueService } from "../services/index.js";
 import { sanitizeRecord } from "../redaction.js";
 import { badRequest, forbidden } from "../errors.js";
@@ -98,6 +99,13 @@ const createActivitySchema = z.object({
   entityId: z.string().min(1),
   agentId: z.string().guid().optional().nullable(),
   details: z.record(z.string(), z.unknown()).optional().nullable(),
+});
+
+const memberActivityQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  types: z.string().regex(new RegExp(`^((${MEMBER_ACTIVITY_TYPES.join("|")}),?)+$`)).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 const agentActionAuditActorScopeSchema = z.enum(["agents", "all"]);
@@ -333,6 +341,25 @@ export function activityRoutes(db: Db) {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="agent-audit-${companyId}.csv"`);
     res.send(auditRowsToCsv(rows));
+  });
+
+  // One person's trail, for the owner only: actions, decisions, escalations,
+  // comments, agent runs and chats they started (titles), sign-ins.
+  router.get("/companies/:companyId/members/:userId/activity", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!hasCompanyBoardRole(req, companyId)) throw forbidden("Only the owner can see a member's activity");
+    const parsed = memberActivityQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? "Invalid query");
+    const { from, to, types, limit } = parsed.data;
+    const entries = await memberActivityService(db).list(companyId, req.params.userId as string, {
+      from: from ?? null,
+      to: to ?? null,
+      types: types ? (types.split(",").filter(Boolean) as MemberActivityType[]) : undefined,
+      limit,
+    });
+    res.json({ entries });
   });
 
   router.post("/companies/:companyId/activity", validate(createActivitySchema), async (req, res) => {

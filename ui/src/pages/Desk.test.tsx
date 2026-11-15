@@ -29,6 +29,7 @@ vi.mock("@/lib/router", () => ({
   ),
   useLocation: () => ({ pathname: "/my-tasks", search: "", hash: "" }),
   useActiveCompanyPrefix: () => null,
+  useNavigate: () => () => undefined,
 }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
@@ -58,7 +59,9 @@ vi.mock("../components/decisions-feed/DecisionFeedCard", async (importOriginal) 
   ),
 }));
 vi.mock("../api/projects", () => ({ projectsApi: { list: async () => [] } }));
-vi.mock("../api/access", () => ({ accessApi: { getCurrentBoardAccess: async () => boardAccess } }));
+vi.mock("../api/access", () => ({
+  accessApi: { getCurrentBoardAccess: async () => boardAccess, listMembers: async () => ({ members: [], access: null }) },
+}));
 vi.mock("../api/agents", () => ({
   agentsApi: {
     list: async () => [

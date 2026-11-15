@@ -279,6 +279,16 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(container.querySelector("[data-card-options]")?.getAttribute("aria-label")).toBe("Your options");
   });
 
+  it("marks a card routed to someone else and hides its options until Take over", async () => {
+    render({ ...blockedCard(), routedTo: { userId: "user-ben", name: "Ben That" } });
+    expect(container.querySelector("[data-decision-routed-bar]")?.textContent).toContain("Ben That to decide");
+    expect(container.querySelector("[data-decision-card]")?.getAttribute("data-decision-routed")).toBe("user-ben");
+    expect(hasButton("Reassign")).toBe(false);
+    await click(button("Take over"));
+    expect(container.querySelector("[data-decision-routed-bar]")?.textContent).toContain("Deciding on behalf of Ben That");
+    expect(hasButton("Reassign")).toBe(true);
+  });
+
   it("a company-level card has no Not now or Ask for clarity", () => {
     render(connectionAlertCard());
     expect(container.textContent).toContain("No agent owns this yet.");

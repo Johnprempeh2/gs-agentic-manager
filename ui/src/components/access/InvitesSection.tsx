@@ -13,30 +13,31 @@ import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/context/ConfirmContext";
 import { ShareTextButton } from "@/components/ShareTextButton";
 import { formatDateTime } from "@/lib/utils";
+import { HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS } from "@greatstone/shared";
 
 const inviteRoleOptions = [
   {
     value: "viewer",
     label: "Viewer",
-    description: "Can see your organisation's work and follow along.",
+    description: HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS.viewer,
     gets: "View-only organisation membership.",
   },
   {
     value: "operator",
     label: "Operator",
-    description: "Recommended for people who need to help run work without managing access.",
-    gets: "Can assign tasks.",
+    description: HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS.operator,
+    gets: "Their own Desk; decides what is routed to them; escalates to the owner.",
   },
   {
     value: "admin",
     label: "Admin",
-    description: "Recommended for operators who need to invite people, create agents, and approve joins.",
+    description: HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS.admin,
     gets: "Can create agents, invite users, assign tasks, and approve join requests.",
   },
   {
     value: "owner",
     label: "Owner",
-    description: "Full access, including who can join.",
+    description: HUMAN_COMPANY_MEMBERSHIP_ROLE_DESCRIPTIONS.owner,
     gets: "Everything in Admin, plus managing members.",
   },
 ] as const;

@@ -35,3 +35,10 @@ export const addApprovalCommentSchema = z.object({
 });
 
 export type AddApprovalComment = z.infer<typeof addApprovalCommentSchema>;
+
+/** "Escalate to owner" on an approval, a review or a task: a short, required note. */
+export const escalateToOwnerSchema = z.object({
+  note: z.string().trim().min(3, "Say in a few words why").max(1000),
+});
+
+export type EscalateToOwner = z.infer<typeof escalateToOwnerSchema>;

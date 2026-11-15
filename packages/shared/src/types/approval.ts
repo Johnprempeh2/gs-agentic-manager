@@ -11,6 +11,12 @@ export interface Approval {
   decisionNote: string | null;
   decidedByUserId: string | null;
   decidedAt: Date | null;
+  /** The person this approval is routed to; owners and admins can decide any. */
+  approverUserId?: string | null;
+  escalatedByUserId?: string | null;
+  escalationNote?: string | null;
+  /** Set when the owner took it over from the person it was routed to. */
+  decidedOnBehalfOfUserId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

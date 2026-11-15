@@ -2969,6 +2969,13 @@
       "when": 1794703525979,
       "tag": "0425_prototype_portal_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 426,
+      "version": "7",
+      "when": 1794713525979,
+      "tag": "0426_approval_approver",
+      "breakpoints": true
     }
   ]
 }

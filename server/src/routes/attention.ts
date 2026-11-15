@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@greatstone/db";
 import type { AttentionSortMode } from "@greatstone/shared";
-import { attentionService } from "../services/attention.js";
+import { attentionService, deskRouting } from "../services/attention.js";
 import { viewerPrincipalUserIds } from "../services/board-identity.js";
 import { badRequest } from "../errors.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
@@ -54,6 +54,7 @@ export function attentionRoutes(db: Db) {
       cursor,
       sort: sortValue as AttentionSortMode | undefined,
       limit,
+      routing: await deskRouting(db, companyId, userId),
     });
     res.json(feed);
   });

@@ -7,10 +7,13 @@ import {
   outageTitle,
   readConnectivityState,
 } from "./connectivity-watch.js";
+import { companyOwnerUserId } from "./approval-authority.js";
 import {
   agents,
   approvals,
   assets,
+  authUsers,
+  companyMemberships,
   companies,
   connectionGrants,
   decisionBundles,
@@ -190,6 +193,13 @@ type AttentionListOptions = AttentionFeedQuery & {
   userIdAliases?: readonly string[];
   /** Internal-only escape hatch for callers that need one stable, unpaginated feed snapshot. */
   allowUnscopedAll?: boolean;
+  /**
+   * Approval and review cards are routed to one person (Ben's access, Nov
+   * 2026). Without this, every viewer sees every card (older callers).
+   * `seeEveryone`: the owner and admins also see cards routed to others,
+   * marked with `routedTo`. `ownerUserId` takes cards routed to nobody.
+   */
+  routing?: { ownerUserId: string | null; seeEveryone: boolean; names: ReadonlyMap<string, string> };
 };
 
 export type AttentionServiceOptions = {
@@ -1325,6 +1335,30 @@ function attentionItemIssueIds(item: AttentionItem): string[] {
   return ids;
 }
 
+/**
+ * Routing context for a viewer's Desk: who the owner is, whether the viewer
+ * sees cards routed to others (owners and admins), and member names.
+ */
+export async function deskRouting(db: Db, companyId: string, viewerUserId: string, opts: { asMember?: boolean } = {}) {
+  const members = await db
+    .select({ userId: companyMemberships.principalId, role: companyMemberships.membershipRole, name: authUsers.name, email: authUsers.email })
+    .from(companyMemberships)
+    .leftJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
+    .where(and(
+      eq(companyMemberships.companyId, companyId),
+      eq(companyMemberships.principalType, "user"),
+      eq(companyMemberships.status, "active"),
+    ));
+  const names = new Map(members.map((row) => [row.userId, row.name?.trim() || row.email || "Someone"]));
+  const viewerRole = members.find((row) => row.userId === viewerUserId)?.role ?? null;
+  return {
+    ownerUserId: await companyOwnerUserId(db, companyId),
+    // Viewing a member's Desk shows exactly what they see.
+    seeEveryone: !opts.asMember && (viewerRole === "owner" || viewerRole === "admin"),
+    names,
+  };
+}
+
 export function attentionService(db: Db, serviceOptions: AttentionServiceOptions = {}) {
   const openDecisionLimit = Math.min(
     Math.max(Math.trunc(serviceOptions.openDecisionLimit ?? OPEN_DECISION_DEFAULT_LIMIT), 1),
@@ -1352,6 +1386,19 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         if (!includeDismissed && dismissal?.isActive) return;
         collected.push({ ...item, dismissal });
       };
+      const viewerIds = new Set([options.userId, ...(options.userIdAliases ?? [])].filter((id): id is string => Boolean(id)));
+      /**
+       * Routing for approval and review cards. Undefined: skip the card.
+       * Null: the viewer's own card. Otherwise the person it waits on.
+       */
+      const routeFor = (personId: string | null | undefined): AttentionItem["routedTo"] | undefined => {
+        const routing = options.routing;
+        if (!routing) return null;
+        const target = personId ?? routing.ownerUserId;
+        if (!target || viewerIds.has(target)) return null;
+        if (!routing.seeEveryone) return undefined;
+        return { userId: target, name: routing.names.get(target) ?? "Someone" };
+      };
 
       const pendingApprovals = await db
         .select({
@@ -1360,6 +1407,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           status: approvals.status,
           requestedByAgentId: approvals.requestedByAgentId,
           requestedByUserId: approvals.requestedByUserId,
+          approverUserId: approvals.approverUserId,
+          escalationNote: approvals.escalationNote,
           payload: approvals.payload,
           createdAt: approvals.createdAt,
           updatedAt: approvals.updatedAt,
@@ -1385,9 +1434,12 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       }
 
       for (const approval of pendingApprovals) {
+        const routedTo = routeFor(approval.approverUserId);
+        if (routedTo === undefined) continue;
         const dedupKey = `approval:${approval.id}`;
         const title = approvalTitle(approval.type, approval.payload);
         add(createItem({
+          routedTo,
           companyId,
           sourceKind: "approval",
           subject: {
@@ -1405,7 +1457,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               issueId: approvalIssueMap.get(approval.id) ?? null,
             },
           },
-          whyNow: approval.type === "permission_grant"
+          whyNow: approval.escalationNote
+            ? `Escalated: ${approval.escalationNote}`
+            : approval.type === "permission_grant"
             ? "An agent was refused for a missing permission and its task is waiting."
             : "Approval is pending a board decision.",
           // GRE-601: a missing-permission request is only granted or denied.
@@ -1920,6 +1974,10 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         const reviewAttention = reviewAttentionByIssueId.get(review.id);
         const stalled = reviewAttention?.state === "stalled";
         if (!hasHumanParticipant && !review.assigneeUserId && !pendingApprovalId && !stalled) continue;
+        const reviewRoutedTo = routeFor(
+          currentParticipant?.type === "user" ? currentParticipant.userId : review.assigneeUserId,
+        );
+        if (reviewRoutedTo === undefined) continue;
         const issue = reviewIssueMap.get(review.id);
         if (!issue) continue;
         const dedupKey = `review:${review.id}`;
@@ -1929,6 +1987,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         // (the pending interaction/approval card, a monitor, a live run).
         const reviewSubject = issueSubject(prefix, issue);
         add(createItem({
+          routedTo: reviewRoutedTo,
           companyId,
           sourceKind: "review",
           subject: stalled

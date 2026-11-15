@@ -37,7 +37,7 @@ import type {
   DecisionCardTaskRef,
   DecisionsFeed,
 } from "@greatstone/shared";
-import { attentionService, type AttentionServiceOptions } from "./attention.js";
+import { attentionService, deskRouting, type AttentionServiceOptions } from "./attention.js";
 import {
   STALL_ESCALATION_MS,
   commentExcerpt,
@@ -282,7 +282,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
   }
 
   return {
-    build: async (companyId: string, options: { userId: string }): Promise<DecisionsFeed> => {
+    build: async (companyId: string, options: { userId: string; asMember?: boolean }): Promise<DecisionsFeed> => {
       const now = serviceOptions.now?.() ?? Date.now();
       // An owner also answers for the legacy `local-board` user (one rule, board-identity.ts).
       const viewerUserIds = await viewerPrincipalUserIds(db, companyId, options.userId);
@@ -291,6 +291,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         userIdAliases: viewerUserIds.filter((id) => id !== options.userId),
         all: true,
         allowUnscopedAll: true,
+        // Approval and review cards go to the person they wait on (Ben's access).
+        routing: await deskRouting(db, companyId, options.userId, { asMember: options.asMember }),
       });
       const rawItems = feed.items;
 
@@ -1451,6 +1453,7 @@ function buildCard(input: {
     id: group.key,
     kind,
     kinds,
+    routedTo: items.find((item) => item.routedTo)?.routedTo ?? null,
     ...(setup ? { setup } : {}),
     task: input.taskSubject ?? (task && taskHref ? {
       kind: "issue",

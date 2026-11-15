@@ -190,6 +190,11 @@ export interface DecisionCardEscalation {
 
 export interface DecisionCard {
   /**
+   * Set when the card waits on someone other than the viewer: the owner sees
+   * it marked as theirs, with Take over (Ben's access, Nov 2026).
+   */
+  routedTo?: { userId: string; name: string } | null;
+  /**
    * `task:<issueId>` for task cards, `item:<dedupKey>` for company-level cards,
    * `setup:<agentId>:<cause>` for one setup gap that stopped several tasks.
    */
