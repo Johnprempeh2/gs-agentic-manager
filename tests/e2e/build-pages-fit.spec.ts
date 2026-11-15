@@ -26,6 +26,21 @@ test("Mailboxes keeps its sign-in buttons on screen beside the Connectors menu",
   expect(overflow, "no header button runs past the screen edge").toEqual([]);
 });
 
+test("Pipelines keeps its title readable at tablet width", async ({ page, request }) => {
+  await json(await request.patch("/api/instance/settings/experimental", { data: { enablePipelines: true } }));
+  const company = (await json(await request.post("/api/companies", { data: { name: `Pipelines fit ${Date.now()}` } }))) as Company;
+  await page.addInitScript(() => localStorage.setItem("paperclip.sidebar.collapsed", "0"));
+  await page.setViewportSize({ width: 768, height: 1024 });
+  try {
+    await page.goto(`/${company.issuePrefix}/pipelines`);
+    const title = page.locator("[data-tour=pipelines-title]");
+    await expect(title).toBeVisible({ timeout: 30_000 });
+    expect((await title.boundingBox())!.width, "the title block keeps a readable width").toBeGreaterThanOrEqual(260);
+  } finally {
+    await request.patch("/api/instance/settings/experimental", { data: { enablePipelines: false } });
+  }
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
