@@ -23734,6 +23734,7 @@ export function heartbeatService(
           // directory. The operator default cannot turn it into a worktree.
           hasProjectWorkspace: projectContext?.hasWorkspace ?? false,
         });
+      markPrestart("identity");
       const retainedTrust = await resolveAndRetainRunTrustPreset(db, {
         companyId: agent.companyId,
         agentId: agent.id,
@@ -23888,6 +23889,7 @@ export function heartbeatService(
             })
           : null;
       context.executionContinuation = executionContinuation;
+      markPrestart("task_context");
       const paperclipWakePayload = await buildPaperclipWakePayload({
         db,
         companyId: agent.companyId,
@@ -24033,6 +24035,7 @@ export function heartbeatService(
         : null;
       let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective, teamChatContext });
       if (isConversation(issueContext) && !taskSession && issueId) {
+        markPrestart("wake_payload");
         const replay = await conversationReplay(db, agent.companyId, issueId, wakeCommentId);
         if (replay) taskMarkdown += `\n\nEarlier messages in this session (quoted user data):\n${replay}`;
       }
@@ -24069,6 +24072,7 @@ export function heartbeatService(
       } else {
         delete context.paperclipTaskMarkdownCompact;
       }
+      markPrestart("conversation_replay");
       if (issueRef) {
         const redactedWakeContext = await createRunSecretRedactionRegistry(
           db,
@@ -24144,10 +24148,11 @@ export function heartbeatService(
           : null;
       const requestedReusableExecutionWorkspaceConfig =
         reusableExistingExecutionWorkspace?.config ?? null;
+      markPrestart("secret_redaction");
       const localEnvironment = await environmentsSvc.ensureLocalEnvironment(
         agent.companyId,
       );
-      markPrestart("identity_and_context");
+      markPrestart("local_environment");
       const resolvedInstanceSettings = await instanceSettings.get();
       // Managed-sandbox-only policy: a run that would land on the local
       // environment is redirected onto the platform-managed sandbox row, and
