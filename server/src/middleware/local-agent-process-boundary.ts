@@ -16,6 +16,10 @@ const COMMAND_TIMEOUT_MS = 5_000;
 // A host holds thousands of fds; one awaited readlink at a time made each /proc walk take ~0.8 s.
 const PROC_SCAN_PROCESSES = 8;
 const PROC_SCAN_FDS = 32;
+// A browser opens a page's sockets in waves from one process, so walking the pids that owned
+// recent connections first ends most lookups after a pid or two.
+const RECENT_OWNERS = 8;
+let recentOwners: string[] = [];
 
 export type LocalPeerClassification = "operator" | "agent_run" | "unsupported";
 
@@ -205,10 +209,12 @@ const linuxInspector: LocalProcessInspector = {
     if (wanted.size) {
       const others = (await readdir("/proc").catch(() => [] as string[]))
         .filter((entry) => /^\d+$/.test(entry) && Number(entry) !== process.pid);
-      const pids = [String(process.pid), ...others];
-      // Each socket's owner is the first pid in walk order that holds it, as in a serial walk:
-      // workers take pids in order and stop taking new ones once every socket is seen, so every
-      // earlier pid has finished by the time the walk ends.
+      const listed = new Set(others);
+      const hinted = recentOwners.filter((pid) => listed.has(pid));
+      const pids = [String(process.pid), ...hinted, ...others.filter((pid) => !hinted.includes(pid))];
+      // Walk order: the server, recent owners, then the rest. Each socket's owner is the first pid
+      // in walk order that holds it, as in a serial walk: workers take pids in order and stop
+      // taking new ones once every socket is seen, so every earlier pid has finished by then.
       const firstHolder = new Map<string, number>();
       let next = 0;
       const worker = async () => {
@@ -228,6 +234,8 @@ const linuxInspector: LocalProcessInspector = {
       await Promise.all(Array.from({ length: PROC_SCAN_PROCESSES }, worker));
       for (const [link, index] of firstHolder) owners.set(link, Number(pids[index]));
       hidden.sort((left, right) => left - right);
+      const holders = [...firstHolder.values()].map((index) => pids[index]!).filter((pid) => pid !== String(process.pid));
+      recentOwners = [...new Set([...holders, ...recentOwners])].slice(0, RECENT_OWNERS);
     }
     const unowned = found.some((entry) => entry && !owners.has(`socket:[${entry.inode}]`));
     const after = unowned && hidden.length ? await readProcNetTables() : null;
