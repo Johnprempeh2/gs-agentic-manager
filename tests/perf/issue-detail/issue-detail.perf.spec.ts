@@ -122,6 +122,13 @@ async function seed(request: Page["request"]): Promise<Seed> {
   expect(companyResponse.ok(), await companyResponse.text()).toBe(true);
   const company = await companyResponse.json();
 
+  // A new member's Getting started opens itself and navigates away from the page under test.
+  // Start it, then archive its practice task so the board keeps only the seeded cards.
+  for (const step of ["start", "practice/clear"]) {
+    const response = await request.post(`/api/companies/${company.id}/onboarding/me/${step}`);
+    expect(response.ok(), await response.text()).toBe(true);
+  }
+
   const title = `Issue detail performance baseline ${Date.now()}`;
   const issueResponse = await request.post(`/api/companies/${company.id}/issues`, {
     data: {
