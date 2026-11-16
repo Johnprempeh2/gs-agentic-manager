@@ -180,6 +180,8 @@ export function errorHandler(
     const redactedSkillPolicyDenial = isRedactedSkillPolicyDenial(details);
     const workspaceRepairPreconditionFailure =
       details?.code === "workspace_repair_precondition_failed";
+    // Its code and remediation are already top-level; repeating them only lengthens agent context.
+    const boardAccessDenial = details?.code === "board_access_required";
     const structuredConnectionError = new Set([
       "user_authorization_required",
       "organization_authorization_required",
@@ -266,6 +268,7 @@ export function errorHandler(
               : {}),
             ...(!redactedSkillPolicyDenial &&
             !workspaceRepairPreconditionFailure &&
+            !boardAccessDenial &&
             responseDetailsValue
               ? { details: responseDetailsValue }
               : {}),

@@ -477,6 +477,19 @@ const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
   ...issueReviewOverrideFieldsSchema.shape,
 });
+function queuedCommentDiscardDenial(issue: { identifier?: string | null }, comment: { authorAgentId: string | null }) {
+  const identifier = issue.identifier ?? null;
+  const prefix = identifier && /^[A-Z][A-Z0-9]*-\d+$/.test(identifier) ? identifier.split("-")[0] : null;
+  const where = identifier && prefix ? `[${identifier}](/${prefix}/issues/${identifier})` : "its task";
+  if (comment.authorAgentId) {
+    return `A board user with access to ${where} can discard this agent-authored queued message from its queue. `
+      + "The authoring agent can also cancel its own message. Do not try other agent routes.";
+  }
+  return `Only the author of a queued comment can discard it, from that queued message's menu on ${where}. `
+    + "This denial is final: no board, admin or agent override exists, so do not try other routes. "
+    + `Tell the author to discard it there.`;
+}
+
 const queuedCommentMutationTargetSchema = z.object({
   queueId: z.string().min(1),
   revision: z.string().min(1),
@@ -1587,6 +1600,7 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "pull_request_merged",
   "run_liveness_continuation",
   "waiting_date_passed",
+  "execution_reconciliation_required",
   "heartbeat.disabled",
   "heartbeat.timer.no_actionable_work",
   "heartbeat.timer.nothing_changed",
@@ -1616,7 +1630,7 @@ function projectWakeDiagnosticSource(value: string | null) {
   return ISSUE_WAKE_DIAGNOSTIC_KNOWN_SOURCES.has(value) ? value : "other";
 }
 
-function projectWakeDiagnosticReason(value: string | null) {
+export function projectWakeDiagnosticReason(value: string | null) {
   if (!value) return null;
   return ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS.has(value) ? value : "other";
 }
@@ -7619,6 +7633,17 @@ export function issueRoutes(
     }
 
     return runToInterrupt?.status === "running" ? runToInterrupt : null;
+  }
+
+  async function resolveQueuedOutgoingAssigneeRun(issue: {
+    companyId: string;
+    assigneeAgentId: string | null;
+    executionRunId?: string | null;
+  }) {
+    if (!issue.executionRunId || !issue.assigneeAgentId) return null;
+    const run = await heartbeat.getRun(issue.executionRunId);
+    return run && run.status === "queued" && run.companyId === issue.companyId &&
+      run.agentId === issue.assigneeAgentId ? run : null;
   }
 
   type IssueQueueDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -15197,7 +15222,8 @@ export function issueRoutes(
           issueId: existing.id,
           agentId: existing.assigneeAgentId,
         });
-        const runToStopForReassignment = await resolveActiveIssueRun(existing);
+        const runToStopForReassignment = await resolveActiveIssueRun(existing) ??
+          await resolveQueuedOutgoingAssigneeRun(existing);
         const reassignmentStop = runToStopForReassignment
           ? decideReassignmentRunStop({
               runId: runToStopForReassignment.id,
@@ -15222,6 +15248,7 @@ export function issueRoutes(
               : "Cancelled before issue reassignment",
             {
               errorCode: "issue_reassigned",
+              suppressImmediateRecovery: true,
               resultJson: {
                 reassignmentStopConfirmed: true,
                 issueMutationStopId,
@@ -17316,10 +17343,7 @@ export function issueRoutes(
   });
 
   router.post("/issues/:id/admin/force-release", async (req, res) => {
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Board access required" });
-      return;
-    }
+    assertBoard(req);
     if (!req.actor.userId) {
       throw forbidden("Board user context required");
     }
@@ -17884,6 +17908,25 @@ export function issueRoutes(
     "/issues/:id/queued-comments/:commentId",
     validate(queuedCommentMutationTargetSchema),
     async (req, res) => {
+      if (req.actor.type === "agent") {
+        // Agents never use this board route. Check visibility first so a denial
+        // never confirms a task the agent cannot read.
+        const issue = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Issue not found");
+        if (!issue) return;
+        if (!(await assertIssueReadAllowed(req, res, issue))) return;
+        const comment = await svc.getComment(req.params.commentId as string);
+        if (!comment || comment.issueId !== issue.id) {
+          res.status(404).json({ error: "Comment not found" });
+          return;
+        }
+        if (comment.authorAgentId && comment.authorAgentId === req.actor.agentId) {
+          throw forbidden(
+            "Agents discard their own queued comments with "
+              + `DELETE /api/issues/${issue.id}/comments/${comment.id}?mode=cancel, not this board route.`,
+          );
+        }
+        throw forbidden(queuedCommentDiscardDenial(issue, comment));
+      }
       assertBoard(req);
       if (!req.actor.userId) throw forbidden("Board user context required");
       const id = req.params.id as string;
@@ -17895,6 +17938,7 @@ export function issueRoutes(
         "Issue not found",
       );
       if (!issue) return;
+      if (!(await assertIssueReadAllowed(req, res, issue))) return;
       const actor = getActorInfo(req);
       const result = await runQueuedCommentMutation(() =>
         queuedCommentQueue.discardQueuedComment({
@@ -19427,8 +19471,9 @@ export function issueRoutes(
       : false;
     if (deleteMode === "cancel" || pendingQueueWake || isLegacyQueuedComment) {
       if (!actorOwnsComment) {
+        if (!(await assertIssueReadAllowed(req, res, issue))) return;
         res.status(403).json({
-          error: "Only the comment author can cancel queued comments",
+          error: queuedCommentDiscardDenial(issue, comment),
         });
         return;
       }
