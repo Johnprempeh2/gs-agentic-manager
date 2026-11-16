@@ -64,8 +64,9 @@ pnpm test:metrics:s2 --metrics test-results/issue-detail-perf/metrics.json   # c
 ```
 
 `s2-paths.mjs` holds the path rule: `ui/**` (not tests, stories or docs), the
-issue routes under `server/src/routes/`, `server/src/services/issues.ts`, the
-S2 harness, and these budget files. `s2-check.mjs` measures with the instance
+issue routes under `server/src/routes/`, `server/src/services/issues.ts`,
+`server/src/middleware/**` (it runs on every API call; GRE-5505), the S2
+harness, and these budget files. `s2-check.mjs` measures with the instance
 data in `./tmp/s2-check-*` (deleted afterwards). It prints one PASS or FAIL
 line that names each broken budget, and exits 1 on FAIL.
 
