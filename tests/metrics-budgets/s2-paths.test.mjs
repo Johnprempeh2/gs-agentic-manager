@@ -17,6 +17,8 @@ test("UI and issue/board API changes need the S2 check", () => {
     "server/src/routes/issue-tree-control.ts",
     "server/src/routes/issues-checkout-wakeup.ts",
     "server/src/services/issues.ts",
+    "server/src/middleware/auth.ts",
+    "server/src/middleware/local-agent-process-boundary.ts",
     "tests/perf/issue-detail/issue-detail.perf.spec.ts",
     "tests/metrics-budgets/budgets.json",
     "./ui/src/App.tsx",

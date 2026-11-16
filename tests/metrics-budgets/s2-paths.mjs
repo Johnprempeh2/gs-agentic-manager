@@ -15,6 +15,9 @@ export const S2_PATH_RULES = [
   { pattern: /^ui\//, why: "UI code" },
   { pattern: /^server\/src\/routes\/issues?[-.][^/]*$/, why: "issue/board API route" },
   { pattern: /^server\/src\/services\/issues\.ts$/, why: "issue list/detail service" },
+  // Middleware runs on every API call the page makes; #1176 added a per-socket
+  // process scan here that tripled S2 without the check running (GRE-5505).
+  { pattern: /^server\/src\/middleware\//, why: "request middleware (every API call)" },
   { pattern: /^tests\/perf\/issue-detail\//, why: "S2 harness" },
   { pattern: /^tests\/metrics-budgets\/(budgets(\.keystone-host)?\.json|check\.mjs|s2-check\.mjs)$/, why: "S2 budgets/checker" },
 ];
