@@ -1296,7 +1296,8 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     })]));
   });
 
-  it.each(["private task", "other company"] as const)("hides an agent queue from a board user outside its %s access", async (boundary) => {
+  // Our fork has no private tasks, so only the company boundary applies.
+  it.each(["other company"] as const)("hides an agent queue from a board user outside its %s access", async (boundary) => {
     const seeded = await seedQueue();
     await db.update(issueComments).set({ authorType: "agent", authorUserId: null, authorAgentId: seeded.agentId })
       .where(eq(issueComments.id, seeded.commentIds[0]));

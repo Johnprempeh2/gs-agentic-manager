@@ -14,6 +14,7 @@ const mockIssueService = vi.hoisted(() => ({
 const mockAccessService = vi.hoisted(() => ({
   canUser: vi.fn(),
   hasPermission: vi.fn(),
+  decide: vi.fn(),
 }));
 
 const mockHeartbeatService = vi.hoisted(() => ({
@@ -406,7 +407,8 @@ describe.sequential("issue comment cancel routes", () => {
     expect(mockIssueService.removeComment).not.toHaveBeenCalled();
   });
 
-  it("returns 404 without task details when the agent cannot read the private task", async () => {
+  // Our fork has no private tasks: an unreadable task answers with the authorization-boundary 403, without task details.
+  it("refuses without task details when the agent cannot read the task", async () => {
     mockAccessService.decide.mockImplementation(async ({ action }: { action: string }) => ({
       action, allowed: false, reason: "deny_issue_private", explanation: "Private task",
     }));
@@ -415,7 +417,8 @@ describe.sequential("issue comment cancel routes", () => {
       .delete("/api/issues/11111111-1111-4111-8111-111111111111/queued-comments/comment-1")
       .send({ queueId: "queue-1", revision: "revision-1" });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Issue is outside this actor's authorization boundary");
     expect(JSON.stringify(res.body)).not.toContain("PAP-1353");
   });
 
@@ -446,7 +449,7 @@ describe.sequential("issue comment cancel routes", () => {
     expect(mockIssueService.removeComment).toHaveBeenCalledWith("comment-1");
   });
 
-  it("returns 404 instead of the author-only denial when a non-author cannot read the task", async () => {
+  it("refuses without the author-only denial when a non-author cannot read the task", async () => {
     mockIssueService.getComment.mockResolvedValue(makeComment({ authorUserId: "someone-else" }));
     mockAccessService.decide.mockImplementation(async ({ action }: { action: string }) => ({
       action, allowed: false, reason: "deny_issue_private", explanation: "Private task",
@@ -454,7 +457,7 @@ describe.sequential("issue comment cancel routes", () => {
     const res = await request(await installActor(createApp()))
       .delete("/api/issues/11111111-1111-4111-8111-111111111111/comments/comment-1?mode=cancel");
 
-    expect(res.status).not.toBe(403);
+    expect(res.body.error).toBe("Issue is outside this actor's authorization boundary");
     expect(JSON.stringify(res.body)).not.toContain("PAP-1353");
     expect(mockIssueService.removeComment).not.toHaveBeenCalled();
   });
