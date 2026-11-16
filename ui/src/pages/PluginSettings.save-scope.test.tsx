@@ -14,7 +14,7 @@ vi.mock("@/api/plugins", () => ({ pluginsApi: api }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs }) }));
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompany: { id: state.companyId, name: "Paperclip", issuePrefix: "PAP" },
+    selectedCompany: { id: state.companyId, name: "GS Agentic Manager", issuePrefix: "PAP" },
     selectedCompanyId: state.companyId,
   }),
 }));

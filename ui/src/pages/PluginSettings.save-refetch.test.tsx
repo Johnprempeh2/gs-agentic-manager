@@ -21,7 +21,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 }));
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompany: { id: "company-1", name: "Paperclip", issuePrefix: "PAP" },
+    selectedCompany: { id: "company-1", name: "GS Agentic Manager", issuePrefix: "PAP" },
     selectedCompanyId: "company-1",
   }),
 }));
