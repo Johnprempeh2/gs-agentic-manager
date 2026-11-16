@@ -13,6 +13,9 @@ export const AGENT_RUN_ENVIRONMENT_MARKERS = [
 const RUNNER_DAEMON_EXECUTABLE = "paperclip-runnerd";
 const MAX_ANCESTRY_DEPTH = 64;
 const COMMAND_TIMEOUT_MS = 5_000;
+// A host holds thousands of fds; one awaited readlink at a time made each /proc walk take ~0.8 s.
+const PROC_SCAN_PROCESSES = 8;
+const PROC_SCAN_FDS = 32;
 
 export type LocalPeerClassification = "operator" | "agent_run" | "unsupported";
 
@@ -143,6 +146,16 @@ async function ownedByServerUser(pid: string): Promise<boolean> {
   return realUid !== undefined && Number(realUid) === process.getuid?.();
 }
 
+async function heldSockets(pid: string, fds: readonly string[], wanted: ReadonlySet<string>): Promise<string[]> {
+  const held: string[] = [];
+  for (let start = 0; start < fds.length; start += PROC_SCAN_FDS) {
+    const links = await Promise.all(fds.slice(start, start + PROC_SCAN_FDS).map((fd) =>
+      readlink(`/proc/${pid}/fd/${fd}`).catch(() => null)));
+    for (const link of links) if (link && wanted.has(link)) held.push(link);
+  }
+  return held;
+}
+
 async function readProcNetTables(): Promise<string[] | null> {
   const tables = await Promise.all(["/proc/net/tcp", "/proc/net/tcp6"].map((file) =>
     readFile(file, "utf8").catch(() => null)));
@@ -192,17 +205,29 @@ const linuxInspector: LocalProcessInspector = {
     if (wanted.size) {
       const others = (await readdir("/proc").catch(() => [] as string[]))
         .filter((entry) => /^\d+$/.test(entry) && Number(entry) !== process.pid);
-      for (const pid of [String(process.pid), ...others]) {
-        if (owners.size === wanted.size) break;
-        const fds = await readdir(`/proc/${pid}/fd`).catch(async (error: NodeJS.ErrnoException) => {
-          if ((error.code === "EACCES" || error.code === "EPERM") && await ownedByServerUser(pid)) hidden.push(Number(pid));
-          return [] as string[];
-        });
-        for (const fd of fds) {
-          const link = await readlink(`/proc/${pid}/fd/${fd}`).catch(() => null);
-          if (link && wanted.has(link) && !owners.has(link)) owners.set(link, Number(pid));
+      const pids = [String(process.pid), ...others];
+      // Each socket's owner is the first pid in walk order that holds it, as in a serial walk:
+      // workers take pids in order and stop taking new ones once every socket is seen, so every
+      // earlier pid has finished by the time the walk ends.
+      const firstHolder = new Map<string, number>();
+      let next = 0;
+      const worker = async () => {
+        while (next < pids.length && firstHolder.size < wanted.size) {
+          const index = next++;
+          const pid = pids[index]!;
+          const fds = await readdir(`/proc/${pid}/fd`).catch(async (error: NodeJS.ErrnoException) => {
+            if ((error.code === "EACCES" || error.code === "EPERM") && await ownedByServerUser(pid)) hidden.push(Number(pid));
+            return [] as string[];
+          });
+          for (const link of await heldSockets(pid, fds, wanted)) {
+            const earliest = firstHolder.get(link);
+            if (earliest === undefined || index < earliest) firstHolder.set(link, index);
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: PROC_SCAN_PROCESSES }, worker));
+      for (const [link, index] of firstHolder) owners.set(link, Number(pids[index]));
+      hidden.sort((left, right) => left - right);
     }
     const unowned = found.some((entry) => entry && !owners.has(`socket:[${entry.inode}]`));
     const after = unowned && hidden.length ? await readProcNetTables() : null;
