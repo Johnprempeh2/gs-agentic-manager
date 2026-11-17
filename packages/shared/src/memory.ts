@@ -137,6 +137,16 @@ export const MEMORY_FLAG_NOTE =
   "Flags come from pattern checks. They can miss things and mark harmless text; a flag is not proof. Approval comes only from a review record.";
 
 export const MEMORY_UNAVAILABLE_MESSAGE = "Memory unavailable. Carry on without it; contributions are kept and sent later.";
+/** A contribution is always stored; only search indexing waits. Read as a failure, it put agents off contributing. */
+export const MEMORY_CONTRIBUTION_DEFERRED_MESSAGE =
+  "Saved. Search indexing is catching up, so it may take a few minutes to show in recall. No need to retry.";
+/**
+ * Sent to agents when they connect to the memory tools. Claude keeps the tools out of
+ * sight until asked, and nothing else told agents to use memory, so they stopped.
+ */
+export const MEMORY_AGENT_INSTRUCTIONS =
+  "Shared memory for this organisation. At the start of a task, call memory_recall with the task's subject to reuse what others found. " +
+  "Before you finish, call memory_contribute with any decision, finding or fix worth reusing (skip routine status updates).";
 
 export interface MemorySettings {
   companyId: string;
@@ -671,6 +681,16 @@ export interface MemoryGraph {
   scopes: MemoryScope[];
   /** True when more records matched than `limit`. */
   truncated: boolean;
+  /**
+   * Everyone who contributed any matching record, with their full counts, not just
+   * those in `nodes`. Missing from older servers.
+   */
+  contributors?: MemoryGraphContributor[];
+}
+
+export interface MemoryGraphContributor {
+  contributor: MemoryActorRef;
+  count: number;
 }
 
 /** The three provenance roles, kept apart (plan 8.3). */

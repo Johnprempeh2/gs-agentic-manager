@@ -579,7 +579,7 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
       const write = await request(agent).post(`${base}/records`).send({ scopeId: scope.id, content: `kept while ${mode}` });
       expect(write.status).toBe(201);
       expect(write.body).toMatchObject({ engineAvailable: false });
-      expect(write.body.message).toMatch(/^Memory unavailable/);
+      expect(write.body.message).toMatch(/^Saved\. /);
       expect(write.body.record.syncState).toBe("pending");
       expect(Date.now() - started).toBeLessThan(3_000);
     }

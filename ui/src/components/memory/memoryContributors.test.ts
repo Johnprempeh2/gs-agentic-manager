@@ -50,6 +50,22 @@ describe("listContributors", () => {
     expect(rows[1].agent).toBeNull();
   });
 
+  it("lists everyone in the server's totals, with full counts, even with no entries loaded", () => {
+    // Only Mason and Scribe entries are loaded; Everest's are all older.
+    const loaded = kestrelNodes.filter((node) => node.contributor.agentId !== "ag-everest-syn");
+    const rows = listContributors(loaded, [], [
+      { contributor: kestrelAgents.mason, count: 40 },
+      { contributor: kestrelAgents.everest, count: 22 },
+    ]);
+
+    expect(rows.map((row) => [row.key, row.count])).toEqual([
+      ["ag-everest-syn", 22],
+      ["ag-mason-syn", 40],
+      // Missing from the totals (written since the count): counted from what is loaded.
+      ["ag-scribe-syn", 2],
+    ]);
+  });
+
   it("keys people and checks so they cannot clash with agent ids", () => {
     expect(contributorFocusKey(kestrelAgents.everest)).toBe("ag-everest-syn");
     expect(contributorFocusKey(kestrelAgents.john)).toBe("user:hu-john-syn");

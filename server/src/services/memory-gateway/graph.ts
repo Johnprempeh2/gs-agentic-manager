@@ -408,14 +408,30 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
             .limit(query.limit + 1);
     const truncated = rows.length > query.limit;
     const kept = rows.slice(0, query.limit);
+    // Counted over every matching record, so a contributor whose entries are older
+    // than the newest `limit` still shows up (busy app links used to crowd agents out).
+    const contributors =
+      scopeIds.length === 0
+        ? []
+        : (
+            await db
+              .select({ agentId: memoryRecords.contributorAgentId, userId: memoryRecords.contributorUserId, count: count() })
+              .from(memoryRecords)
+              .where(and(...recordFilters(caller, scopeIds, query), ne(memoryRecords.status, "deleted")))
+              .groupBy(memoryRecords.contributorAgentId, memoryRecords.contributorUserId)
+          ).map((row) => ({ contributor: actorRef(row.agentId, row.userId), count: Number(row.count) }));
     const nodes = await toNodes(caller.companyId, kept, scopes.byId);
     const edges = await edgesBetween(caller.companyId, new Map(kept.map((row) => [row.id, row])));
-    await nameAgents(caller.companyId, [...nodes.map((node) => node.contributor), ...edges.map((edge) => edge.author)]);
+    await nameAgents(caller.companyId, [
+      ...nodes.map((node) => node.contributor),
+      ...edges.map((edge) => edge.author),
+      ...contributors.map((row) => row.contributor),
+    ]);
     await logOperation(caller, "graph", "ok", {
       scopeIds,
       detail: { nodes: nodes.length, edges: edges.length, truncated },
     });
-    return { note: MEMORY_GRAPH_NOTE, nodes, edges, scopes: scopes.all.map(toScope), truncated };
+    return { note: MEMORY_GRAPH_NOTE, nodes, edges, scopes: scopes.all.map(toScope), truncated, contributors };
   }
 
   /** A record the caller may read, or 404 with an audit row. Same answer for "missing" and "not yours". */

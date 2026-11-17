@@ -278,6 +278,29 @@ describe("Memory page", () => {
     expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
   });
 
+  it("lists an agent whose entries are all older than the loaded ones, and loads them when focused", async () => {
+    const lintelId = "6f1c2d3e-4a5b-4c6d-8e7f-901234567890";
+    const lintel = { actorType: "agent" as const, agentId: lintelId, userId: null, name: "Lintel" };
+    const lintelEntry = { ...kestrelNodes[0], id: "rec-lintel-old", title: "Lintel's older finding", contributor: lintel };
+    memoryApiMock.graph.mockImplementation(async (_companyId: string, filters: { agentId?: string }) =>
+      filters.agentId === lintelId
+        ? { ...kestrelGraph, nodes: [lintelEntry], edges: [], contributors: [{ contributor: lintel, count: 34 }] }
+        : { ...kestrelGraph, contributors: [{ contributor: lintel, count: 34 }, ...kestrelNodes.map((node) => ({ contributor: node.contributor, count: 1 }))] },
+    );
+    await renderAt("/memory");
+
+    const button = container.querySelector<HTMLButtonElement>(`[data-contributor="${lintelId}"]`)!;
+    expect(button.textContent).toContain("Lintel");
+    expect(button.textContent).toContain("34");
+    await act(async () => button.click());
+    await flush();
+
+    expect(memoryApiMock.graph).toHaveBeenCalledWith("co-kestrel", { agentId: lintelId });
+    expect(Array.from(container.querySelectorAll("button[data-memory-row]")).map((row) => row.textContent).join(" ")).toContain(
+      "Lintel's older finding",
+    );
+  });
+
   it("adds a second agent to the focus with Ctrl click", async () => {
     await renderAt("/memory?agent=ag-everest-syn");
 

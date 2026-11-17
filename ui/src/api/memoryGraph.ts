@@ -36,6 +36,7 @@ import { api } from "./client";
 export interface MemoryGraphFilters {
   q?: string;
   agentId?: string;
+  userId?: string;
   scopeId?: string;
   status?: MemoryGraphStatus;
 }

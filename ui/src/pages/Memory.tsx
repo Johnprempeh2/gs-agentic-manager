@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Brain, Lock, PowerOff, SearchX } from "lucide-react";
 import { useSearchParams } from "@/lib/router";
 import { ApiError } from "../api/client";
@@ -23,6 +23,7 @@ import type { MemoryGraphFocusMode, MemoryGraphGroupBy } from "../components/mem
 import { MemoryPageHeader } from "../components/memory/MemoryPageHeader";
 
 const SEARCH_DEBOUNCE_MS = 250;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Server filters live in the URL so other screens can link to a place in the graph.
@@ -118,12 +119,42 @@ export function Memory() {
     [agents.data],
   );
 
-  const nodes = useMemo(() => graph.data?.nodes ?? [], [graph.data]);
-  const edges = useMemo(() => graph.data?.edges ?? [], [graph.data]);
+  // The main graph holds only the newest entries, so a focused contributor's own
+  // entries are fetched as well; otherwise an agent with older entries shows nothing.
+  const focusedGraphs = useQueries({
+    queries: focusKeys.flatMap((key) => {
+      const contributor = key.startsWith("user:") ? { userId: key.slice("user:".length) } : UUID_RE.test(key) ? { agentId: key } : null;
+      if (!contributor) return [];
+      const focused = { ...filters, ...contributor };
+      return [
+        {
+          queryKey: queryKeys.memoryGraph.graph(selectedCompanyId ?? "", { ...focused }),
+          queryFn: () => memoryGraphApi.graph(selectedCompanyId!, focused),
+          enabled: !!selectedCompanyId && !!graph.data,
+        },
+      ];
+    }),
+  });
+  const focusedData = focusedGraphs.map((query) => query.data);
+  const focusedKey = focusedGraphs.map((query) => query.dataUpdatedAt).join(",");
+  const nodes = useMemo(() => {
+    const byId = new Map((graph.data?.nodes ?? []).map((node) => [node.id, node]));
+    for (const data of focusedData) for (const node of data?.nodes ?? []) byId.set(node.id, node);
+    return [...byId.values()];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.data, focusedKey]);
+  const edges = useMemo(() => {
+    const byId = new Map((graph.data?.edges ?? []).map((edge) => [edge.id, edge]));
+    for (const data of focusedData) for (const edge of data?.edges ?? []) byId.set(edge.id, edge);
+    return [...byId.values()];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph.data, focusedKey]);
+  const totals = graph.data?.contributors;
+  const totalEntries = totals ? totals.reduce((sum, row) => sum + row.count, 0) : nodes.length;
   const nodesById = useMemo(() => new Map<string, MemoryGraphNode>(nodes.map((node) => [node.id, node])), [nodes]);
   const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) : undefined;
   const selectedEdge = selectedEdgeId ? edges.find((edge) => edge.id === selectedEdgeId) : undefined;
-  const explorer = useMemoryExplorer({ nodes, edges, agents: agentInfo, groupBy, showSuggested, focusKeys });
+  const explorer = useMemoryExplorer({ nodes, edges, agents: agentInfo, totals, groupBy, showSuggested, focusKeys });
 
   const selectNode = useCallback((id: string) => updateParams({ node: id, edge: undefined }), [updateParams]);
   const selectEdge = useCallback((id: string) => updateParams({ edge: id, node: undefined }), [updateParams]);
@@ -243,7 +274,7 @@ export function Memory() {
             <div className="grid gap-4 md:grid-cols-(--gtc-memory-explorer)">
               <MemoryContributorPanel
                 contributors={explorer.contributors}
-                total={nodes.length}
+                total={totalEntries}
                 selected={explorer.focusIds ? focusKeys : []}
                 onToggle={toggleFocus}
                 onReset={() => updateParams({ agent: undefined })}
