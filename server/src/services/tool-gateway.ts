@@ -1138,7 +1138,7 @@ export function createToolGatewayService(
    * Greatstone (GRE-1743): the existing result guard, plus a model check when
    * `enablePromptInjectionModelChecks` is on. Off runs the regex alone.
    */
-  async function validateToolResult(session: ToolGatewaySession, tool: ToolGatewayDescriptor, value: unknown) {
+  async function validateToolResult(session: ToolGatewaySession, tool: Pick<ToolGatewayDescriptor, "name" | "providerType">, value: unknown) {
     const classifier = await promptInjectionClassifier.forToolResult({
       companyId: session.companyId,
       agentId: session.agentId,
@@ -5540,7 +5540,7 @@ export function createToolGatewayService(
       kind === "resource"
         ? { uri: handle.value }
         : { name: handle.value, arguments: input.params?.arguments ?? {} };
-    const result = asRecord(
+    let result = asRecord(
       await callAssignedConnectionProtocol({
         ...input,
         session,
@@ -5549,6 +5549,18 @@ export function createToolGatewayService(
         params,
       }),
     );
+    if (kind === "resource") {
+      const screened = { name: "paperclip_read_resource",
+        providerType: connection.transport === "local_stdio" ? "mcp_local_stdio" : "mcp_remote_http" } as const;
+      const validation = await validateToolResult(session, screened, result).catch(async (error: unknown) => {
+        if (!(error instanceof ToolContentValidationError)) throw error;
+        await writeAudit({ session, companyId: session.companyId, agentId: session.agentId, runId: session.runId, issueId: session.issueId,
+          action: "tool_gateway.call_failed", details: { tool: screened.name, connectionId: connection.id, reasonCode: error.reasonCode,
+            findings: error.findings, promptInjection: error.detectorMetadata } });
+        throw new ToolGatewayHttpError(422, error.message, error.reasonCode, { findings: error.findings });
+      });
+      result = asRecord(validation.value);
+    }
     if (kind === "resource" && Array.isArray(result?.contents)) {
       return {
         ...result,
