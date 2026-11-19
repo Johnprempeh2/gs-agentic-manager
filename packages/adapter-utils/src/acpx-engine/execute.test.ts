@@ -2795,6 +2795,32 @@ describe("shared ACPX engine runtime behavior", () => {
     expect(first.result.sessionParams?.configFingerprint).not.toBe(second.result.sessionParams?.configFingerprint);
   });
 
+  it("keeps Claude MCP bearer tokens out of the CLI argv (upstream #22206)", async () => {
+    const root = await makeTempRoot();
+    const server = {
+      name: "paperclip-assigned",
+      url: "https://paperclip.example/mcp/gateways/gw-1",
+      connectionId: "assignment:1",
+      token: "bridge-secret",
+    };
+    const claude = await runExecutor(
+      { agent: "claude", stateDir: path.join(root, "state") },
+      { runtimeMcp: { getServers: () => [{ ...server }] } },
+    );
+
+    const projected = claude.runtimeOptions[0]?.mcpServers;
+    expect(projected).toEqual([{
+      type: "http",
+      name: "paperclip-assigned",
+      url: server.url,
+      headers: [{ name: "Authorization", value: "Bearer ${GSAM_ACPX_MCP_BEARER_TOKEN_0}" }],
+    }]);
+    expect(JSON.stringify(projected)).not.toContain("bridge-secret");
+    const liveEnvironment = (claude.sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env;
+    expect(liveEnvironment.GSAM_ACPX_MCP_BEARER_TOKEN_0).toBe("bridge-secret");
+    expect((claude.meta[0]?.env as Record<string, string>).GSAM_ACPX_MCP_BEARER_TOKEN_0).not.toBe("bridge-secret");
+  });
+
   it("injects runtime MCP servers and fingerprints their identity without persisting bearer tokens", async () => {
     const root = await makeTempRoot();
     const baseConfig = {
