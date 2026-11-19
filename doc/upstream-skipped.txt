@@ -18,6 +18,14 @@ e5c9e60c5 #17419 default task-directory reuse conflicts with our isolated per-ta
 fe85fd7ac #17464 closed workspace expiry depends on the excluded restore-point stack (GRE-2483)
 a7006a950 #17472 task-directory reclaim requires restore points excluded by GRE-2034 (GRE-2483)
 ac15d883f #17535 remote-tracking preservation depends on the excluded nested-worktree expiry path (GRE-2483)
+5bad074ba #20411 individual agent interaction permissions is a new feature, not a fix; no current need for per-agent interaction scoping. Revisit if a client asks (GRE-5716)
+b6f4008f9 #20422 second half of the individual agent interaction permissions feature skipped with #20411 (GRE-5716)
+ce1ee9e89 #20362 prompts stop encouraging subtasks; this fights our working rule to use child issues for long or parallel work (GRE-5716)
+ff91bfe2d #21276 self-scheduling tool limits govern a feature we have not built; no gap to close (GRE-5716)
+0b9a9593d #19279 MCP capability advertisement belongs to gateway governance we have not built; no gap to close (GRE-5716)
+444dc18d9 #21221 webhook guidance wording for governance features we have not built; no gap to close (GRE-5716)
+875e4d375 connection-request handoff identity; no exposure (upstream also kept the source identity before), our run-identity.ts diverged too far for a clean port, and no product need for handoffs yet (GRE-5716)
+d4b7ae553 #22244 native completion gate on merged PR deliverables; our deliverables and work-product completion flow diverged and the gate risks breaking it. Revisit with a dedicated review if a real completion race appears (GRE-5716)
 1d23cb696 #14394 their CI Rust cache paths; our CI is fork-owned
 3166e93a7 #14461 lockfile refresh; we regenerate our own lockfile at sync
 d1f3e7bb0 #14741 upstream README and roadmap; ours is rebranded
