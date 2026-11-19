@@ -1926,12 +1926,26 @@ async function buildRuntime(input: {
     url,
     connectionId,
   }));
-  const mcpServers: NonNullable<AcpRuntimeOptions["mcpServers"]> = runtimeMcpServers.map((server) => ({
-    type: "http",
-    name: server.name,
-    url: server.url,
-    headers: [{ name: "Authorization", value: `Bearer ${server.token}` }],
-  }));
+  // The Claude Agent SDK writes HTTP MCP servers, headers included, into the
+  // CLI's inline `--mcp-config` argument, so a literal bearer token shows in
+  // `ps` output. For Claude, send a `${VAR}` reference that Claude Code expands
+  // at connect time and put the token in the launch env (upstream #22206).
+  // Other agents keep the literal header: their CLIs have no known expansion.
+  const mcpBearerEnv: Record<string, string> = {};
+  const mcpServers: NonNullable<AcpRuntimeOptions["mcpServers"]> = runtimeMcpServers.map((server, index) => {
+    let credential = server.token;
+    if (acpxAgent === "claude") {
+      const name = `GSAM_ACPX_MCP_BEARER_TOKEN_${index}`;
+      mcpBearerEnv[name] = server.token;
+      credential = `\${${name}}`;
+    }
+    return {
+      type: "http",
+      name: server.name,
+      url: server.url,
+      headers: [{ name: "Authorization", value: `Bearer ${credential}` }],
+    };
+  });
   // Resolve the wall-clock timeout through the shared execution-target
   // resolver so sandbox-backed runs pick up the 4h backstop default while
   // local/SSH runs keep the historical "0 = no adapter timeout" behavior.
@@ -2015,6 +2029,7 @@ async function buildRuntime(input: {
     if (!scratchKeys.has(key) || value !== scratch.dir) resolvedAdapterEnv[key] = value;
   }
   if (authToken) env.GSAM_API_KEY = authToken;
+  Object.assign(env, mcpBearerEnv);
   // For the claude agent, set model via ANTHROPIC_MODEL at startup rather than
   // via session/set_config_option — the ACP server's set_config_option handler
   // validates the value against its internal available-models list and rejects
