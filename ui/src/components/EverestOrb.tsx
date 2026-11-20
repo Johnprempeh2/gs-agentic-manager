@@ -9,6 +9,7 @@ import { cn } from "../lib/utils";
 import { ProductMark } from "./BrandLockup";
 import { GREATSTONE_STONE_3D_SRC } from "./GreatstoneLogo";
 import { useLeadAgent } from "./MobileEverestButton";
+import { mobileTabStyles } from "./mobile-tab-styles";
 
 export function isLeadWorking(liveAgents: readonly { agentId: string }[], leadId: string): boolean {
   return liveAgents.some((agent) => agent.agentId === leadId);
@@ -163,15 +164,20 @@ export function EverestTab() {
       data-tour="global-ask"
       aria-current={here ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) hover:text-foreground active:scale-95",
+        mobileTabStyles.tab,
+        "min-h-11 hover:text-foreground",
         here ? "text-foreground" : "text-muted-foreground",
       )}
     >
-      <span className="gs-everest-orb" data-variant="tab" data-working={working ? "true" : "false"} aria-hidden="true">
-        {getPartnerBranding()
-          ? <ProductMark className="h-1/2 w-auto" />
-          : <img src={GREATSTONE_STONE_3D_SRC} alt="" className="gs-everest-orb-stone" />}
-        {unread > 0 ? <span className="gs-everest-orb-count">{unread > 99 ? "99+" : unread}</span> : null}
+      {/* The stone sits in the same icon slot as the other five tabs, so the
+          Messages label shares their baseline (GRE-5831). */}
+      <span className={mobileTabStyles.iconSlot} data-slot="mobile-tab-icon">
+        <span className="gs-everest-orb" data-variant="tab" data-working={working ? "true" : "false"} aria-hidden="true">
+          {getPartnerBranding()
+            ? <ProductMark className="h-1/2 w-auto" />
+            : <img src={GREATSTONE_STONE_3D_SRC} alt="" className="gs-everest-orb-stone" />}
+          {unread > 0 ? <span className="gs-everest-orb-count">{unread > 99 ? "99+" : unread}</span> : null}
+        </span>
       </span>
       <span className="truncate">Messages</span>
     </button>

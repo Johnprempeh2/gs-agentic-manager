@@ -117,6 +117,10 @@ describe("EverestOrb", () => {
     expect(tab.className).toContain("min-h-11");
     // The stone sits inside the tab, in the flow, never fixed over the page.
     expect(tab.querySelector('.gs-everest-orb[data-variant="tab"]')?.getAttribute("data-working")).toBe("true");
+    // Inside the same icon slot as the other tabs, so the label shares their baseline (GRE-5831).
+    const slot = tab.querySelector('[data-slot="mobile-tab-icon"]');
+    expect(slot?.className).toContain("h-7 w-12");
+    expect(slot?.querySelector(".gs-everest-orb")).not.toBeNull();
     expect(tab.textContent).toContain("Messages");
     expect(tab.querySelector(".gs-everest-orb-count")?.textContent).toBe("3");
     expect(tab.getAttribute("aria-label")).toBe("Messages, 3 unread, Everest working now");

@@ -939,8 +939,12 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           itemClassName="rounded-lg border border-border p-3"
           missingBehavior="placeholder"
         />
-        <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
+      {/* Pinned below the scrolling nav, above the account box: inside the
+          nav a long Start section pushed it off a 900px screen (GRE-5831). */}
+      <div className="shrink-0 px-3 pb-1" data-slot="sidebar-footer">
+        <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
+      </div>
     </aside>
     </SidebarActiveProvider>
   );

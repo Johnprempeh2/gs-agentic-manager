@@ -1392,8 +1392,10 @@
   position: relative;
   right: auto;
   bottom: auto;
-  width: 2rem;
-  height: 2rem;
+  /* Fits the shared 28px tab icon slot (mobileTabStyles.iconSlot), so the
+     Messages label sits on the same baseline as the other tabs (GRE-5831). */
+  width: calc(var(--spacing) * 6);
+  height: calc(var(--spacing) * 6);
   cursor: inherit;
   box-shadow: 0 0 0 3px rgb(200 255 0 / 0.07), 0 0 14px rgb(200 255 0 / 0.25);
   animation: none;
