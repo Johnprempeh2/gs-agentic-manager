@@ -1415,6 +1415,7 @@ export function IssuesList({
   const listCopy = useCopyAction();
   const isPhone = useIsPhone();
   const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+  const openFiltersAfterMenu = useRef(false);
   const copyAsList = useCallback(() => {
     if (copyListText) {
       void listCopy.copy(copyListText());
@@ -2277,11 +2278,21 @@ export function IssuesList({
                 </Button>
               </DropdownMenuTrigger>
             </IconTip>
-            <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuContent
+              align="end"
+              className="w-64"
+              onCloseAutoFocus={(event) => {
+                // Open the filter panel once the menu has closed; focus going back
+                // to the More button would otherwise dismiss it at once.
+                if (!openFiltersAfterMenu.current) return;
+                openFiltersAfterMenu.current = false;
+                event.preventDefault();
+                setPhoneFiltersOpen(true);
+              }}
+            >
               {oneRowToolbar ? (
                 <>
-                  {/* Open after the menu has closed, so its closing focus does not dismiss the panel. */}
-                  <DropdownMenuItem onSelect={() => window.setTimeout(() => setPhoneFiltersOpen(true), 0)}>
+                  <DropdownMenuItem onSelect={() => { openFiltersAfterMenu.current = true; }}>
                     <Filter className="h-3.5 w-3.5" />
                     {activeFilterCount > 0 ? `Filter: ${activeFilterCount}` : "Filter"}
                   </DropdownMenuItem>
