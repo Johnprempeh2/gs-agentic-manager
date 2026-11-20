@@ -254,7 +254,10 @@ export function Desk() {
     [allDecisionCards],
   );
   // The Decisions links land on #desk-needs-me: scroll there once it has rendered.
-  const deskLoaded = !isLoading && !decisionsLoading && !followsLoading;
+  // Pinned is not part of this: its slot loads and fails on its own. Gating the
+  // page on it looped (IssuesList's follows observer refetched the failed
+  // query on mount, the page fell back to the skeleton, and so on).
+  const deskLoaded = !isLoading && !decisionsLoading;
   useEffect(() => {
     if (deskLoaded && location.hash === "#desk-needs-me") {
       document.getElementById("desk-needs-me")?.scrollIntoView({ block: "start" });
@@ -758,7 +761,6 @@ export function Desk() {
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Choose an organisation to view your tasks." />;
   }
-  // Pinned sits at the top: wait for it too, so it does not push the page down.
   if (!deskLoaded) {
     return <DeskSkeleton />;
   }
@@ -884,17 +886,22 @@ export function Desk() {
           retrying={decisionsFetching}
         />
       )}
-      {followsError && (
-        <ErrorState
-          compact
-          error={followsError}
-          title="Pinned tasks did not load"
-          onRetry={() => void refetchFollows()}
-          retrying={followsFetching}
-        />
-      )}
-
-      {pinned.length > 0 ? (
+      {/* Pinned holds its slot while it loads and shows its own error there. */}
+      {followsLoading ? (
+        <DeskSection id="desk-pinned" title="Pinned">
+          <DeskRowsSkeleton rows={3} />
+        </DeskSection>
+      ) : followsError && pinned.length === 0 ? (
+        <DeskSection id="desk-pinned" title="Pinned">
+          <ErrorState
+            compact
+            error={followsError}
+            title="Pinned tasks did not load"
+            onRetry={() => void refetchFollows()}
+            retrying={followsFetching}
+          />
+        </DeskSection>
+      ) : pinned.length > 0 ? (
         <DeskSection id="desk-pinned" title="Pinned">
           <DeskPinned
             companyId={selectedCompanyId}

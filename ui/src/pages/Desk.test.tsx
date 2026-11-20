@@ -118,7 +118,10 @@ vi.mock("../hooks/useIsPhone", () => ({ useIsPhone: () => phone }));
 let lastListToolbar: { phoneOneRowToolbar?: boolean; copyListText?: () => string; toolbarMenuItems?: ReactNode } = {};
 
 // The real list is covered elsewhere; this stub shows the groups and the page's row slots.
-vi.mock("../components/IssuesList", () => ({
+vi.mock("../components/IssuesList", async () => {
+  // Like the real list, it watches the follows query (GRE-5820 storm repro).
+  const { useIssueFollows } = await import("../hooks/useIssueFollows");
+  return {
   IssuesList: (props: {
     phoneOneRowToolbar?: boolean;
     copyListText?: () => string;
@@ -129,6 +132,7 @@ vi.mock("../components/IssuesList", () => ({
     renderRowActions: (issue: Issue) => ReactNode;
     renderRowFooter: (issue: Issue) => ReactNode;
   }) => {
+    useIssueFollows("company-1");
     lastListToolbar = props;
     return (
     <div>
@@ -151,7 +155,8 @@ vi.mock("../components/IssuesList", () => ({
     </div>
     );
   },
-}));
+  };
+});
 
 function makeIssue(id: string, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -800,19 +805,41 @@ describe("Desk states (GRE-5820)", () => {
     expect(headings).toEqual(["Decisions", "Your tasks", "Recently opened"]);
   });
 
-  it("waits for Pinned before showing the page, so it does not push the list down", async () => {
+  it("shows the page while Pinned loads, with Pinned's slot held by placeholder rows", async () => {
     let releaseFollows: (value: IssueFollowWithRollup[]) => void = () => {};
-    followsError = null;
     const followsPromise = new Promise<IssueFollowWithRollup[]>((resolve) => { releaseFollows = resolve; });
     const { issuesApi } = await import("../api/issues");
     const listFollows = vi.spyOn(issuesApi, "listFollows").mockReturnValue(followsPromise);
+    openIssues = [makeIssue("1")];
     await renderPage();
-    expect(container.querySelector("[data-desk-skeleton]")).not.toBeNull();
-    releaseFollows([]);
-    await flush();
     expect(container.querySelector("[data-desk-skeleton]")).toBeNull();
     expect(container.querySelector('[data-desk-section="desk-tasks"]')).not.toBeNull();
+    const pinnedSlot = container.querySelector('[data-desk-section="desk-pinned"]');
+    expect(pinnedSlot?.querySelector("[data-desk-rows-skeleton]")).not.toBeNull();
+    releaseFollows([]);
+    await flush();
+    expect(container.querySelector('[data-desk-section="desk-pinned"]')).toBeNull();
     listFollows.mockRestore();
+  });
+
+  it("a failed Pinned shows the rest of the page and its error in the Pinned slot, after one request", async () => {
+    followsError = new Error("Pins unavailable");
+    recentError = new Error("Recent unavailable");
+    openIssues = [makeIssue("1")];
+    const { issuesApi } = await import("../api/issues");
+    const listFollows = vi.spyOn(issuesApi, "listFollows");
+    const listRecent = vi.spyOn(issuesApi, "listRecentlyOpened");
+    await renderPage();
+    await flush();
+    expect(container.querySelector("[data-desk-skeleton]")).toBeNull();
+    expect(container.querySelector('[data-row="1"]')).not.toBeNull();
+    const pinnedSlot = container.querySelector('[data-desk-section="desk-pinned"]');
+    expect(pinnedSlot?.textContent).toContain("Pinned tasks did not load");
+    // It settles: no refetch loop between the page and the list's own follows observer.
+    expect(listFollows).toHaveBeenCalledTimes(1);
+    expect(listRecent).toHaveBeenCalledTimes(1);
+    listFollows.mockRestore();
+    listRecent.mockRestore();
   });
 
   it("says Pinned did not load and offers a retry, instead of hiding it", async () => {
