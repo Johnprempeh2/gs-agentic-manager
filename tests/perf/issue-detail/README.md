@@ -33,6 +33,23 @@ DevTools protocol and drop out of the byte totals.
 
 Outputs include `baseline.md`, `baseline.json`, and a Chrome trace for the first run of each scenario/profile. Open `*.trace.json` in Chrome DevTools Performance to inspect the `issue-detail:*` user-timing marks.
 
+## Large data: task list and long task (GRE-5821)
+
+`large-data.perf.spec.ts` seeds 500 tasks and one task with 300 comments, then
+cold-opens the task list and the long task five times each. "Ready" is when
+the newest task (list) or newest comment (task) is on screen. Every API call
+made until the page settles is recorded, so duplicate, waterfall and oversized
+requests show up in `summary.json`. It also saves a 1440 and a 390 screenshot of each screen.
+
+```sh
+pnpm --filter @greatstone/ui build
+pnpm exec playwright test --config tests/perf/issue-detail/playwright.config.ts large-data.perf.spec.ts
+```
+
+`GSAM_ISSUE_PERF_LARGE_ISSUES` and `GSAM_ISSUE_PERF_LARGE_COMMENTS` change the
+seed size. `GSAM_ISSUE_PERF_TRACE=1` records each API call's JavaScript call
+stack, including async parents, in `samples.json`.
+
 ## Task layout stability
 
 `layout-stability.spec.ts` exercises the real task route, including Inbox
