@@ -1476,7 +1476,7 @@ export function TaskChatComposer({
                       disabled={disabled}
                       title="Add to message"
                       aria-label="Add to message"
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                       data-testid="task-chat-composer-add"
                     >
                       <Plus className="h-4 w-4" aria-hidden />
@@ -1523,7 +1523,7 @@ export function TaskChatComposer({
                 {dictation.listening ? (
                   <DictationButton
                     dictation={dictation}
-                    className="h-8 w-8"
+                    className="h-11 w-11"
                     testId="task-chat-composer-dictation-stop"
                   />
                 ) : null}

@@ -220,7 +220,7 @@ export function FeatureTour({
         type="button"
         variant="ghost"
         size="sm"
-        className={className}
+        className={cn("pointer-coarse:min-w-11", className)}
         onClick={() => start(true)}
         aria-label={`Show me around ${tour.label}${showDot ? " (not seen yet)" : ""}`}
       >

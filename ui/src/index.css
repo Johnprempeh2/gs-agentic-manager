@@ -988,6 +988,17 @@
   [data-hint-trigger]::before {
     inset: 0 calc(var(--spacing) * -2.5);
   }
+  /* The task chat mode chip (Auto mode...): 32px drawn, 44px to tap. It sits
+     in the composer's toolbar row, which is 44px tall, so the layer only grows
+     up and down into that row (GRE-5819). */
+  [data-slot="task-chat-mode-trigger"] {
+    position: relative;
+  }
+  [data-slot="task-chat-mode-trigger"]::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--spacing) * -1.5) 0;
+  }
 }
 
 /* Mobile collection toolbars and square agent actions. */
@@ -2648,7 +2659,10 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
    the icon prefix, the link text is left untouched (Postel's Law). */
 .paperclip-markdown-external-ref {
   display: inline;
-  white-space: nowrap;
+  /* A bare URL is one long word: let it break so it never runs past a phone
+     chat bubble (GRE-5819). Short refs still read as one chip. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dark .paperclip-markdown a {
@@ -2872,6 +2886,16 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 @media (width < 48rem) {
   .studio-composer-dock-bottom {
     bottom: max(var(--tc-composer-bottom), calc(var(--vv-bottom-inset) + 0.25rem));
+  }
+}
+
+/* Conference Room composer, phones only (GRE-5819). The dock is absolute at the
+   foot of a page that ends on the tab bar (4rem plus the safe area), so it only
+   rises by the part of the keyboard that reaches above the tab bar. With the
+   keyboard closed the inset is 0 and the dock stays on the page's foot. */
+@media (width < 48rem) {
+  .board-chat-composer-dock {
+    bottom: max(0px, calc(var(--vv-bottom-inset) + 0.25rem - 4rem - var(--sz-safe-bottom)));
   }
 }
 

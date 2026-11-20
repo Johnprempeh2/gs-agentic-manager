@@ -295,7 +295,7 @@ export function MakeImageButton({
           aria-label="Make an image"
           title="Make an image"
           data-testid="make-image-button"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:size-11"
         >
           <ImageIcon className="h-4 w-4" aria-hidden="true" />
         </button>
