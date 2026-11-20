@@ -2195,6 +2195,66 @@ describe("IssuesList", () => {
     });
   });
 
+  it("hides project tree placement tasks by default and shows them with the system tasks toggle", async () => {
+    const personTask = createIssue({
+      id: "issue-person",
+      identifier: "PAP-20",
+      title: "Write the launch brief",
+      originKind: "manual",
+    });
+    const placementTask = createIssue({
+      id: "issue-placement",
+      identifier: "PAP-21",
+      title: "Place PAP-20 in the Launch project tree",
+      originKind: "project_task_placement",
+    });
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[personTask, placementTask]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        enableRoutineVisibilityFilter
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Write the launch brief");
+      expect(container.textContent).not.toContain("Place PAP-20");
+    });
+
+    await act(async () => {
+      const filterButton = Array.from(document.body.querySelectorAll("button")).find(
+        (button) => button.textContent?.trim().startsWith("Filter"),
+      );
+      filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const findToggle = () => Array.from(document.body.querySelectorAll("label")).find(
+      (label) => label.textContent?.includes("Show system tasks"),
+    );
+    await waitForAssertion(() => {
+      expect(findToggle()).not.toBeUndefined();
+    });
+
+    await act(async () => {
+      findToggle()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Place PAP-20");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("shows routine-backed issues by default and hides them when the routine filter is toggled off", async () => {
     const manualIssue = createIssue({
       id: "issue-manual",

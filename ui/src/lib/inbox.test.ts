@@ -1011,6 +1011,7 @@ describe("inbox helpers", () => {
           liveOnly: false,
           externalObjectStatuses: [],
           hideRoutineExecutions: true,
+          showSystemTasks: false,
         },
       }).map((issue) => issue.id),
     ).toEqual(["remote-match"]);
@@ -1032,6 +1033,7 @@ describe("inbox helpers", () => {
           liveOnly: false,
           externalObjectStatuses: [],
           hideRoutineExecutions: true,
+          showSystemTasks: false,
         },
       }),
     ).toEqual([]);
@@ -1053,6 +1055,7 @@ describe("inbox helpers", () => {
           liveOnly: false,
           externalObjectStatuses: [],
           hideRoutineExecutions: true,
+          showSystemTasks: false,
         },
       }),
     ).toEqual([]);
@@ -1101,6 +1104,7 @@ describe("inbox helpers", () => {
           liveOnly: false,
           externalObjectStatuses: ["failed"],
           hideRoutineExecutions: true,
+          showSystemTasks: false,
         },
         issueFilterContext: {
           externalObjectSummaryByIssueId: summaries,
@@ -1197,6 +1201,7 @@ describe("inbox helpers", () => {
         liveOnly: true,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
+        showSystemTasks: false,
       },
     });
     saveInboxFilterPreferences("company-2", {
@@ -1213,6 +1218,7 @@ describe("inbox helpers", () => {
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: true,
+        showSystemTasks: false,
       },
     });
 
@@ -1233,6 +1239,7 @@ describe("inbox helpers", () => {
         liveOnly: true,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
+        showSystemTasks: false,
       },
     });
     expect(loadInboxFilterPreferences("company-2")).toEqual({
@@ -1252,6 +1259,7 @@ describe("inbox helpers", () => {
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: true,
+        showSystemTasks: false,
       },
     });
   });
@@ -1290,6 +1298,7 @@ describe("inbox helpers", () => {
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
+        showSystemTasks: false,
       },
     });
   });

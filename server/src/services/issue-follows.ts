@@ -293,8 +293,9 @@ export function issueFollowService(db: Db) {
         .limit(RECENT_ISSUE_VIEWS_LIMIT);
       const summaries = await getSummaries(companyId, views.map((view) => view.issueId));
       const allowed = new Set((await readable([...summaries.values()], canRead)).map((row) => row.id));
+      // Agent housekeeping ("Place … in the project tree") is not something to return to.
       return views
-        .filter((view) => allowed.has(view.issueId))
+        .filter((view) => allowed.has(view.issueId) && summaries.get(view.issueId)!.originKind !== "project_task_placement")
         .map((view) => ({ issueId: view.issueId, viewedAt: view.viewedAt, issue: toSummary(summaries.get(view.issueId)!) }));
     },
   };

@@ -1,4 +1,5 @@
 import type { AttentionItem, Issue, IssueRelationIssueSummary, IssueStatus } from "@greatstone/shared";
+import { isSystemTask } from "./issue-filters";
 
 /**
  * My tasks (GRE-29): split the signed-in user's assigned issues into
@@ -290,6 +291,7 @@ export function selectHandedOffTasks(
       isOpenIssueStatus(issue.status) &&
       issue.assigneeUserId !== currentUserId &&
       Boolean(issue.assigneeAgentId) &&
+      !isSystemTask(issue) &&
       myTasksAskState(issue, now) !== null,
   );
 }

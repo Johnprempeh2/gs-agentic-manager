@@ -658,6 +658,15 @@ export function IssueFiltersPopover({
                     <span className="text-sm">Hide scheduled routine tasks</span>
                   </label>
                 ) : null}
+                {enableRoutineVisibilityFilter ? (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <Checkbox
+                      checked={state.showSystemTasks}
+                      onCheckedChange={(checked) => onChange({ showSystemTasks: checked === true })}
+                    />
+                    <span className="text-sm">Show system tasks (project tree placement)</span>
+                  </label>
+                ) : null}
               </div>
             </div>
           </div>

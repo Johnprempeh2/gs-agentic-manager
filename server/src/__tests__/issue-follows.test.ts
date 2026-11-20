@@ -191,6 +191,18 @@ describeEmbeddedPostgres("issue follows and recently opened", () => {
     await request(appFor("naa", [companyId])).get(`/api/companies/${companyId}/recent-issues`).expect(200, []);
   });
 
+  it("leaves project tree placement tasks out of recently opened", async () => {
+    const companyId = await company("GRE");
+    const work = await task(companyId, { title: "Write the launch brief" });
+    const placement = await task(companyId, { title: "Place GRE-1 in the Launch project tree", originKind: "project_task_placement" });
+    const ben = appFor("ben", [companyId]);
+    await request(ben).post(`/api/issues/${work}/recent-view`).expect(204);
+    await request(ben).post(`/api/issues/${placement}/recent-view`).expect(204);
+
+    const res = await request(ben).get(`/api/companies/${companyId}/recent-issues`).expect(200);
+    expect(res.body.map((entry: { issueId: string }) => entry.issueId)).toEqual([work]);
+  });
+
   it("does not record opens for agents or tasks in another company", async () => {
     const companyA = await company("AAA");
     const companyB = await company("BBB");

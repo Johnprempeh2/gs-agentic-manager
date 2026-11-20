@@ -355,6 +355,21 @@ describe("describeActiveIssueFilters", () => {
     expect(liveFilter?.clear).toEqual({ liveOnly: false });
   });
 
+  it("hides system tasks on pages with visibility filters until the owner asks for them", () => {
+    const work = makeIssue({ id: "work", originKind: "manual" });
+    const placement = makeIssue({ id: "placement", originKind: "project_task_placement" });
+    const ids = (issues: Issue[]) => issues.map((issue) => issue.id);
+    expect(ids(applyIssueFilters([work, placement], defaultIssueFilterState))).toEqual(["work", "placement"]);
+    expect(ids(applyIssueFilters([work, placement], defaultIssueFilterState, null, true))).toEqual(["work"]);
+    const shown = { ...defaultIssueFilterState, showSystemTasks: true };
+    expect(ids(applyIssueFilters([work, placement], shown, null, true))).toEqual(["work", "placement"]);
+    expect(countActiveIssueFilters(shown, true)).toBe(1);
+    expect(describeActiveIssueFilters(shown, {}, true)).toEqual([
+      expect.objectContaining({ name: "Show", value: "System tasks", clear: { showSystemTasks: false } }),
+    ]);
+    expect(normalizeIssueFilterState({ showSystemTasks: true }).showSystemTasks).toBe(true);
+  });
+
   it("only lists the routine filter when the page offers it", () => {
     const state = { ...defaultIssueFilterState, hideRoutineExecutions: true };
     expect(describeActiveIssueFilters(state)).toEqual([]);
