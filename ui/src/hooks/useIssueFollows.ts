@@ -51,18 +51,25 @@ export function useFollowIssue(companyId: string | null | undefined) {
   });
 }
 
-/** The tasks the signed-in user opened most recently, newest first. */
-export function useRecentlyOpenedIssues(
+/** The recently opened query itself, for a page that shows its loading and error states. */
+export function useRecentlyOpenedIssuesQuery(
   companyId: string | null | undefined,
   options: { enabled?: boolean } = {},
-): RecentlyOpenedIssue[] {
-  const { data } = useQuery({
+) {
+  return useQuery({
     queryKey: queryKeys.recentIssues(companyId ?? "__none__"),
     queryFn: () => issuesApi.listRecentlyOpened(companyId!),
     enabled: !!companyId && options.enabled !== false,
     retry: false,
   });
-  return data ?? [];
+}
+
+/** The tasks the signed-in user opened most recently, newest first. */
+export function useRecentlyOpenedIssues(
+  companyId: string | null | undefined,
+  options: { enabled?: boolean } = {},
+): RecentlyOpenedIssue[] {
+  return useRecentlyOpenedIssuesQuery(companyId, options).data ?? [];
 }
 
 /**

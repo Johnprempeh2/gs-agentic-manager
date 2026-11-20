@@ -53,7 +53,7 @@ import {
 import { IssuesList, type IssuesCustomGrouping } from "../components/IssuesList";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
-import { PageSkeleton } from "../components/PageSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ISSUES_ROW_PRESENTATION, ISSUES_TOOLBAR_PRESENTATION } from "./Issues";
 import { ErrorState } from "../components/ErrorState";
 import { useDialogActions } from "../context/DialogContext";
@@ -73,7 +73,7 @@ import { useIsPhone } from "../hooks/useIsPhone";
 import { FollowRollupSummary, FollowTaskToggle } from "../components/FollowTask";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
-import { useIssueFollows, useRecentlyOpenedIssues } from "../hooks/useIssueFollows";
+import { useIssueFollows, useRecentlyOpenedIssuesQuery } from "../hooks/useIssueFollows";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { relativeTime } from "../lib/utils";
 
@@ -152,13 +152,20 @@ export function Desk() {
     writeShowRoutine(value);
   };
   // Pinned = followed in the API. Open ones only; a finished task leaves the top.
-  const { follows } = useIssueFollows(selectedCompanyId);
+  const {
+    follows,
+    isLoading: followsLoading,
+    error: followsError,
+    refetch: refetchFollows,
+    isFetching: followsFetching,
+  } = useIssueFollows(selectedCompanyId);
   const pinned = useMemo(
     () => follows.filter(({ issue }) => issue.status !== "done" && issue.status !== "cancelled"),
     [follows],
   );
   const pinnedIds = useMemo(() => new Set(pinned.map(({ issueId }) => issueId)), [pinned]);
-  const recentlyOpened = useRecentlyOpenedIssues(selectedCompanyId);
+  const recentQuery = useRecentlyOpenedIssuesQuery(selectedCompanyId);
+  const recentlyOpened = useMemo(() => recentQuery.data ?? [], [recentQuery.data]);
 
   useEffect(() => {
     // Named as in the sidebar.
@@ -246,7 +253,7 @@ export function Desk() {
     [allDecisionCards],
   );
   // The Decisions links land on #desk-needs-me: scroll there once it has rendered.
-  const deskLoaded = !isLoading && !decisionsLoading;
+  const deskLoaded = !isLoading && !decisionsLoading && !followsLoading;
   useEffect(() => {
     if (deskLoaded && location.hash === "#desk-needs-me") {
       document.getElementById("desk-needs-me")?.scrollIntoView({ block: "start" });
@@ -750,8 +757,9 @@ export function Desk() {
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Choose an organisation to view your tasks." />;
   }
-  if (isLoading || decisionsLoading) {
-    return <PageSkeleton variant="list" />;
+  // Pinned sits at the top: wait for it too, so it does not push the page down.
+  if (!deskLoaded) {
+    return <DeskSkeleton />;
   }
 
   if (error && !issues) {
@@ -866,6 +874,15 @@ export function Desk() {
           retrying={decisionsFetching}
         />
       )}
+      {followsError && (
+        <ErrorState
+          compact
+          error={followsError}
+          title="Pinned tasks did not load"
+          onRetry={() => void refetchFollows()}
+          retrying={followsFetching}
+        />
+      )}
 
       {pinned.length > 0 ? (
         <DeskSection id="desk-pinned" title="Pinned">
@@ -973,7 +990,13 @@ export function Desk() {
       </DeskSection>
 
       <DeskSection id="desk-recent" title="Recently opened">
-        <DeskRecent entries={visibleRecent} />
+        <DeskRecent
+          entries={visibleRecent}
+          loading={recentQuery.isLoading}
+          error={recentQuery.error}
+          retrying={recentQuery.isFetching}
+          onRetry={() => void recentQuery.refetch()}
+        />
       </DeskSection>
     </div>
   );
@@ -1112,10 +1135,27 @@ function DeskPinned({
   );
 }
 
-function DeskRecent({ entries }: { entries: RecentlyOpenedIssue[] }) {
+function DeskRecent({
+  entries,
+  loading,
+  error,
+  retrying,
+  onRetry,
+}: {
+  entries: RecentlyOpenedIssue[];
+  loading: boolean;
+  error: unknown;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
   const { selectedCompanyId } = useCompany();
   // A queued run shows a clock, not the in-progress spinner (GRE-2246).
   const runStates = useTaskRunStates(selectedCompanyId);
+  // Loading and failed must not read as "you have opened nothing".
+  if (loading) return <DeskRowsSkeleton rows={3} />;
+  if (error && entries.length === 0) {
+    return <ErrorState compact error={error} title="Recently opened did not load" onRetry={onRetry} retrying={retrying} />;
+  }
   if (entries.length === 0) {
     return <p className="text-sm text-muted-foreground">Tasks you open show up here, on any device.</p>;
   }
@@ -1131,6 +1171,37 @@ function DeskRecent({ entries }: { entries: RecentlyOpenedIssue[] }) {
           trailing={<span className="shrink-0 text-xs text-muted-foreground">{relativeTime(viewedAt)}</span>}
         />
       ))}
+    </div>
+  );
+}
+
+/** Placeholder rows the height of an EntityRow, so the list lands without a jump. */
+function DeskRowsSkeleton({ rows }: { rows: number }) {
+  return (
+    <div className="space-y-1" aria-hidden="true" data-desk-rows-skeleton>
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-10 w-full" />
+      ))}
+    </div>
+  );
+}
+
+/** The Desk's own shape while it loads: the same sections and headings, so nothing moves. */
+function DeskSkeleton() {
+  return (
+    <div className="min-w-0 flex-1 space-y-6" aria-busy="true" aria-label="Loading your Desk" data-desk-skeleton>
+      <DeskSection id="desk-needs-me-loading" title="Decisions">
+        <div className="space-y-4">
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+        </div>
+      </DeskSection>
+      <DeskSection id="desk-tasks-loading" title="Your tasks" trailing={<Skeleton className="h-8 w-56" />}>
+        <DeskRowsSkeleton rows={5} />
+      </DeskSection>
+      <DeskSection id="desk-recent-loading" title="Recently opened">
+        <DeskRowsSkeleton rows={3} />
+      </DeskSection>
     </div>
   );
 }

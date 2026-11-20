@@ -22,6 +22,8 @@ const dismissLooksFinishedMock = vi.fn<(id: string) => Promise<unknown>>();
 let boardAccess: Record<string, unknown> = { source: "session", memberships: [] };
 let follows: IssueFollowWithRollup[] = [];
 let recent: RecentlyOpenedIssue[] = [];
+let followsError: Error | null = null;
+let recentError: Error | null = null;
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; children: ReactNode }) => (
@@ -80,8 +82,14 @@ vi.mock("../api/issues", () => ({
     listComments: (id: string, filters?: Record<string, unknown>) => listCommentsMock(id, filters),
     markRead: (id: string) => markReadMock(id),
     dismissLooksFinished: (id: string) => dismissLooksFinishedMock(id),
-    listFollows: async () => follows,
-    listRecentlyOpened: async () => recent,
+    listFollows: async () => {
+      if (followsError) throw followsError;
+      return follows;
+    },
+    listRecentlyOpened: async () => {
+      if (recentError) throw recentError;
+      return recent;
+    },
     follow: vi.fn(),
     unfollow: vi.fn(),
   },
@@ -207,6 +215,8 @@ beforeEach(() => {
   decisionCards = [];
   follows = [];
   recent = [];
+  followsError = null;
+  recentError = null;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -746,5 +756,52 @@ describe("Tidy desk", () => {
     expect(quiet?.open).toBe(false);
     expect(quiet?.querySelector("summary")?.textContent).toContain("Gone quiet (1)");
     expect(quiet?.textContent).toContain("When a client is near");
+  });
+});
+
+describe("Desk states (GRE-5820)", () => {
+  it("loads in the Desk's own shape: the same section headings, no generic list", async () => {
+    issuesListMock.mockImplementation(() => new Promise<Issue[]>(() => {}));
+    await renderPage();
+    const skeleton = container.querySelector("[data-desk-skeleton]");
+    expect(skeleton).not.toBeNull();
+    const headings = Array.from(skeleton!.querySelectorAll("h2")).map((h) => h.textContent);
+    expect(headings).toEqual(["Decisions", "Your tasks", "Recently opened"]);
+  });
+
+  it("waits for Pinned before showing the page, so it does not push the list down", async () => {
+    let releaseFollows: (value: IssueFollowWithRollup[]) => void = () => {};
+    followsError = null;
+    const followsPromise = new Promise<IssueFollowWithRollup[]>((resolve) => { releaseFollows = resolve; });
+    const { issuesApi } = await import("../api/issues");
+    const listFollows = vi.spyOn(issuesApi, "listFollows").mockReturnValue(followsPromise);
+    await renderPage();
+    expect(container.querySelector("[data-desk-skeleton]")).not.toBeNull();
+    releaseFollows([]);
+    await flush();
+    expect(container.querySelector("[data-desk-skeleton]")).toBeNull();
+    expect(container.querySelector('[data-desk-section="desk-tasks"]')).not.toBeNull();
+    listFollows.mockRestore();
+  });
+
+  it("says Pinned did not load and offers a retry, instead of hiding it", async () => {
+    followsError = new Error("Pins unavailable");
+    await renderPage();
+    expect(container.textContent).toContain("Pinned tasks did not load");
+    expect(container.textContent).toContain("Pins unavailable");
+    followsError = null;
+    const retry = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Try again"));
+    click(retry);
+    await flush();
+    expect(container.textContent).not.toContain("Pinned tasks did not load");
+  });
+
+  it("a failed Recently opened says so, not 'Tasks you open show up here'", async () => {
+    recentError = new Error("Recent unavailable");
+    await renderPage();
+    const section = container.querySelector('[data-desk-section="desk-recent"]')!;
+    expect(section.textContent).toContain("Recently opened did not load");
+    expect(section.textContent).not.toContain("Tasks you open show up here");
+    expect(section.querySelector("button")?.textContent).toContain("Try again");
   });
 });
