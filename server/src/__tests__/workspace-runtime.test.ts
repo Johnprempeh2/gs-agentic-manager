@@ -7639,7 +7639,11 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       await cleanupRuntimeHome();
       await fixture.cleanup();
     }
-  }, 20_000);
+    // Every one of the 32 attempts spawns a real child and waits out the 250ms
+    // ownership stability delay: ~0.4s each, ~18s in total locally, so 20s timed
+    // out on slower CI runners (GRE-5842). A hung attempt still fails: the
+    // worst bounded case (32 x 5s readiness timeout) is far above this limit.
+  }, 60_000);
 
   it("returns a bounded structured conflict and exposes only same-company workspace references", async () => {
     const fixture = await createRuntimeFixture({
