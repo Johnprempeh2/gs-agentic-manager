@@ -39,7 +39,9 @@ export function precompressedAssets(assetsDir: string): RequestHandler {
       res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Encoding", encoding);
       res.setHeader("Vary", "Accept-Encoding");
-      res.sendFile(`${filePath}${suffix}`, { maxAge: "1y", immutable: true }, (err) => {
+      // Relative to `root`: send() refuses any dot folder in an absolute path, and
+      // task worktrees live under .gsam/ (GRE-5821). ASSET_NAME keeps the name flat.
+      res.sendFile(`${req.path.slice(1)}${suffix}`, { root: assetsDir, maxAge: "1y", immutable: true }, (err) => {
         if (err && !res.headersSent) {
           res.removeHeader("Content-Encoding");
           next();
