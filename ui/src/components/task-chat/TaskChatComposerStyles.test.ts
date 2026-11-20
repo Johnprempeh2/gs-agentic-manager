@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 const stylesheet = readFileSync(new URL("../../index.css", import.meta.url), "utf8");
 
 function cssBlock(selector: string): string {
-  const start = stylesheet.indexOf(`${selector} {`);
+  // The selector may be the last one in a list ("a {") or share the rule ("a,\nb {").
+  const starts = [`${selector} {`, `${selector},\n`].map((needle) => stylesheet.indexOf(needle));
+  const start = Math.max(...starts);
   expect(start, `Missing CSS selector: ${selector}`).toBeGreaterThanOrEqual(0);
 
   const bodyStart = stylesheet.indexOf("{", start);
