@@ -20,6 +20,7 @@ import type {
 } from "@greatstone/shared";
 import {
   JUMP_TO_LATEST_MAX_COMMENT_PAGES,
+  scheduleAfterPaint,
   type CommentReassignment,
   type ActionableIssueThreadInteraction,
 } from "./helpers";
@@ -254,12 +255,15 @@ export function useThreadHandlers({
     });
   }, [issueId, queryClient, refetchComments]);
   useEffect(() => {
-    if (
-      !shouldPrefetchOlderComments &&
-      !(linkedCommentPending && hasOlderComments && !commentsLoadingOlder)
-    )
+    // A linked comment is what the reader asked for: fetch toward it at once.
+    if (linkedCommentPending && hasOlderComments && !commentsLoadingOlder) {
+      void fetchOlderComments();
       return;
-    void fetchOlderComments();
+    }
+    if (!shouldPrefetchOlderComments) return;
+    // Older pages are scrollback. Fetch them once the open has painted, so the
+    // newest comments are not re-rendered twice on the way in (GRE-5821).
+    return scheduleAfterPaint(() => void fetchOlderComments());
   }, [
     fetchOlderComments,
     shouldPrefetchOlderComments,

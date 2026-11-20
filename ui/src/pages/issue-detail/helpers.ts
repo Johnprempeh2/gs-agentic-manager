@@ -96,6 +96,25 @@ export const FEEDBACK_TERMS_URL =
   null;
 export const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
 export const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
+/** Upper bound on how long background work waits for the browser to go idle. */
+export const AFTER_PAINT_MAX_WAIT_MS = 1_000;
+
+/**
+ * Run `task` once the browser is idle after the current paint, or after
+ * AFTER_PAINT_MAX_WAIT_MS at the latest. Returns a cancel function for effect cleanup.
+ */
+export function scheduleAfterPaint(task: () => void): () => void {
+  if (typeof window === "undefined") {
+    task();
+    return () => undefined;
+  }
+  if (typeof window.requestIdleCallback === "function") {
+    const id = window.requestIdleCallback(task, { timeout: AFTER_PAINT_MAX_WAIT_MS });
+    return () => window.cancelIdleCallback(id);
+  }
+  const id = window.setTimeout(task, 0);
+  return () => window.clearTimeout(id);
+}
 export function treeControlPreviewErrorCopy(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 403)
