@@ -19,7 +19,7 @@ vi.mock("@/lib/router", () => ({
   Navigate: () => null,
   useLocation: () => ({ pathname: "/GRE/inbox", search: "" }),
 }));
-vi.mock("@/components/BrandLoading", () => ({ BrandLoading: () => <p>LOADING</p> }));
+vi.mock("@/components/AppShellSkeleton", () => ({ AppShellSkeleton: () => <p>LOADING</p> }));
 vi.mock("@/components/BootstrapPendingPage", () => ({ BootstrapPendingPage: () => null }));
 
 const { CloudAccessGate } = await import("./CloudAccessGate");

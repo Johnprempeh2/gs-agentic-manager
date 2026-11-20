@@ -19,6 +19,7 @@ import { useHiddenSettings } from "./hooks/useHiddenSettings";
 import { OnDemandOnboarding } from "./components/OnDemandDialogs";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
+import { AppShellSkeleton } from "./components/AppShellSkeleton";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { ChatConnectorsExperimentalGate } from "./components/ChatConnectorsExperimentalGate";
@@ -602,7 +603,7 @@ function LegacySettingsRedirect() {
   const { hidden: hiddenSettings } = useHiddenSettings();
 
   if (loading) {
-    return <BrandLoading />;
+    return <AppShellSkeleton />;
   }
 
   const targetCompany =
@@ -742,7 +743,7 @@ function CompanyRootRedirect() {
   const isPhone = useIsPhone();
 
   if (loading) {
-    return <BrandLoading />;
+    return <AppShellSkeleton />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -788,7 +789,7 @@ function UnprefixedBoardRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
 
   if (loading) {
-    return <BrandLoading />;
+    return <AppShellSkeleton />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
