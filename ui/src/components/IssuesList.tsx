@@ -2270,7 +2270,7 @@ export function IssuesList({
                 <Button
                   variant="outline"
                   size="icon"
-                  className={cn("h-8 w-8 shrink-0", oneRowToolbar && activeFilterCount > 0 && "text-blue-600 dark:text-blue-400")}
+                  className={cn("h-8 w-8 shrink-0", oneRowToolbar && activeFilterCount > 0 && "text-status-info-foreground")}
                   aria-label={oneRowToolbar && activeFilterCount > 0 ? `More list actions (${activeFilterCount} ${activeFilterCount === 1 ? "filter" : "filters"} on)` : "More list actions"}
                   data-issues-more-menu
                 >
