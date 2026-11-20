@@ -2120,8 +2120,10 @@
 
 /* MDXEditor defaults placeholders to a single clipped line. The task-chat
    composer uses longer, assignee-aware copy, so keep it inside the editor by
-   giving the absolutely positioned placeholder a wrapping inline size. */
-.paperclip-task-chat-composer .paperclip-mdxeditor [class*="_placeholder_"] {
+   giving the absolutely positioned placeholder a wrapping inline size. The New
+   Task description (GRE-5832) opts in the same way at phone width. */
+.paperclip-task-chat-composer .paperclip-mdxeditor [class*="_placeholder_"],
+.paperclip-wrap-placeholder .paperclip-mdxeditor [class*="_placeholder_"] {
   display: block;
   width: 100%;
   overflow-wrap: anywhere;
