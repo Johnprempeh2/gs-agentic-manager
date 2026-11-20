@@ -272,7 +272,7 @@ function CollapsedFeedGroup({
         onClick={() => setExpanded((e) => !e)}
         data-fc="card"
         className={cn(
-          "group ml-3 mr-3 md:ml-0 my-2 flex w-(--sz-calc-1) md:w-(--sz-calc-2) items-center gap-2 rounded-lg border bg-card p-(--sz-18px) text-left text-xs transition-(--tp-background-color-border-color) duration-150",
+          "group ml-3 mr-3 md:ml-0 my-2 flex w-(--sz-calc-1) md:w-(--sz-calc-2) items-start gap-2 rounded-lg border bg-card p-(--sz-18px) text-left text-xs transition-(--tp-background-color-border-color) duration-150",
           "cursor-pointer hover:bg-accent hover:border-muted-foreground/30",
         )}
       >
@@ -286,13 +286,17 @@ function CollapsedFeedGroup({
             ? <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             : <Settings className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         }
-        <span className="flex-1 min-w-0 truncate">
-          <span data-fc="actor" className="font-medium text-(--hex-959596) group-hover:text-white">{actorName}</span>
-          <span data-fc="verb" className="ml-1 text-(--hex-959596)">made {group.events.length} updates to</span>
-          <span data-fc="title" className="ml-1 text-(--hex-959596) group-hover:text-white">{entityName ?? group.entityId}</span>
-        </span>
-        <span data-fc="time" className="text-muted-foreground shrink-0">
-          {timeAgo(group.latestEvent.createdAt)}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate">
+              <span data-fc="actor" className="font-medium text-(--hex-959596) group-hover:text-white">{actorName}</span>
+              <span data-fc="verb" className="ml-1 text-(--hex-959596)">made {group.events.length} updates to</span>
+            </span>
+            <span data-fc="time" className="text-muted-foreground shrink-0">
+              {timeAgo(group.latestEvent.createdAt)}
+            </span>
+          </span>
+          <span data-fc="title" className="break-words leading-snug text-(--hex-959596) group-hover:text-white">{entityName ?? group.entityId}</span>
         </span>
       </button>
       {expanded && (

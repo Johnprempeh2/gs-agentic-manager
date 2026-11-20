@@ -105,6 +105,11 @@ export interface TaskChatComposerTakeover {
   hideSkip?: boolean;
 }
 
+export interface TaskChatComposerPrefill {
+  text: string;
+  nonce: number;
+}
+
 interface TaskChatComposerProps {
   onAdd: (
     body: string,
@@ -163,6 +168,8 @@ interface TaskChatComposerProps {
     onDismiss?: () => void;
   } | null;
   runnerGoalCapability?: RunnerGoalCapability | null;
+  /** Replaces the draft with this text and focuses the editor when `nonce` changes. */
+  prefill?: TaskChatComposerPrefill | null;
   onRunnerGoalCommand?: (
     command: RunnerGoalComposerCommand,
   ) => Promise<void> | void;
@@ -427,6 +434,7 @@ export function TaskChatComposer({
   runnerGoalCapability = null,
   onRunnerGoalCommand,
   onRunnerGoalReassign,
+  prefill = null,
 }: TaskChatComposerProps) {
   const streamlined = useStreamlinedTaskChatPresentation();
   const stopControl = useComposerStop(onStop, stopPending);
@@ -564,6 +572,13 @@ export function TaskChatComposer({
 
     previousQueuedEditIdRef.current = nextId;
   }, [draftKey, pendingMode, queuedEdit]);
+
+  useEffect(() => {
+    if (!prefill || queuedEditRef.current) return;
+    changeBody(prefill.text);
+    requestAnimationFrame(() => editorRef.current?.focus());
+    // Only a new nonce applies a prefill; typing afterwards is the user's.
+  }, [prefill?.nonce]);
 
   useEffect(() => {
     if (!draftKey || queuedEdit) return;

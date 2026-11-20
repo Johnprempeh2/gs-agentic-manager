@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from "react";
 import {
   IssueAssigneePausedNotice,
@@ -94,7 +95,7 @@ import {
   TaskChatThreadView,
   taskChatContentKey,
 } from "@/components/task-chat/TaskChatThreadView";
-import { TaskChatComposer } from "@/components/task-chat/TaskChatComposer";
+import { TaskChatComposer, type TaskChatComposerPrefill } from "@/components/task-chat/TaskChatComposer";
 import {
   RunnerGoalWidget,
   useRunnerGoalControl,
@@ -418,6 +419,10 @@ export type TaskChatThreadProps = ComponentProps<typeof IssueChatThread> & {
   onOpenSkill?: (skillId: string, name: string) => void;
   /** A board question chat (GRE-1186): the composer shows a fixed "Questions only" cue. */
   questionsOnly?: boolean;
+  /** Replaces the plain empty-thread line, e.g. the agent chat starter panel. */
+  emptyContent?: ReactNode;
+  /** Text to place in the composer; a new `nonce` re-applies the same text. */
+  composerPrefill?: TaskChatComposerPrefill | null;
 };
 
 type PendingComposerInput =
@@ -518,6 +523,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     composerPause,
     composerDisabledReason,
     emptyMessage = "No messages yet.",
+    emptyContent,
+    composerPrefill = null,
     companyId,
     linkedRuns,
     liveRuns,
@@ -2988,9 +2995,11 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                         {threadHeaderWithBlockers}
                       </div>
                     ) : null}
-                    <div className="px-3 py-10 text-center text-sm text-muted-foreground">
-                      {emptyMessage}
-                    </div>
+                    {emptyContent ?? (
+                      <div className="px-3 py-10 text-center text-sm text-muted-foreground">
+                        {emptyMessage}
+                      </div>
+                    )}
                     {bottomBlockerLinks ? (
                       <div className="mx-auto w-full max-w-(--tc-shell-max-w) px-4 pb-4 md:px-0">
                         {bottomBlockerLinks}
@@ -3232,6 +3241,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       issueStatus={issueStatus}
                       mobile={isMobile}
                       draftKey={draftKey}
+                      prefill={composerPrefill}
                       queuedEdit={queuedEdit}
                       onSaveQueuedEdit={saveQueuedEdit}
                       onCancelQueuedEdit={() => setQueuedEdit(null)}

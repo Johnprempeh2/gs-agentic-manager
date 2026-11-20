@@ -1,11 +1,13 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface EmptyStateProps {
   /** A Lucide icon, or an icon-shaped brand glyph such as BrandStoneIcon. */
-  icon: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  icon?: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  /** Replaces the icon tile, e.g. an agent avatar. */
+  media?: ReactNode;
   /** Optional bold heading rendered above the message. */
   title?: string;
   message: string;
@@ -15,6 +17,8 @@ interface EmptyStateProps {
   onAction?: () => void;
   /** Hide the leading "+" glyph on the action button (e.g. for a "Set up" CTA). */
   hideActionIcon?: boolean;
+  /** Extra content under the message, e.g. starter prompts. */
+  children?: ReactNode;
 }
 
 export function EmptyState({
@@ -25,12 +29,16 @@ export function EmptyState({
   action,
   onAction,
   hideActionIcon = false,
+  media,
+  children,
 }: EmptyStateProps) {
   return (
     <div className="gs-empty flex flex-col items-center justify-center py-16 text-center">
-      <div className="gs-empty-tile gs-glass-card mb-5 rounded-xl border p-4">
-        <Icon className="brand-mark h-9 w-9" aria-hidden="true" />
-      </div>
+      {media ?? (Icon ? (
+        <div className="gs-empty-tile gs-glass-card mb-5 rounded-xl border p-4">
+          <Icon className="brand-mark h-9 w-9" aria-hidden="true" />
+        </div>
+      ) : null)}
       {title ? (
         <>
           <p className="text-base font-semibold text-foreground mb-1.5">{title}</p>
@@ -48,6 +56,7 @@ export function EmptyState({
           {action}
         </Button>
       )}
+      {children}
     </div>
   );
 }
