@@ -1049,6 +1049,17 @@
     grid-row: 2;
   }
 
+  /* One row on a phone: search, create, then the More menu that holds
+     Filter, Sort and Group (GRE-5834). */
+  .paperclip-task-list-toolbar--one-row > :first-child {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .paperclip-task-list-toolbar--one-row > :first-child > :last-child {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   /* A control that carries words ("Filter: 1") keeps the 44px height but
      grows to fit them (GRE-1924). */
   [role="toolbar"][aria-label="Inbox controls"] button[data-worded],

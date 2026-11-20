@@ -113,15 +113,24 @@ vi.mock("../components/IssueChatThread", () => ({
   ),
 }));
 
+let phone = false;
+vi.mock("../hooks/useIsPhone", () => ({ useIsPhone: () => phone }));
+let lastListToolbar: { phoneOneRowToolbar?: boolean; copyListText?: () => string; toolbarMenuItems?: ReactNode } = {};
+
 // The real list is covered elsewhere; this stub shows the groups and the page's row slots.
 vi.mock("../components/IssuesList", () => ({
   IssuesList: (props: {
+    phoneOneRowToolbar?: boolean;
+    copyListText?: () => string;
+    toolbarMenuItems?: ReactNode;
     issues: Issue[];
     customGrouping: IssuesCustomGrouping;
     renderRowLeading: (issue: Issue) => ReactNode;
     renderRowActions: (issue: Issue) => ReactNode;
     renderRowFooter: (issue: Issue) => ReactNode;
-  }) => (
+  }) => {
+    lastListToolbar = props;
+    return (
     <div>
       {props.customGrouping.groups.map((group) => {
         const rows = props.issues.filter((issue) => props.customGrouping.groupKeyForIssue(issue) === group.key);
@@ -140,7 +149,8 @@ vi.mock("../components/IssuesList", () => ({
         );
       })}
     </div>
-  ),
+    );
+  },
 }));
 
 function makeIssue(id: string, overrides: Partial<Issue> = {}): Issue {
@@ -659,6 +669,27 @@ describe("Desk sections", () => {
     expect(container.querySelector('[data-row="3"]')).not.toBeNull();
     expect(section("desk-recent")?.textContent).toContain("Daily release candidate");
     expect(window.localStorage.getItem("paperclip:desk-show-routine")).toBe("true");
+  });
+
+  it("on a phone puts the routine switch and the copy in the list's one toolbar row", async () => {
+    phone = true;
+    try {
+      openIssues = [
+        makeIssue("1", { title: "Sign off the Q3 pack" }),
+        makeIssue("2", { title: "Loose ends", originKind: "routine_execution" }),
+      ];
+      await renderPage();
+
+      expect(container.querySelector('[data-row="1"]')).not.toBeNull();
+      // Nothing above the list's own toolbar in the Your tasks heading.
+      expect(section("desk-tasks")?.querySelector("[data-desk-routine-toggle]")).toBeNull();
+      expect(section("desk-tasks")?.textContent).not.toContain("Copy as a list");
+      expect(lastListToolbar.phoneOneRowToolbar).toBe(true);
+      expect(lastListToolbar.toolbarMenuItems).toBeTruthy();
+      expect(lastListToolbar.copyListText?.()).toContain("Sign off the Q3 pack");
+    } finally {
+      phone = false;
+    }
   });
 });
 

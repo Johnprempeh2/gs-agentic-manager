@@ -16,6 +16,7 @@ import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
 import { IconTip } from "@/components/ui/tooltip";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { myTasksListText } from "../lib/my-tasks-text";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -785,9 +786,26 @@ export function Desk() {
     />
   ) : null;
 
+  const copyTasksText = () =>
+    myTasksListText(
+      visibleIssues,
+      (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
+      (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
+    );
+  // On a phone with tasks listed, the list's own toolbar is the only row: the
+  // routine switch and the copy move into its More menu (GRE-5834).
+  const toolsInListMenu = isPhone && liveIssues.length > 0;
+  const routineMenuItem = (
+    <DropdownMenuCheckboxItem checked={showRoutine} onCheckedChange={setShowRoutine} data-desk-routine-menu-item>
+      <span className="flex-1">Show routine tasks</span>
+      {!showRoutine && routineCount > 0 ? (
+        <span className="text-xs text-muted-foreground">{routineCount} hidden</span>
+      ) : null}
+    </DropdownMenuCheckboxItem>
+  );
   // Task tools ride on the Your tasks heading row, on the right, so the
   // page opens on Pinned or Decisions rather than on a row of switches.
-  const pageTools = (
+  const pageTools = toolsInListMenu ? null : (
     <div className="flex flex-wrap items-center justify-end gap-3">
       <label className="inline-flex items-center gap-2 text-sm">
         <ToggleSwitch
@@ -808,15 +826,7 @@ export function Desk() {
           variant="outline"
           size="sm"
           title="Copy your tasks as a list with links, grouped by who acts next, ready to paste into a message"
-          onClick={() =>
-            void listCopy.copy(
-              myTasksListText(
-                visibleIssues,
-                (issue) => myTasksGroupOf(issue, merged.reasonsById.get(issue.id) ?? []),
-                (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`,
-              ),
-            )
-          }
+          onClick={() => void listCopy.copy(copyTasksText())}
         >
           {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
           {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
@@ -981,6 +991,9 @@ export function Desk() {
                 renderRowLeading={renderRowLeading}
                 renderRowActions={renderRowActions}
                 renderRowFooter={renderRowFooter}
+                phoneOneRowToolbar
+                copyListText={toolsInListMenu ? copyTasksText : undefined}
+                toolbarMenuItems={toolsInListMenu ? routineMenuItem : undefined}
                 onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
               />
             )}
