@@ -16,6 +16,7 @@ import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useAppBadge } from "../hooks/usePushNotifications";
 import { Badge } from "@/components/ui/badge";
 import { EverestTab } from "./EverestOrb";
+import { mobileTabStyles } from "./mobile-tab-styles";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -106,13 +107,13 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                 type="button"
                 onClick={item.onClick}
                 className={cn(
-                  "relative flex min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) active:scale-95",
+                  mobileTabStyles.tab,
                   active
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <span className="flex h-7 w-12 items-center justify-center rounded-full">
+                <span className={mobileTabStyles.iconSlot}>
                   <Icon className="h-(--sz-18px) w-(--sz-18px)" />
                 </span>
                 <span className="truncate">{item.label}</span>
@@ -139,7 +140,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
               }}
               className={({ isActive }) =>
                 cn(
-                  "relative flex min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) active:scale-95",
+                  mobileTabStyles.tab,
                   isActive
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -150,7 +151,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                 <>
                   <span
                     className={cn(
-                      "relative flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-(--motion-press)",
+                      mobileTabStyles.iconSlot,
+                      "transition-colors duration-(--motion-press)",
                       isActive && "bg-primary/15 text-primary",
                     )}
                   >

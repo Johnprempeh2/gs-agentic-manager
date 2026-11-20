@@ -155,6 +155,11 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 }
 
+/** The sidebar state when a provider is mounted, or null (loading shells, harnesses). */
+export function useOptionalSidebar() {
+  return useContext(SidebarContext);
+}
+
 export function useSidebar() {
   const ctx = useContext(SidebarContext);
   if (!ctx) {

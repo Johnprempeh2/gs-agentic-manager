@@ -86,13 +86,24 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { IconTip } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, User, Search, CircleSlash2, ChevronsDownUp, PanelTopClose, RotateCcw, ListCollapse,
-  SquareKanban, Download, ClipboardList, MoreHorizontal,
+  SquareKanban, Download, ClipboardList, MoreHorizontal, Filter,
 } from "lucide-react";
 import { downloadTextFile, issuesCsvFileName, issuesToCsv } from "../lib/issues-csv";
 import { issuesToPlainList } from "../lib/issues-text";
 import { useCopyAction } from "../lib/use-copy-action";
+import { useIsPhone } from "../hooks/useIsPhone";
 import {
   KanbanBoard,
   KANBAN_BOARD_HIGH_VOLUME_THRESHOLD,
@@ -564,6 +575,13 @@ interface IssuesListProps {
   toolbarControls?: ReactNode;
   /** Extra items for the toolbar's More menu (DropdownMenu items), after Download and Copy. */
   toolbarMenuItems?: ReactNode;
+  /**
+   * On a phone, keep the toolbar to one row: search, create and the More menu,
+   * with Filter, Sort and Group inside that menu.
+   */
+  phoneOneRowToolbar?: boolean;
+  /** The text "Copy as a list" copies, in place of the plain list of the shown tasks. */
+  copyListText?: () => string;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -654,6 +672,10 @@ function IssueSearchInput({
 
 const STATUS_CHIP_LABELS = ["All", "Recent", "Active", "Blocked", "Done"];
 const statusChipPresets = issueQuickFilterPresets.filter((preset) => STATUS_CHIP_LABELS.includes(preset.label));
+
+export function statusChipPresetFor(statuses: string[]) {
+  return statusChipPresets.find((preset) => issueFilterArraysEqual(statuses, preset.statuses));
+}
 
 function IssueStatusChips({ statuses, onChange }: { statuses: string[]; onChange: (statuses: string[]) => void }) {
   return (
@@ -797,6 +819,26 @@ function SubIssueProgressSummaryStrip({
   );
 }
 
+const ISSUE_SORT_OPTIONS = [
+  ["workflow", "Workflow"],
+  ["status", "Status"],
+  ["priority", "Priority"],
+  ["title", "Title"],
+  ["created", "Created"],
+  ["updated", "Updated"],
+  ["due", "Due date"],
+] as const;
+
+const ISSUE_GROUP_OPTIONS = [
+  ["status", "Status"],
+  ["priority", "Priority"],
+  ["assignee", "Responsible"],
+  ["project", "Project"],
+  ["workspace", "Workspace"],
+  ["parent", "Parent Task"],
+  ["none", "None"],
+] as const;
+
 // Mobile-only indent for nested task rows (desktop uses IssueRow treeGuides).
 const MOBILE_TREE_INDENT = ["", "pl-4 sm:pl-0", "pl-8 sm:pl-0", "pl-12 sm:pl-0", "pl-16 sm:pl-0"];
 
@@ -842,6 +884,8 @@ export function IssuesList({
   renderRowFooter,
   toolbarControls,
   toolbarMenuItems,
+  phoneOneRowToolbar = false,
+  copyListText,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1369,7 +1413,14 @@ export function IssuesList({
   }, [agents, companyUserLabelMap, filtered, projectById, selectedCompany?.issuePrefix]);
 
   const listCopy = useCopyAction();
+  const isPhone = useIsPhone();
+  const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+  const openFiltersAfterMenu = useRef(false);
   const copyAsList = useCallback(() => {
+    if (copyListText) {
+      void listCopy.copy(copyListText());
+      return;
+    }
     const agentNames = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
     void listCopy.copy(
       issuesToPlainList(filtered, {
@@ -1378,7 +1429,7 @@ export function IssuesList({
         userLabel: (userId) => companyUserLabelMap.get(userId),
       }),
     );
-  }, [agents, companyUserLabelMap, filtered, listCopy.copy]);
+  }, [agents, companyUserLabelMap, copyListText, filtered, listCopy.copy]);
 
   const progressSummary = useMemo(
     () => shouldRenderSubIssueProgressSummary(showProgressSummary, issues.length)
@@ -1452,6 +1503,10 @@ export function IssuesList({
     },
     enableRoutineVisibilityFilter,
   );
+  // The status segment already shows its preset, so no chip repeats it (GRE-5832).
+  const chipFilters = showStatusChips && statusChipPresetFor(viewState.statuses)
+    ? activeFilters.filter((filter) => filter.key !== "statuses")
+    : activeFilters;
   const boardHighVolume = viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
   const boardCompactCards =
     viewState.boardCardDensity === "compact"
@@ -1928,6 +1983,20 @@ export function IssuesList({
 
   let remainingRowsToRender = viewState.viewMode === "list" ? renderedIssueRowLimit : Number.POSITIVE_INFINITY;
   const IssuesToolbar = toolbarPresentation === "collection" ? CollectionToolbar : LegacyIssuesToolbar;
+  const oneRowToolbar = phoneOneRowToolbar && isPhone;
+  // PAP-411: "priority" sort and group options hidden behind SHOW_TASK_PRIORITY_UI (logic stays dormant).
+  const sortOptions = ISSUE_SORT_OPTIONS.filter(([field]) => SHOW_TASK_PRIORITY_UI || field !== "priority");
+  const groupOptions = ([
+    ...(customGrouping ? [["custom", customGrouping.label] as const] : []),
+    ...ISSUE_GROUP_OPTIONS,
+  ] as const).filter(([value]) => SHOW_TASK_PRIORITY_UI || value !== "priority");
+  const chooseSort = (field: (typeof ISSUE_SORT_OPTIONS)[number][0]) => {
+    if (viewState.sortField === field) {
+      updateView({ sortDir: viewState.sortDir === "asc" ? "desc" : "asc" });
+    } else {
+      updateView({ sortField: field, sortDir: "asc" });
+    }
+  };
   const searchInput = (
     <IssueSearchInput
       value={issueSearch}
@@ -1950,7 +2019,7 @@ export function IssuesList({
 
       {/* Toolbar */}
       <IssuesToolbar
-        className="paperclip-task-list-toolbar"
+        className={cn("paperclip-task-list-toolbar", oneRowToolbar && "paperclip-task-list-toolbar--one-row")}
         ariaLabel={toolbarPresentation === "collection" ? "Task controls" : undefined}
         context={(
           <Button size="sm" variant="outline" aria-label={createButtonLabel} onClick={() => openCreateIssueDialog()}>
@@ -2123,10 +2192,11 @@ export function IssuesList({
             iconOnly
             workspaces={isolatedWorkspacesEnabled ? workspaceOptions : undefined}
             presentation={rowPresentation === "task" ? "streamlined" : "legacy"}
+            {...(oneRowToolbar ? { hideTrigger: true, open: phoneFiltersOpen, onOpenChange: setPhoneFiltersOpen } : {})}
           />
 
           {/* Sort (list view only) */}
-          {viewState.viewMode === "list" && (
+          {viewState.viewMode === "list" && !oneRowToolbar && (
             <Popover>
               <IconTip label="Sort the list">
                 <PopoverTrigger asChild>
@@ -2139,30 +2209,13 @@ export function IssuesList({
               <PopoverContent align="end" className="w-48 p-0">
                 <div className="p-2 space-y-0.5">
                   <div className="px-2 pb-1 pt-0.5 text-xs font-medium text-muted-foreground">Sort by</div>
-                  {/* PAP-411: "priority" sort option hidden behind SHOW_TASK_PRIORITY_UI (comparator stays dormant). */}
-                  {([
-                    ["workflow", "Workflow"],
-                    ["status", "Status"],
-                    ["priority", "Priority"],
-                    ["title", "Title"],
-                    ["created", "Created"],
-                    ["updated", "Updated"],
-                    ["due", "Due date"],
-                  ] as const)
-                    .filter(([field]) => SHOW_TASK_PRIORITY_UI || field !== "priority")
-                    .map(([field, label]) => (
+                  {sortOptions.map(([field, label]) => (
                     <button
                       key={field}
                       className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
                         viewState.sortField === field ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
                       }`}
-                      onClick={() => {
-                        if (viewState.sortField === field) {
-                          updateView({ sortDir: viewState.sortDir === "asc" ? "desc" : "asc" });
-                        } else {
-                          updateView({ sortField: field, sortDir: "asc" });
-                        }
-                      }}
+                      onClick={() => chooseSort(field)}
                     >
                       <span>{label}</span>
                       {viewState.sortField === field && (
@@ -2178,7 +2231,7 @@ export function IssuesList({
           )}
 
           {/* Group (list view only) */}
-          {viewState.viewMode === "list" && (
+          {viewState.viewMode === "list" && !oneRowToolbar && (
             <Popover>
               <IconTip label="Group the list">
                 <PopoverTrigger asChild>
@@ -2191,19 +2244,7 @@ export function IssuesList({
               <PopoverContent align="end" className="w-44 p-0">
                 <div className="p-2 space-y-0.5">
                   <div className="px-2 pb-1 pt-0.5 text-xs font-medium text-muted-foreground">Group by</div>
-                  {/* PAP-411: "priority" group-by option hidden behind SHOW_TASK_PRIORITY_UI (group logic stays dormant). */}
-                  {([
-                    ...(customGrouping ? [["custom", customGrouping.label] as const] : []),
-                    ["status", "Status"],
-                    ["priority", "Priority"],
-                    ["assignee", "Responsible"],
-                    ["project", "Project"],
-                    ["workspace", "Workspace"],
-                    ["parent", "Parent Task"],
-                    ["none", "None"],
-                  ] as const)
-                    .filter(([value]) => SHOW_TASK_PRIORITY_UI || value !== "priority")
-                    .map(([value, label]) => (
+                  {groupOptions.map(([value, label]) => (
                     <button
                       key={value}
                       className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
@@ -2221,16 +2262,82 @@ export function IssuesList({
           )}
 
           {/* Download, copy and the page's own extras share one menu, so Filter,
-              Sort and Group keep room for their words (from 1280 wide). */}
+              Sort and Group keep room for their words (from 1280 wide). On a
+              phone with a one-row toolbar, Filter, Sort and Group live here too. */}
           <DropdownMenu>
-            <IconTip label="Download, copy as a list, select">
+            <IconTip label={oneRowToolbar ? "Filter, sort, group, copy" : "Download, copy as a list, select"}>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" aria-label="More list actions">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className={cn("h-8 w-8 shrink-0", oneRowToolbar && activeFilterCount > 0 && "text-status-info-foreground")}
+                  aria-label={oneRowToolbar && activeFilterCount > 0 ? `More list actions (${activeFilterCount} ${activeFilterCount === 1 ? "filter" : "filters"} on)` : "More list actions"}
+                  data-issues-more-menu
+                >
                   {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
                 </Button>
               </DropdownMenuTrigger>
             </IconTip>
-            <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuContent
+              align="end"
+              className="w-64"
+              onCloseAutoFocus={(event) => {
+                // Open the filter panel once the menu has closed; focus going back
+                // to the More button would otherwise dismiss it at once.
+                if (!openFiltersAfterMenu.current) return;
+                openFiltersAfterMenu.current = false;
+                event.preventDefault();
+                setPhoneFiltersOpen(true);
+              }}
+            >
+              {oneRowToolbar ? (
+                <>
+                  <DropdownMenuItem onSelect={() => { openFiltersAfterMenu.current = true; }}>
+                    <Filter className="h-3.5 w-3.5" />
+                    {activeFilterCount > 0 ? `Filter: ${activeFilterCount}` : "Filter"}
+                  </DropdownMenuItem>
+                  {viewState.viewMode === "list" ? (
+                    <>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <ArrowUpDown className="h-3.5 w-3.5" />
+                          Sort
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {sortOptions.map(([field, label]) => (
+                            <DropdownMenuItem key={field} onSelect={() => chooseSort(field)}>
+                              <span className="flex-1">{label}</span>
+                              {viewState.sortField === field ? (
+                                <span className="text-xs text-muted-foreground">
+                                  {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
+                                </span>
+                              ) : null}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <Layers className="h-3.5 w-3.5" />
+                          Group
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {groupOptions.map(([value, label]) => (
+                            <DropdownMenuCheckboxItem
+                              key={value}
+                              checked={viewState.groupBy === value}
+                              onSelect={() => updateView({ groupBy: value })}
+                            >
+                              {label}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <DropdownMenuItem disabled={filtered.length === 0} onSelect={downloadSpreadsheet}>
                 <Download className="h-3.5 w-3.5" />
                 Download as spreadsheet
@@ -2250,7 +2357,7 @@ export function IssuesList({
         )}
       />
       {/* Below 1280 the Filter trigger is compact, so name each filter here (GRE-1924). */}
-      <ActiveIssueFilterChips filters={activeFilters} onChange={updateView} className="-mt-2 xl:hidden" />
+      <ActiveIssueFilterChips filters={chipFilters} onChange={updateView} className="-mt-2 xl:hidden" />
 
       {(isLoading || externalObjectFilterLoading) && <PageSkeleton variant="issues-list" />}
       {error && <ErrorState error={error} title="Tasks did not load" onRetry={onRetry} compact />}

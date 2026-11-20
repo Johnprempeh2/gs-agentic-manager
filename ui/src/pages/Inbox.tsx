@@ -2877,7 +2877,8 @@ export function Inbox() {
         />
       ) : null}
 
-      {tab !== "blocked" && !allLoaded && visibleSections.length === 0 && (
+      {/* The real toolbar is already above, so the skeleton is only the list; never beside the error. */}
+      {tab !== "blocked" && !allLoaded && !inboxLoadError && visibleSections.length === 0 && (
         <PageSkeleton variant="inbox" />
       )}
 

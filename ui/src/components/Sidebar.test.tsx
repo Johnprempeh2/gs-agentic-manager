@@ -603,6 +603,22 @@ describe("Sidebar", () => {
     });
   });
 
+  it("pins the release footer below the scrolling nav, so a long Start section cannot push it off screen (GRE-5831)", async () => {
+    const root = await renderSidebar();
+
+    const footer = container.querySelector('[data-testid="sidebar-release-footer"]');
+    expect(footer).not.toBeNull();
+    // Outside the overflow-y-auto nav, directly under it in the aside's column.
+    expect(footer?.closest("nav")).toBeNull();
+    const slot = footer?.closest('[data-slot="sidebar-footer"]');
+    expect(slot?.className).toContain("shrink-0");
+    expect(slot?.previousElementSibling?.tagName).toBe("NAV");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("keeps the simplified navigation while experimental settings are loading", async () => {
     mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
     const root = await renderSidebar();

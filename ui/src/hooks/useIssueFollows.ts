@@ -17,6 +17,9 @@ export function useIssueFollows(companyId: string | null | undefined) {
     refetchInterval: FOLLOWS_REFETCH_MS,
     refetchOnWindowFocus: true,
     retry: false,
+    // A failed load waits for Try again or the next interval; a new observer
+    // (the Desk list mounting) must not fire it again (GRE-5820).
+    retryOnMount: false,
   });
   const followedIds = useMemo(() => new Set((query.data ?? []).map((follow) => follow.issueId)), [query.data]);
   return { ...query, follows: query.data ?? [], followedIds };
@@ -51,18 +54,26 @@ export function useFollowIssue(companyId: string | null | undefined) {
   });
 }
 
+/** The recently opened query itself, for a page that shows its loading and error states. */
+export function useRecentlyOpenedIssuesQuery(
+  companyId: string | null | undefined,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: queryKeys.recentIssues(companyId ?? "__none__"),
+    queryFn: () => issuesApi.listRecentlyOpened(companyId!),
+    enabled: !!companyId && options.enabled !== false,
+    retry: false,
+    retryOnMount: false,
+  });
+}
+
 /** The tasks the signed-in user opened most recently, newest first. */
 export function useRecentlyOpenedIssues(
   companyId: string | null | undefined,
   options: { enabled?: boolean } = {},
 ): RecentlyOpenedIssue[] {
-  const { data } = useQuery({
-    queryKey: queryKeys.recentIssues(companyId ?? "__none__"),
-    queryFn: () => issuesApi.listRecentlyOpened(companyId!),
-    enabled: !!companyId && options.enabled !== false,
-    retry: false,
-  });
-  return data ?? [];
+  return useRecentlyOpenedIssuesQuery(companyId, options).data ?? [];
 }
 
 /**

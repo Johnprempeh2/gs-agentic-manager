@@ -157,7 +157,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
     <Button
       variant="ghost"
       size="icon"
-      className="mr-2 shrink-0"
+      className="-ml-0.5 mr-1.5 size-11 shrink-0"
       onClick={toggleSidebar}
       aria-label="Open sidebar"
     >

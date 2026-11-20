@@ -480,6 +480,7 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
       }}
       placeholder="What should the agent do, and what does a good result look like?"
       bordered={false}
+      className="paperclip-wrap-placeholder"
       mentions={mentions}
       contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
       imageUploadHandler={imageUploadHandler}

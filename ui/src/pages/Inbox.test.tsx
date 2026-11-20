@@ -410,6 +410,8 @@ describe("Inbox toolbar", () => {
     });
     expect(container.textContent).toContain("Server unavailable");
     expect(container.textContent).not.toContain("Inbox zero.");
+    // The error replaces the loading list; the two never show together.
+    expect(container.querySelector('[aria-label="Loading the inbox"]')).toBeNull();
 
     act(() => root.unmount());
   });

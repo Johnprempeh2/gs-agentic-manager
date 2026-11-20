@@ -105,6 +105,11 @@ export interface TaskChatComposerTakeover {
   hideSkip?: boolean;
 }
 
+export interface TaskChatComposerPrefill {
+  text: string;
+  nonce: number;
+}
+
 interface TaskChatComposerProps {
   onAdd: (
     body: string,
@@ -163,6 +168,8 @@ interface TaskChatComposerProps {
     onDismiss?: () => void;
   } | null;
   runnerGoalCapability?: RunnerGoalCapability | null;
+  /** Replaces the draft with this text and focuses the editor when `nonce` changes. */
+  prefill?: TaskChatComposerPrefill | null;
   onRunnerGoalCommand?: (
     command: RunnerGoalComposerCommand,
   ) => Promise<void> | void;
@@ -427,6 +434,7 @@ export function TaskChatComposer({
   runnerGoalCapability = null,
   onRunnerGoalCommand,
   onRunnerGoalReassign,
+  prefill = null,
 }: TaskChatComposerProps) {
   const streamlined = useStreamlinedTaskChatPresentation();
   const stopControl = useComposerStop(onStop, stopPending);
@@ -564,6 +572,13 @@ export function TaskChatComposer({
 
     previousQueuedEditIdRef.current = nextId;
   }, [draftKey, pendingMode, queuedEdit]);
+
+  useEffect(() => {
+    if (!prefill || queuedEditRef.current) return;
+    changeBody(prefill.text);
+    requestAnimationFrame(() => editorRef.current?.focus());
+    // Only a new nonce applies a prefill; typing afterwards is the user's.
+  }, [prefill?.nonce]);
 
   useEffect(() => {
     if (!draftKey || queuedEdit) return;
@@ -1476,7 +1491,7 @@ export function TaskChatComposer({
                       disabled={disabled}
                       title="Add to message"
                       aria-label="Add to message"
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                       data-testid="task-chat-composer-add"
                     >
                       <Plus className="h-4 w-4" aria-hidden />
@@ -1523,7 +1538,7 @@ export function TaskChatComposer({
                 {dictation.listening ? (
                   <DictationButton
                     dictation={dictation}
-                    className="h-8 w-8"
+                    className="h-11 w-11"
                     testId="task-chat-composer-dictation-stop"
                   />
                 ) : null}

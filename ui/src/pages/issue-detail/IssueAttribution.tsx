@@ -172,8 +172,10 @@ export function IssueAttributionByline({
 
   return (
     <TooltipProvider>
+      {/* Phones: side by side, so the second avatar does not cut the first
+          at 20px, and the pair wraps as one item (GRE-5832). */}
       <AvatarGroup
-        className="-space-x-1.5"
+        className="shrink-0 gap-1 space-x-0 sm:gap-0 sm:-space-x-1.5"
         aria-label="Task people"
         data-testid="issue-attribution-avatar-stack"
       >

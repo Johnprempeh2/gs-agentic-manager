@@ -743,8 +743,8 @@ export function BoardChat() {
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground md:hidden"
+                size="icon"
+                className="size-11 text-muted-foreground md:hidden"
                 aria-label="Open agent feed"
                 onClick={() => setMobileFeedOpen(true)}
               >
@@ -999,7 +999,7 @@ export function BoardChat() {
                mask is gone — the dock carries the task-style soft top fade instead
                (mirrors IssueChatThread's composer dock). pointer-events pass through
                the fade so the scrollbar stays usable; the composer re-enables them. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5" data-tour="conference-room-composer">
+          <div className="board-chat-composer-dock pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-3 pt-6 pb-3 transition-[bottom] duration-200 ease-out motion-reduce:transition-none sm:px-6 sm:pb-5" data-tour="conference-room-composer">
             <ChatComposer
               ref={composerRef}
               value={input}

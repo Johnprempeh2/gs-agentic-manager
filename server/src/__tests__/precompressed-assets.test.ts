@@ -54,6 +54,20 @@ describe("precompressed UI assets", () => {
     expect(noCopy.text).toBe("body{}");
   });
 
+  it("still compresses when the install path has a dot folder (GRE-5821)", async () => {
+    // Task worktrees live under .gsam/worktrees; send() refuses dotfile paths by default.
+    const dotDir = path.join(dir, ".gsam", "worktrees", "task", "assets");
+    fs.mkdirSync(dotDir, { recursive: true });
+    fs.writeFileSync(path.join(dotDir, "index-abc.js"), source);
+    fs.writeFileSync(path.join(dotDir, "index-abc.js.br"), brotliCompressSync(source));
+    const dotApp = express();
+    dotApp.use("/assets", precompressedAssets(dotDir), express.static(dotDir));
+    const res = await raw(request(dotApp).get("/assets/index-abc.js").set("Accept-Encoding", "br"));
+    expect(res.status).toBe(200);
+    expect(res.headers["content-encoding"]).toBe("br");
+    expect(res.body.toString()).toBe(source);
+  });
+
   it("never serves a compressed file from outside the assets folder", async () => {
     for (const p of ["/assets/../secret.js", "/assets/..%2fsecret.js", "/assets/%2e%2e/secret.js"]) {
       const res = await request(app).get(p).set("Accept-Encoding", "gzip");

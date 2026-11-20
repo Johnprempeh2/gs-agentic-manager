@@ -437,7 +437,7 @@ export function FeedCard({
     <Card
       data-fc="card"
       className={cn(
-        "flex-row group ml-3 mr-3 md:ml-0 my-2 w-(--sz-calc-1) md:w-(--sz-calc-2) items-center gap-2 p-(--sz-18px) text-xs",
+        "flex-row group ml-3 mr-3 md:ml-0 my-2 w-(--sz-calc-1) md:w-(--sz-calc-2) items-start gap-2 p-(--sz-18px) text-xs",
         "transition-(--tp-background-color-border-color) duration-150",
         content.link && "cursor-pointer hover:bg-accent hover:border-muted-foreground/30",
         className,
@@ -445,33 +445,38 @@ export function FeedCard({
     >
       <EntityIcon spec={iconSpec} />
       <ActorGlyph content={content} />
-      <span className="flex min-w-0 flex-1 items-baseline gap-1 truncate">
-        <span data-fc="actor" className={cn("font-medium", mutedTextBase, mutedTextHover)}>
-          {content.actorName}
-        </span>
-        <span data-fc="verb" className={mutedTextBase}>{verb}</span>
-        {content.identifier && (
-          <span
-            data-fc="id"
-            className={cn(content.identifierMono && "font-mono", mutedTextBase, mutedTextHover)}
-          >
-            {content.identifier}
+      {/* Two lines (GRE-5833): who and what with the time, then the title wrapped in full. */}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="flex min-w-0 flex-1 items-baseline gap-1 truncate">
+            <span data-fc="actor" className={cn("font-medium", mutedTextBase, mutedTextHover)}>
+              {content.actorName}
+            </span>
+            <span data-fc="verb" className={mutedTextBase}>{verb}</span>
+            {content.identifier && (
+              <span
+                data-fc="id"
+                className={cn(content.identifierMono && "font-mono", mutedTextBase, mutedTextHover)}
+              >
+                {content.identifier}
+              </span>
+            )}
           </span>
-        )}
+          {isPinned && (
+            <span className="shrink-0 text-xs text-muted-foreground">Review →</span>
+          )}
+          <span data-fc="time" className="shrink-0 text-muted-foreground">
+            {timeAgo(event.createdAt)}
+          </span>
+        </span>
         {content.title && (
           <span
             data-fc="title"
-            className={cn("truncate", mutedTextBase, mutedTextHover)}
+            className={cn("break-words leading-snug", mutedTextBase, mutedTextHover)}
           >
             {content.title}
           </span>
         )}
-      </span>
-      {isPinned && (
-        <span className="shrink-0 text-xs text-muted-foreground">Review →</span>
-      )}
-      <span data-fc="time" className="shrink-0 text-muted-foreground">
-        {timeAgo(event.createdAt)}
       </span>
     </Card>
   );

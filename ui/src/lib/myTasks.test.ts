@@ -340,7 +340,8 @@ describe("My tasks row actions (GRE-619)", () => {
       myLastReadAt: at("11:30:00"),
     });
     const closed = makeIssue("4", { status: "done", assigneeUserId: null, assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00") });
-    expect(selectHandedOffTasks([handed, mine, read, closed], ME, now).map((issue) => issue.id)).toEqual(["1"]);
+    const placement = makeIssue("5", { assigneeUserId: null, assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00"), originKind: "project_task_placement" });
+    expect(selectHandedOffTasks([handed, mine, read, closed, placement], ME, now).map((issue) => issue.id)).toEqual(["1"]);
   });
 
   it("lists active agents by name with the lead first", () => {

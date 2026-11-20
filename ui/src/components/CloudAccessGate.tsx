@@ -6,7 +6,7 @@ import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
 import { BootstrapPendingPage } from "@/components/BootstrapPendingPage";
-import { BrandLoading } from "@/components/BrandLoading";
+import { AppShellSkeleton } from "@/components/AppShellSkeleton";
 import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
 import { useSignOut } from "@/hooks/useSignOut";
 import { Button } from "@/components/ui/button";
@@ -140,7 +140,7 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && twoStepQuery.isLoading) ||
     (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
-    return <BrandLoading />;
+    return <AppShellSkeleton />;
   }
 
   if (twoStepSetupRequired) {
@@ -167,7 +167,7 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
   if (isBootstrapPending) {
     const health = healthQuery.data;
     if (!health) {
-      return <BrandLoading />;
+      return <AppShellSkeleton />;
     }
     const claimError = claimMutation.error instanceof ApiError
       ? { status: claimMutation.error.status, message: claimMutation.error.message }

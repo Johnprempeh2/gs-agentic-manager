@@ -22,6 +22,8 @@ const dismissLooksFinishedMock = vi.fn<(id: string) => Promise<unknown>>();
 let boardAccess: Record<string, unknown> = { source: "session", memberships: [] };
 let follows: IssueFollowWithRollup[] = [];
 let recent: RecentlyOpenedIssue[] = [];
+let followsError: Error | null = null;
+let recentError: Error | null = null;
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; children: ReactNode }) => (
@@ -80,8 +82,14 @@ vi.mock("../api/issues", () => ({
     listComments: (id: string, filters?: Record<string, unknown>) => listCommentsMock(id, filters),
     markRead: (id: string) => markReadMock(id),
     dismissLooksFinished: (id: string) => dismissLooksFinishedMock(id),
-    listFollows: async () => follows,
-    listRecentlyOpened: async () => recent,
+    listFollows: async () => {
+      if (followsError) throw followsError;
+      return follows;
+    },
+    listRecentlyOpened: async () => {
+      if (recentError) throw recentError;
+      return recent;
+    },
     follow: vi.fn(),
     unfollow: vi.fn(),
   },
@@ -105,15 +113,28 @@ vi.mock("../components/IssueChatThread", () => ({
   ),
 }));
 
+let phone = false;
+vi.mock("../hooks/useIsPhone", () => ({ useIsPhone: () => phone }));
+let lastListToolbar: { phoneOneRowToolbar?: boolean; copyListText?: () => string; toolbarMenuItems?: ReactNode } = {};
+
 // The real list is covered elsewhere; this stub shows the groups and the page's row slots.
-vi.mock("../components/IssuesList", () => ({
+vi.mock("../components/IssuesList", async () => {
+  // Like the real list, it watches the follows query (GRE-5820 storm repro).
+  const { useIssueFollows } = await import("../hooks/useIssueFollows");
+  return {
   IssuesList: (props: {
+    phoneOneRowToolbar?: boolean;
+    copyListText?: () => string;
+    toolbarMenuItems?: ReactNode;
     issues: Issue[];
     customGrouping: IssuesCustomGrouping;
     renderRowLeading: (issue: Issue) => ReactNode;
     renderRowActions: (issue: Issue) => ReactNode;
     renderRowFooter: (issue: Issue) => ReactNode;
-  }) => (
+  }) => {
+    useIssueFollows("company-1");
+    lastListToolbar = props;
+    return (
     <div>
       {props.customGrouping.groups.map((group) => {
         const rows = props.issues.filter((issue) => props.customGrouping.groupKeyForIssue(issue) === group.key);
@@ -132,8 +153,10 @@ vi.mock("../components/IssuesList", () => ({
         );
       })}
     </div>
-  ),
-}));
+    );
+  },
+  };
+});
 
 function makeIssue(id: string, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -207,6 +230,8 @@ beforeEach(() => {
   decisionCards = [];
   follows = [];
   recent = [];
+  followsError = null;
+  recentError = null;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -650,6 +675,27 @@ describe("Desk sections", () => {
     expect(section("desk-recent")?.textContent).toContain("Daily release candidate");
     expect(window.localStorage.getItem("paperclip:desk-show-routine")).toBe("true");
   });
+
+  it("on a phone puts the routine switch and the copy in the list's one toolbar row", async () => {
+    phone = true;
+    try {
+      openIssues = [
+        makeIssue("1", { title: "Sign off the Q3 pack" }),
+        makeIssue("2", { title: "Loose ends", originKind: "routine_execution" }),
+      ];
+      await renderPage();
+
+      expect(container.querySelector('[data-row="1"]')).not.toBeNull();
+      // Nothing above the list's own toolbar in the Your tasks heading.
+      expect(section("desk-tasks")?.querySelector("[data-desk-routine-toggle]")).toBeNull();
+      expect(section("desk-tasks")?.textContent).not.toContain("Copy as a list");
+      expect(lastListToolbar.phoneOneRowToolbar).toBe(true);
+      expect(lastListToolbar.toolbarMenuItems).toBeTruthy();
+      expect(lastListToolbar.copyListText?.()).toContain("Sign off the Q3 pack");
+    } finally {
+      phone = false;
+    }
+  });
 });
 
 describe("Tidy desk", () => {
@@ -746,5 +792,74 @@ describe("Tidy desk", () => {
     expect(quiet?.open).toBe(false);
     expect(quiet?.querySelector("summary")?.textContent).toContain("Gone quiet (1)");
     expect(quiet?.textContent).toContain("When a client is near");
+  });
+});
+
+describe("Desk states (GRE-5820)", () => {
+  it("loads in the Desk's own shape: the same section headings, no generic list", async () => {
+    issuesListMock.mockImplementation(() => new Promise<Issue[]>(() => {}));
+    await renderPage();
+    const skeleton = container.querySelector("[data-desk-skeleton]");
+    expect(skeleton).not.toBeNull();
+    const headings = Array.from(skeleton!.querySelectorAll("h2")).map((h) => h.textContent);
+    expect(headings).toEqual(["Decisions", "Your tasks", "Recently opened"]);
+  });
+
+  it("shows the page while Pinned loads, with Pinned's slot held by placeholder rows", async () => {
+    let releaseFollows: (value: IssueFollowWithRollup[]) => void = () => {};
+    const followsPromise = new Promise<IssueFollowWithRollup[]>((resolve) => { releaseFollows = resolve; });
+    const { issuesApi } = await import("../api/issues");
+    const listFollows = vi.spyOn(issuesApi, "listFollows").mockReturnValue(followsPromise);
+    openIssues = [makeIssue("1")];
+    await renderPage();
+    expect(container.querySelector("[data-desk-skeleton]")).toBeNull();
+    expect(container.querySelector('[data-desk-section="desk-tasks"]')).not.toBeNull();
+    const pinnedSlot = container.querySelector('[data-desk-section="desk-pinned"]');
+    expect(pinnedSlot?.querySelector("[data-desk-rows-skeleton]")).not.toBeNull();
+    releaseFollows([]);
+    await flush();
+    expect(container.querySelector('[data-desk-section="desk-pinned"]')).toBeNull();
+    listFollows.mockRestore();
+  });
+
+  it("a failed Pinned shows the rest of the page and its error in the Pinned slot, after one request", async () => {
+    followsError = new Error("Pins unavailable");
+    recentError = new Error("Recent unavailable");
+    openIssues = [makeIssue("1")];
+    const { issuesApi } = await import("../api/issues");
+    const listFollows = vi.spyOn(issuesApi, "listFollows");
+    const listRecent = vi.spyOn(issuesApi, "listRecentlyOpened");
+    await renderPage();
+    await flush();
+    expect(container.querySelector("[data-desk-skeleton]")).toBeNull();
+    expect(container.querySelector('[data-row="1"]')).not.toBeNull();
+    const pinnedSlot = container.querySelector('[data-desk-section="desk-pinned"]');
+    expect(pinnedSlot?.textContent).toContain("Pinned tasks did not load");
+    // It settles: no refetch loop between the page and the list's own follows observer.
+    expect(listFollows).toHaveBeenCalledTimes(1);
+    expect(listRecent).toHaveBeenCalledTimes(1);
+    listFollows.mockRestore();
+    listRecent.mockRestore();
+  });
+
+  it("says Pinned did not load and offers a retry, instead of hiding it", async () => {
+    followsError = new Error("Pins unavailable");
+    await renderPage();
+    expect(container.textContent).toContain("Pinned tasks did not load");
+    expect(container.textContent).toContain("Pins unavailable");
+    followsError = null;
+    const retry = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Try again"));
+    click(retry);
+    await flush();
+    expect(container.textContent).not.toContain("Pinned tasks did not load");
+  });
+
+  it("a failed Recently opened says so, not 'Tasks you open show up here'", async () => {
+    recentError = new Error("Recent unavailable");
+    await renderPage();
+    const section = container.querySelector('[data-desk-section="desk-recent"]')!;
+    expect(section.textContent).toContain("Recently opened did not load");
+    expect(section.textContent).not.toContain("Tasks you open show up here");
+    expect(section.querySelector("button")?.textContent).toContain("Try again");
   });
 });

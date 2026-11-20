@@ -39,6 +39,8 @@ import type { TaskChatIssueBrief } from "../../components/task-chat/TaskChatDesc
 import type { MarkdownExternalReferenceMap } from "../../components/MarkdownBody";
 import type { MentionOption } from "../../components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
+import { AgentChatEmptyState } from "@/components/AgentChatEmptyState";
+import type { TaskChatComposerPrefill } from "@/components/task-chat/TaskChatComposer";
 import { buildAnsweredQuestionsDeliveryText } from "../../lib/issue-thread-interactions";
 import type {
   Issue,
@@ -415,6 +417,10 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
     refetchInterval: (query) => queuedCommentQueueEnabled &&
       (liveRuntimeRun || query.state.data?.entries.length) ? 1000 : false,
   });
+  const [composerPrefill, setComposerPrefill] = useState<TaskChatComposerPrefill | null>(null);
+  const conversationAgent = conversationMode && issueAssigneeAgentId
+    ? agentMap.get(issueAssigneeAgentId) ?? null
+    : null;
   const [consumedQueuedCommentIds, setConsumedQueuedCommentIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -1230,7 +1236,17 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
           <ThreadComponent
             key={conversationMode ? draftKey : issueId}
             {...(!classicTaskInterfaceEnabled
-              ? { creationActivity: resolvedActivity, initialCommentsPending: commentsInitialLoading }
+              ? {
+                  creationActivity: resolvedActivity,
+                  initialCommentsPending: commentsInitialLoading,
+                  emptyContent: conversationAgent ? (
+                    <AgentChatEmptyState
+                      agent={conversationAgent}
+                      onPrompt={(text) => setComposerPrefill((current) => ({ text, nonce: (current?.nonce ?? 0) + 1 }))}
+                    />
+                  ) : undefined,
+                  composerPrefill,
+                }
               : {})}
             onOpenSkill={onOpenSkill}
             initialHistoryPending={!!issueId && (

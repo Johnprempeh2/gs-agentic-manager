@@ -14,8 +14,10 @@ import {
   issueAgeBucketsCrossed,
   issueAgeSeparatorLabel,
   pinnedFirst,
+  statusChipPresetFor,
 } from "./IssuesList";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { taskCollectionPreferencesStorageKey } from "../lib/task-collection-preferences";
 
 const companyState = vi.hoisted(() => ({
@@ -539,6 +541,63 @@ describe("IssuesList", () => {
     });
 
     act(() => root.unmount());
+  });
+
+  it("keeps a phone toolbar to one row with Filter, Sort and Group in the More menu when asked", async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(width < 40rem)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+    const copyListText = vi.fn(() => "Your tasks");
+    try {
+      const { root } = renderWithQueryClient(
+        <IssuesList
+          issues={[createIssue({ id: "issue-1", identifier: "PAP-1", title: "Task one" })]}
+          agents={[]}
+          projects={[]}
+          viewStateKey="paperclip:test-issues"
+          rowPresentation="task"
+          toolbarPresentation="collection"
+          phoneOneRowToolbar
+          copyListText={copyListText}
+          toolbarMenuItems={<DropdownMenuItem data-page-menu-item>Page extra</DropdownMenuItem>}
+          onUpdateIssue={() => undefined}
+        />,
+        container,
+      );
+
+      await waitForAssertion(() => {
+        expect(container.querySelector(".paperclip-task-list-toolbar--one-row")).not.toBeNull();
+      });
+      const buttonNamed = (name: string) =>
+        Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === name);
+      expect(buttonNamed("Sort")).toBeUndefined();
+      expect(buttonNamed("Group")).toBeUndefined();
+      expect(buttonNamed("Filter")).toBeUndefined();
+
+      const more = container.querySelector<HTMLButtonElement>("[data-issues-more-menu]");
+      expect(more).not.toBeNull();
+      act(() => {
+        more!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      await waitForAssertion(() => {
+        const items = Array.from(document.body.querySelectorAll("[role='menuitem']")).map((item) => item.textContent?.trim());
+        expect(items).toEqual(expect.arrayContaining(["Filter", "Sort", "Group", "Copy as a list", "Page extra"]));
+      });
+
+      const copy = Array.from(document.body.querySelectorAll<HTMLElement>("[role='menuitem']")).find(
+        (item) => item.textContent?.trim() === "Copy as a list",
+      );
+      act(() => copy?.click());
+      expect(copyListText).toHaveBeenCalled();
+
+      act(() => root.unmount());
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
   });
 
   it("starts a fresh viewer on the page's default statuses and switches with the status chips", async () => {
@@ -2136,6 +2195,66 @@ describe("IssuesList", () => {
     });
   });
 
+  it("hides project tree placement tasks by default and shows them with the system tasks toggle", async () => {
+    const personTask = createIssue({
+      id: "issue-person",
+      identifier: "PAP-20",
+      title: "Write the launch brief",
+      originKind: "manual",
+    });
+    const placementTask = createIssue({
+      id: "issue-placement",
+      identifier: "PAP-21",
+      title: "Place PAP-20 in the Launch project tree",
+      originKind: "project_task_placement",
+    });
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[personTask, placementTask]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        enableRoutineVisibilityFilter
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Write the launch brief");
+      expect(container.textContent).not.toContain("Place PAP-20");
+    });
+
+    await act(async () => {
+      const filterButton = Array.from(document.body.querySelectorAll("button")).find(
+        (button) => button.textContent?.trim().startsWith("Filter"),
+      );
+      filterButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const findToggle = () => Array.from(document.body.querySelectorAll("label")).find(
+      (label) => label.textContent?.includes("Show system tasks"),
+    );
+    await waitForAssertion(() => {
+      expect(findToggle()).not.toBeUndefined();
+    });
+
+    await act(async () => {
+      findToggle()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Place PAP-20");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("shows routine-backed issues by default and hides them when the routine filter is toggled off", async () => {
     const manualIssue = createIssue({
       id: "issue-manual",
@@ -2557,6 +2676,18 @@ describe("legacy issue age separators", () => {
     expect(issueAgeSeparatorLabel(1)).toBe("Older than a day");
     expect(issueAgeSeparatorLabel(2)).toBe("Older than a week");
     expect(issueAgeBucketsCrossed(0, 2)).toEqual([1, 2]);
+  });
+});
+
+describe("statusChipPresetFor", () => {
+  it("names the segment that already shows the status filter", () => {
+    expect(statusChipPresetFor(["in_review", "todo", "in_progress", "blocked", "done"])?.label).toBe("Recent");
+    expect(statusChipPresetFor(["blocked"])?.label).toBe("Blocked");
+  });
+
+  it("finds no segment for a custom status set, so its chip stays", () => {
+    expect(statusChipPresetFor(["todo", "backlog"])).toBeUndefined();
+    expect(statusChipPresetFor(["backlog"])).toBeUndefined();
   });
 });
 

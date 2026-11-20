@@ -55,7 +55,7 @@ export function DictationButton({
       title={label}
       data-testid={testId}
       className={cn(
-        "relative grid h-7 w-7 shrink-0 place-items-center rounded-md outline-none transition-colors duration-150 focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+        "relative grid h-7 w-7 shrink-0 pointer-coarse:size-11 place-items-center rounded-md outline-none transition-colors duration-150 focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
         dictation.listening
           ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
           : "text-muted-foreground hover:bg-accent hover:text-foreground",

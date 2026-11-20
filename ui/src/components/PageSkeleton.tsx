@@ -72,14 +72,10 @@ export function PageSkeleton({ variant = "list" }: PageSkeletonProps) {
     );
   }
 
+  // Only the list: the Inbox draws its real toolbar above this, so a fake one would jump.
   if (variant === "inbox") {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-8 w-40" />
-        </div>
-
+      <div aria-busy="true" aria-label="Loading the inbox">
         <div className="space-y-5">
           {Array.from({ length: 3 }).map((_, section) => (
             <div key={section} className="space-y-2">

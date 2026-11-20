@@ -1,5 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Issue, IssueComment } from "@greatstone/shared";
+import { activityApi } from "@/api/activity";
+import { heartbeatsApi } from "@/api/heartbeats";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { issueRefFromPath, preloadIssueDetailPage } from "@/lib/issue-detail-page";
@@ -238,8 +240,12 @@ export function prefetchColdIssueDetail(
 ): boolean {
   const issueRef = issueRefFromPath(location.pathname);
   if (!issueRef) return false;
-  void prefetchIssueDetail(queryClient, issueRef);
+  void prefetchIssueDetail(queryClient, issueRef).then(() => {
+    const issue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueRef));
+    if (issue?.id) prefetchIssueRunHistory(queryClient, issue.id);
+  });
   void prefetchIssueComments(queryClient, issueRef);
+  prefetchIssueThreadRecords(queryClient, issueRef);
   // TaskDefaultView asks the tree only for a plain link.
   if (!location.search && !location.hash) {
     void queryClient.prefetchQuery({
@@ -250,4 +256,40 @@ export function prefetchColdIssueDetail(
     });
   }
   return true;
+}
+
+// The thread keeps its skeleton until its history is in: interactions and
+// attachments (keyed by the route ref) and activity, runs and live runs (keyed by
+// the task id). Left to the page they start only once the thread mounts, and the
+// thread then renders twice (GRE-5821). Same keys and fetchers as the page.
+// Work products are left out: the page always refetches them on mount.
+function prefetchIssueThreadRecords(queryClient: QueryClient, issueRef: string) {
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.issues.interactions(issueRef),
+    queryFn: () => issuesApi.listInteractions(issueRef),
+    retry: false,
+  });
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.issues.attachments(issueRef),
+    queryFn: () => issuesApi.listAttachments(issueRef),
+    retry: false,
+  });
+}
+
+function prefetchIssueRunHistory(queryClient: QueryClient, issueId: string) {
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.issues.activity(issueId),
+    queryFn: () => activityApi.forIssue(issueId),
+    retry: false,
+  });
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.issues.runs(issueId),
+    queryFn: () => activityApi.runsForIssue(issueId),
+    retry: false,
+  });
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.issues.liveRuns(issueId),
+    queryFn: () => heartbeatsApi.liveRunsForIssue(issueId),
+    retry: false,
+  });
 }

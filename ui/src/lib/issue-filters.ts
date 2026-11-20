@@ -44,7 +44,17 @@ export type IssueFilterState = {
    */
   externalObjectStatuses: string[];
   hideRoutineExecutions: boolean;
+  /** Show agent housekeeping tasks (see `isSystemTask`); off by default. */
+  showSystemTasks: boolean;
 };
+
+/** Origins of agent housekeeping tasks the owner never needs to see by default. */
+export const SYSTEM_TASK_ORIGIN_KINDS: readonly string[] = ["project_task_placement"];
+
+/** A "Place … in the project tree" task and the like: agent housekeeping, not work. */
+export function isSystemTask(issue: Pick<Issue, "originKind">): boolean {
+  return issue.originKind != null && SYSTEM_TASK_ORIGIN_KINDS.includes(issue.originKind);
+}
 
 export const defaultIssueFilterState: IssueFilterState = {
   statuses: [],
@@ -60,6 +70,7 @@ export const defaultIssueFilterState: IssueFilterState = {
   due: null,
   externalObjectStatuses: [],
   hideRoutineExecutions: false,
+  showSystemTasks: false,
 };
 
 export const externalObjectFilterOrder = [
@@ -132,6 +143,7 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     due: normalizeIssueDueFilter(candidate.due),
     externalObjectStatuses: normalizeIssueFilterValueArray(candidate.externalObjectStatuses),
     hideRoutineExecutions: candidate.hideRoutineExecutions === true,
+    showSystemTasks: candidate.showSystemTasks === true,
   };
 }
 
@@ -293,6 +305,9 @@ export function applyIssueFilters(
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) {
     result = result.filter((issue) => issue.originKind !== "routine_execution");
   }
+  if (enableRoutineVisibilityFilter && !state.showSystemTasks) {
+    result = result.filter((issue) => !isSystemTask(issue));
+  }
   const work = state.work ?? null;
   if (work) result = result.filter((issue) => issueMatchesWorkFilter(issue, work));
   const due = state.due ?? null;
@@ -368,6 +383,7 @@ export function countActiveIssueFilters(
   if (state.due) count += 1;
   if (state.externalObjectStatuses.length > 0) count += 1;
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
+  if (enableRoutineVisibilityFilter && state.showSystemTasks) count += 1;
   return count;
 }
 
@@ -507,6 +523,9 @@ export function describeActiveIssueFilters(
   }
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) {
     filters.push({ key: "hideRoutineExecutions", name: "Hide", value: "Routine tasks", clear: { hideRoutineExecutions: false } });
+  }
+  if (enableRoutineVisibilityFilter && state.showSystemTasks) {
+    filters.push({ key: "showSystemTasks", name: "Show", value: "System tasks", clear: { showSystemTasks: false } });
   }
   return filters;
 }

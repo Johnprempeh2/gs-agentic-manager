@@ -456,6 +456,8 @@ export function CommandPalette() {
           ? "Check the details, then confirm. Esc goes back."
           : actionIssue
           ? `What should happen to ${actionIssue.identifier ?? "this task"}? Type to find an agent`
+          : isMobile
+          ? "Search tasks, agents, docs..."
           : "Search tasks, clients, documents, agents, memory..."}
         value={query}
         onValueChange={setQuery}

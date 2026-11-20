@@ -81,8 +81,12 @@ export function Issues() {
   // The list reports its status filter; the server then pages through only those
   // tasks, so an old blocked task is not stuck behind hundreds of done ones.
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  // The list reads its saved filter on mount and reports it from an effect. Until
+  // then the request would be for every status, only to be aborted (GRE-5821).
+  const [statusFilterReported, setStatusFilterReported] = useState(false);
   const handleStatusFilterChange = useCallback((statuses: string[]) => {
     setStatusFilter(issuesStatusQueryParam(statuses));
+    setStatusFilterReported(true);
   }, []);
   // Strategic or day-to-day work is also a server filter, so paging is not thinned out by the client.
   const [workFilter, setWorkFilter] = useState<IssueWorkFilter | undefined>(undefined);
@@ -197,7 +201,7 @@ export function Issues() {
     initialPageParam: 0,
     getNextPageParam: (lastPage, _allPages, lastPageParam) =>
       getNextIssuesPageOffset(lastPage.length, lastPageParam, issuePageSize),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && statusFilterReported,
     placeholderData: (previousData) => previousData,
   });
 
@@ -260,7 +264,7 @@ export function Issues() {
     ) : null}
     <IssuesList
       issues={issues ?? []}
-      isLoading={isLoading}
+      isLoading={isLoading || !statusFilterReported}
       isLoadingMoreIssues={isFetchingNextPage}
       error={error as Error | null}
       onRetry={() => void refetch()}

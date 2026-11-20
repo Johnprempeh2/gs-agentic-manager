@@ -411,6 +411,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "decision_stall_recovery",
   // Website: a release Pending for 30 minutes (GRE-2132, copy `alert.pending_long`). originId: the release id.
   "website_pending_long",
+  // Project tree: an agent's "Place … in the project tree" housekeeping task. originId: the placed task id.
+  "project_task_placement",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { IconTip } from "@/components/ui/tooltip";
 import { Bot, Check, Filter, HardDrive, Search, User, X } from "lucide-react";
 import { PriorityIcon } from "./PriorityIcon";
@@ -124,6 +124,9 @@ export function IssueFiltersPopover({
   creators,
   presentation = "legacy",
   inboxScopeFilters,
+  open,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   state: IssueFilterState;
   onChange: (patch: Partial<IssueFilterState>) => void;
@@ -142,6 +145,11 @@ export function IssueFiltersPopover({
   creators?: CreatorOption[];
   presentation?: "legacy" | "streamlined";
   inboxScopeFilters?: InboxScopeFilters;
+  /** Controlled open state, for opening the panel from elsewhere (a menu item). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** No button of its own: the panel opens from `open` and anchors where it is placed. */
+  hideTrigger?: boolean;
 }) {
   const streamlined = presentation === "streamlined";
   const [creatorSearch, setCreatorSearch] = useState("");
@@ -200,7 +208,12 @@ export function IssueFiltersPopover({
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {hideTrigger ? (
+        <PopoverAnchor asChild>
+          <span aria-hidden className="block size-0" />
+        </PopoverAnchor>
+      ) : (
       <IconTip label={activeFilterCount > 0 ? `Filter the list (${activeFilterCount} on)` : "Filter the list"}>
       <PopoverTrigger asChild>
         {/* With a filter on, the compact trigger says so in words at every
@@ -226,6 +239,7 @@ export function IssueFiltersPopover({
         </Button>
       </PopoverTrigger>
       </IconTip>
+      )}
       <PopoverContent
         align="end"
         className={streamlined
@@ -642,6 +656,15 @@ export function IssueFiltersPopover({
                       onCheckedChange={(checked) => onChange({ hideRoutineExecutions: checked === true })}
                     />
                     <span className="text-sm">Hide scheduled routine tasks</span>
+                  </label>
+                ) : null}
+                {enableRoutineVisibilityFilter ? (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <Checkbox
+                      checked={state.showSystemTasks}
+                      onCheckedChange={(checked) => onChange({ showSystemTasks: checked === true })}
+                    />
+                    <span className="text-sm">Show system tasks (project tree placement)</span>
                   </label>
                 ) : null}
               </div>

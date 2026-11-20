@@ -48,12 +48,17 @@ function authorKind(comment: IssueChatComment): TaskChatAuthorKind {
   return "agent";
 }
 
+// toLocaleTimeString builds a new formatter on every call; a long thread formats
+// hundreds of footers per render, so keep one (GRE-5821).
+let taskChatTimeFormat: Intl.DateTimeFormat | null = null;
+
 /** Shared bubble-footer time format ("2:34 PM") — also used by the description bubble (PAP-375). */
 export function formatTaskChatTimestamp(value: unknown): string | undefined {
   if (!value) return undefined;
   const d = value instanceof Date ? value : new Date(value as string);
   if (Number.isNaN(d.getTime())) return undefined;
-  return d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" });
+  taskChatTimeFormat ??= new Intl.DateTimeFormat("en-GB", { hour: "numeric", minute: "2-digit" });
+  return taskChatTimeFormat.format(d);
 }
 
 /** Keep every comment footer on the same compact, user-visible timestamp. */
