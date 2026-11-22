@@ -149,9 +149,12 @@ and partial ones in their own list. It only reads git. Fetch first:
 Upstream security advisories have a verdict each in `doc/upstream-advisories.txt`:
 `<GHSA id> <severity> <updated_at> <verdict> [note]`, where the verdict is
 `in-base`, `taken #<PR>`, `n/a: <reason>` or `check`. The daily check runs
-`scripts/upstream-pending.sh --advisories`, which reads the advisories with
-`gh api` and prints `NEW`, `CHANGED` and `OPEN` lines, and lists a pending
-commit as security when an advisory names its sha or PR number. Each `NEW` or
+`scripts/upstream-pending.sh --advisories-only`, which reads the advisories with
+`gh api` and prints `NEW`, `CHANGED` and `OPEN` lines, and a `NAMES` line with
+the shas and PR numbers each advisory names. It takes seconds: it does not walk
+the pending commits. The Monday sync runs the full
+`scripts/upstream-pending.sh --advisories`, which also lists a pending commit
+as security when an advisory names its sha or PR number. Each `NEW` or
 `CHANGED` line gets a verdict the same day; a `check` that may expose us goes
 to GRE-483 as a bug row.
 
