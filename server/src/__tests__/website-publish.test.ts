@@ -737,6 +737,31 @@ describeEmbeddedPostgres("website publish and rollback", () => {
     expect(home.content).toBeUndefined();
   });
 
+  // GRE-5992: release 11 went to staging with greatstoneint.com's older stylesheet, read from livePreviewUrl.
+  it("a staged Publish takes the shared stylesheet and footer from staging's /_chrome.json, not the public site's", async () => {
+    const { site, base } = await seedSite();
+    await db.update(websiteSite).set({ netlifySiteId: "3b1e97e6-e184-4251-badd-deed532be3ab", livePreviewUrl: "https://greatstoneint.com/" }).where(eq(websiteSite.id, site.id));
+    await request(app()).post(`${base}/import-html`).send(htmlExport).expect(200);
+    for (const page of (await request(app()).get(`${base}/pages`).expect(200)).body as WebsitePageDetail[]) await approveLatest(page.id);
+    await approveChrome(base);
+    const chromeFile = (css: string) => ({ status: 200, headers: new Headers(), body: JSON.stringify({ version: 1, stylesheet: css, footer: { html: `<footer>${css}</footer>`, css: "" } }) });
+    const fetchSite = netlify.fetchPage;
+    netlify.fetchPage = async (url) => {
+      const u = new URL(url);
+      if (u.pathname !== "/_chrome.json") return fetchSite(url);
+      return chromeFile(u.host === "gre3833-next-db-staging.netlify.app" ? ".td-section{padding:var(--td-section-space) 0 0}" : ".td-section{padding:var(--td-size-55) 0}");
+    };
+
+    engineSchema = 2;
+    const staged = await publish(base);
+    engineSchema = 1;
+    expect(staged.status).toBe("staged");
+    const file = JSON.parse(netlify.blobs.get(`releases/${staged.number}.json`)!.body);
+    expect(file.stylesheet).toBe(".td-section{padding:var(--td-section-space) 0 0}");
+    expect(file.chrome.footer.html).toBe("<footer>.td-section{padding:var(--td-section-space) 0 0}</footer>");
+    expect((staged.checks as Array<{ name: string; details?: string }>).find((c) => c.name === "chrome_refresh")?.details).toBe("Details: read https://gre3833-next-db-staging.netlify.app/_chrome.json.");
+  });
+
   it("maps live paths onto sitemap paths with a draft 301 from the old address, once", async () => {
     const { base } = await seedSite();
     const http = request(app());

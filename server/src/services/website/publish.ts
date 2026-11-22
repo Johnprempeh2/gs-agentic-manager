@@ -561,9 +561,11 @@ export function websitePublishService(db: Db, options: WebsitePublishOptions = {
     );
     if (schema === WEBSITE_HTML_RELEASE_SCHEMA) {
       // John, 8 Nov: the shared stylesheet and footer follow the site's code, not the copy taken at import.
-      const origin = siteAssetOrigin(site.livePreviewUrl);
+      // A staged release follows staging's code, not the public site's older copy (GRE-5992).
+      const target = publishTarget(site);
+      const origin = target.staged ? `https://${target.domain}` : siteAssetOrigin(site.livePreviewUrl);
       const fetched = origin ? await fetchPage(`${origin}/_chrome.json`).catch(() => null) : null;
-      checks.push(applyChromeRefresh(chromeParts, fetched));
+      checks.push({ ...applyChromeRefresh(chromeParts, fetched), ...(origin ? { details: `Details: read ${origin}/_chrome.json.` } : {}) });
       checks.push(
         typeof chromeParts.get("stylesheet")?.css === "string"
           ? { kind: "check", name: "site_chrome", ok: true }
