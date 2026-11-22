@@ -290,6 +290,39 @@ test("--advisories matches a pending commit by its PR number and flags a bad ver
   }
 });
 
+test("--advisories-only prints the report and named shas / PRs without the commit walk", () => {
+  const { dir, base, up } = fixture();
+  try {
+    writeFileSync(join(dir, "doc/upstream-advisories.txt"), "GHSA-cccc-cccc-cccc high 2026-04-16T00:00:00Z check may be exposed\n");
+    git(dir, "add", "doc");
+    git(dir, "commit", "--quiet", "-m", "docs: advisories");
+    const env = stubGh(dir, [
+      advisory("GHSA-cccc-cccc-cccc", "2026-04-16T00:00:00Z", "Still open"),
+      advisory("GHSA-dddd-dddd-dddd", "2026-10-01T00:00:00Z", "Brand new", `Fixed in ${up.plain.slice(0, 10)}, see #7.`),
+    ]);
+    const full = runEnv(dir, env, "--base", base, "--main", "main", "--advisories");
+    // No upstream ref needed: the missing ref would stop the full report.
+    const out = runEnv(dir, env, "--upstream", "refs/upstream/nope", "--advisories-only", "--count");
+    assert.equal(
+      out,
+      [
+        "## Advisories (2 upstream: 1 new, 0 changed, 1 open)",
+        "OPEN GHSA-cccc-cccc-cccc high 2026-04-16T00:00:00Z Still open",
+        "NEW GHSA-dddd-dddd-dddd high 2026-10-01T00:00:00Z Brand new",
+        `NAMES GHSA-dddd-dddd-dddd ${up.plain.slice(0, 10)} #7`,
+        "",
+      ].join("\n"),
+    );
+    assert.ok(!/Pending|## Security-looking/.test(out), out);
+    // Same report lines as the full mode.
+    for (const line of out.split("\n").filter((l) => l && !l.startsWith("NAMES "))) {
+      assert.ok(full.includes(`${line}\n`), `${line} missing from --advisories:\n${full}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function readArgs(dir) {
   return execFileSync("cat", [join(dir, ".bin/args.txt")], { encoding: "utf8" });
 }

@@ -1,6 +1,7 @@
 # Upstream (`paperclipai/paperclip`) security advisories and our verdict (GRE-782).
-# Read by `scripts/upstream-pending.sh --advisories`, which prints NEW, CHANGED
-# and OPEN lines against this file. Update a line when the daily check reads it.
+# Read by `scripts/upstream-pending.sh --advisories` and `--advisories-only`,
+# which print NEW, CHANGED and OPEN lines against this file. Update a line
+# when the daily check reads it.
 # Format: <GHSA id> <severity> <updated_at> <verdict> [note]
 # Verdict: in-base (fixed before our fork point 01d9a1218), taken #<our PR>,
 # n/a: <reason>, or check (not decided; we may be exposed).
