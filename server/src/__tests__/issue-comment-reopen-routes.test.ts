@@ -133,6 +133,11 @@ vi.mock("../telemetry.js", () => ({
   getTelemetryClient: vi.fn(() => ({ track: vi.fn() })),
 }));
 
+// The held-task check (upstream #22245) reads the recovery hold; these tests have none.
+vi.mock("../services/execution-blocker.js", () => ({
+  getExecutionBlocker: vi.fn(async () => null),
+}));
+
 vi.mock("../services/queued-interaction-response.js", () => ({
   hasQueuedInteractionResponse: vi.fn(async () => false),
 }));
