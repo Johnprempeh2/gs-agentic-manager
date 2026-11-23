@@ -2976,6 +2976,13 @@
       "when": 1794713525979,
       "tag": "0426_approval_approver",
       "breakpoints": true
+    },
+    {
+      "idx": 427,
+      "version": "7",
+      "when": 1795476051362,
+      "tag": "0427_intelligence_settings",
+      "breakpoints": true
     }
   ]
 }

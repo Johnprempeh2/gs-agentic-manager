@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  INTELLIGENCE_AI_PRESET,
+  INTELLIGENCE_MAX_TOPICS,
   computeBoardMovement,
   intelligenceDomain,
+  intelligenceTopicKey,
+  intelligenceTopicKeySchema,
+  updateIntelligenceSettingsSchema,
   pickComparisonSnapshotDate,
   upsertBoardSnapshotSchema,
   upsertIntelligenceReportSchema,
@@ -151,5 +156,26 @@ describe("board movement", () => {
     expect(pickComparisonSnapshotDate(dates, "2026-10-13")).toBe("2026-10-06");
     expect(pickComparisonSnapshotDate(["2026-10-12"], "2026-10-13")).toBe("2026-10-12");
     expect(pickComparisonSnapshotDate(["2026-10-14"], "2026-10-13")).toBeNull();
+  });
+});
+
+describe("intelligence topic settings", () => {
+  it("accepts the AI preset as it ships, so the 0427 migration writes valid settings", () => {
+    expect(updateIntelligenceSettingsSchema.parse(INTELLIGENCE_AI_PRESET)).toEqual(INTELLIGENCE_AI_PRESET);
+  });
+
+  it("makes a stable, unique key from a topic name", () => {
+    expect(intelligenceTopicKey("Investment banking")).toBe("investment_banking");
+    expect(intelligenceTopicKey("M&A / IPOs!")).toBe("m_a_ipos");
+    expect(intelligenceTopicKey("Jobs", ["jobs", "jobs_2"])).toBe("jobs_3");
+    expect(intelligenceTopicKey("—")).toBe("topic");
+    expect(intelligenceTopicKeySchema.safeParse(intelligenceTopicKey("Ünïcode Märkets")).success).toBe(true);
+  });
+
+  it("refuses duplicate keys or names and more than the topic cap", () => {
+    const dup = updateIntelligenceSettingsSchema.safeParse({ topics: [{ key: "a", label: "Jobs" }, { key: "b", label: "jobs" }] });
+    expect(dup.success).toBe(false);
+    const many = Array.from({ length: INTELLIGENCE_MAX_TOPICS + 1 }, (_, i) => ({ key: `t${i}`, label: `Topic ${i}` }));
+    expect(updateIntelligenceSettingsSchema.safeParse({ topics: many }).success).toBe(false);
   });
 });

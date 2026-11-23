@@ -9,6 +9,7 @@ import type {
   IntelligenceRecommendationStatus,
   IntelligenceReportKind,
   IntelligenceReportStatus,
+  IntelligenceTopic,
 } from "../validators/intelligence.js";
 
 // Intelligence page API (behind `enableIntelligence`; off = 403 not_entitled).
@@ -44,6 +45,9 @@ export type IntelligenceBoardRow = IntelligenceBoardEntry & { movement: Intellig
 
 export interface IntelligenceBoardView {
   board: IntelligenceBoard;
+  /** The topic's name and score label from the company's settings. */
+  label: string;
+  scoreLabel: string;
   snapshotDate: string;
   /** The snapshot the movement is measured against, or null when there is none. */
   comparedTo: string | null;
@@ -88,4 +92,14 @@ export interface IntelligenceRecommendation {
   decidedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** `GET /companies/:companyId/intelligence/settings`: the topics this company follows. */
+export interface IntelligenceSettings {
+  companyId: string;
+  /** False until the owner saves settings once: the page then asks them to set up. */
+  configured: boolean;
+  topics: IntelligenceTopic[];
+  sectionTitles: { trends?: string; opportunities?: string };
+  updatedAt: string | null;
 }

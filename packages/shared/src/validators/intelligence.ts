@@ -14,15 +14,8 @@ export type IntelligenceReportKind = (typeof INTELLIGENCE_REPORT_KINDS)[number];
 export const INTELLIGENCE_REPORT_STATUSES = ["draft", "published"] as const;
 export type IntelligenceReportStatus = (typeof INTELLIGENCE_REPORT_STATUSES)[number];
 
-export const INTELLIGENCE_BOARDS = ["ai_systems", "frontier_models", "tools_agents"] as const;
-export type IntelligenceBoard = (typeof INTELLIGENCE_BOARDS)[number];
-
-export const INTELLIGENCE_BOARD_LABELS: Record<IntelligenceBoard, string> = {
-  ai_systems: "AI Systems",
-  frontier_models: "Frontier Models",
-  tools_agents: "Tools and Agents",
-};
-
+/** A topic key: the board name in snapshot URLs. Lower case, digits and underscores. */
+export type IntelligenceBoard = string;
 export const INTELLIGENCE_RECOMMENDATION_KINDS = ["gsam_feature", "skill"] as const;
 export type IntelligenceRecommendationKind = (typeof INTELLIGENCE_RECOMMENDATION_KINDS)[number];
 
@@ -99,6 +92,116 @@ export type IntelligenceLink = z.infer<typeof intelligenceLinkSchema>;
 const learnMore = z.array(intelligenceLinkSchema).max(5).default([]);
 const rating = z.number().int().min(1).max(5);
 
+// ---------- Settings: the topics each company follows ----------
+
+const TOPIC_KEY_RE = /^[a-z0-9][a-z0-9_]{0,39}$/;
+export const intelligenceTopicKeySchema = z
+  .string()
+  .regex(TOPIC_KEY_RE, "Use lower-case letters, digits and underscores (40 at most)");
+
+/** A key for a new topic from its label: "Investment banking" is "investment_banking", made unique against `taken`. */
+export function intelligenceTopicKey(label: string, taken: Iterable<string> = []): string {
+  const used = new Set(taken);
+  const base =
+    label
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 34) || "topic";
+  const start = /^[a-z0-9]/.test(base) ? base : `t_${base}`.slice(0, 34);
+  let key = start;
+  for (let n = 2; used.has(key); n++) key = `${start}_${n}`;
+  return key;
+}
+
+const listItem = (max: number) => z.string().trim().min(1).max(max);
+
+/**
+ * One topic the intelligence agent follows. `covers`, `sources` and `keywords`
+ * steer its research; `leaderboard` gives the topic a ranked board on the
+ * Leaderboards tab (the agent writes its snapshots under `key`).
+ */
+export const intelligenceTopicSchema = z
+  .object({
+    key: intelligenceTopicKeySchema,
+    label: label(60),
+    covers: z.string().trim().max(600).default(""),
+    sources: z.array(listItem(200)).max(40).default([]),
+    keywords: z.array(listItem(60)).max(40).default([]),
+    leaderboard: z.boolean().default(false),
+    /** What a board's score is called ("Score", "Index"). */
+    scoreLabel: label(20).optional(),
+  })
+  .strict();
+export type IntelligenceTopic = z.infer<typeof intelligenceTopicSchema>;
+
+export const INTELLIGENCE_MAX_TOPICS = 12;
+
+/** `PUT /companies/:companyId/intelligence/settings`. Topic order is the page order. */
+export const updateIntelligenceSettingsSchema = z
+  .object({
+    topics: z
+      .array(intelligenceTopicSchema)
+      .max(INTELLIGENCE_MAX_TOPICS, `Keep to ${INTELLIGENCE_MAX_TOPICS} topics or fewer`)
+      .superRefine((topics, ctx) => {
+        const keys = new Set<string>();
+        const labels = new Set<string>();
+        topics.forEach((topic, index) => {
+          if (keys.has(topic.key)) ctx.addIssue({ code: "custom", message: `Duplicate topic key: ${topic.key}`, path: [index, "key"] });
+          const name = topic.label.toLowerCase();
+          if (labels.has(name)) ctx.addIssue({ code: "custom", message: `Two topics are called ${topic.label}`, path: [index, "label"] });
+          keys.add(topic.key);
+          labels.add(name);
+        });
+      }),
+    /** Headings on the Daily Pulse; blank uses "Trends" and "Opportunities". */
+    sectionTitles: z
+      .object({ trends: label(60).optional(), opportunities: label(60).optional() })
+      .strict()
+      .default({}),
+  })
+  .strict();
+export type UpdateIntelligenceSettings = z.infer<typeof updateIntelligenceSettingsSchema>;
+
+/**
+ * The AI-industry setup Greatstone ran before topics were editable. The
+ * 0427 migration writes it as the settings of every company that already had
+ * intelligence data; a new company starts with no topics.
+ */
+export const INTELLIGENCE_AI_PRESET: UpdateIntelligenceSettings = {
+  topics: [
+    {
+      key: "ai_systems",
+      label: "AI Systems",
+      covers: "The AI assistants and platforms people and businesses use, ranked on capability, reach and momentum.",
+      sources: ["OpenAI", "Anthropic", "Google and DeepMind", "Microsoft AI", "Meta AI", "xAI", "Mistral", "Perplexity", "TechCrunch", "The Verge"],
+      keywords: ["AI assistant", "launch", "pricing"],
+      leaderboard: true,
+      scoreLabel: "Score",
+    },
+    {
+      key: "frontier_models",
+      label: "Frontier Models",
+      covers: "Each lab's current flagship model, ranked on the Artificial Analysis Intelligence Index, with price, context and benchmark specs.",
+      sources: ["Artificial Analysis", "OpenAI", "Anthropic", "Google and DeepMind", "Alibaba Qwen", "DeepSeek", "xAI"],
+      keywords: ["frontier model", "benchmark", "Intelligence Index"],
+      leaderboard: true,
+      scoreLabel: "Index",
+    },
+    {
+      key: "tools_agents",
+      label: "Tools and Agents",
+      covers: "AI coding tools, agent builders and automation tools worth using or recommending to clients.",
+      sources: ["Hacker News", "VentureBeat", "Matt Wolfe (FutureTools)", "Jack Roberts", "Wes Roth"],
+      keywords: ["AI agent", "coding tool", "automation"],
+      leaderboard: true,
+      scoreLabel: "Score",
+    },
+  ],
+  sectionTitles: { trends: "AI industry trends", opportunities: "Greatstone opportunities" },
+};
+
 // ---------- Daily Pulse ----------
 
 export const pulseQuickWinSchema = z
@@ -125,6 +228,8 @@ export const pulseSkillIdeaSchema = z
 export const pulseTrendSchema = z
   .object({
     ...visuals,
+    /** The settings topic this trend belongs to; the API refuses a key the company does not follow. */
+    topic: intelligenceTopicKeySchema.optional(),
     headline: label(),
     whyItMatters: words(50),
     freshness: z.enum(["today", "this_week", "emerging"]),
