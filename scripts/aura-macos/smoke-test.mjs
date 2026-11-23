@@ -4,6 +4,7 @@
 //
 //   node smoke-test.mjs first-run <url> <server.log> <state file>
 //   node smoke-test.mjs invite    <url> <state file>
+//   node smoke-test.mjs restore   <url> before-backup|after-backup|restored <state file>
 
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -111,8 +112,38 @@ if (phase === "first-run") {
   }
   const helperCompanies = list((await helper.request("GET", "/api/companies")).json, "companies");
   check(helperCompanies.some((c) => c.id === companyId), "helper is a member of Aura");
+} else if (phase === "restore") {
+  // Data made before a backup comes back; data made after it goes (GRE-6109).
+  const [step, stateFile] = rest;
+  const state = JSON.parse(readFileSync(stateFile, "utf8"));
+  const owner = new Session();
+  must((await owner.request("POST", "/api/auth/sign-in/email", { email: state.email, password: state.password })).status === 200, `owner signs in (${step})`);
+  const goals = async () => list((await owner.request("GET", `/api/companies/${state.companyId}/goals`)).json, "goals");
+  const KEPT = "Restore check: in the backup";
+  const LATE = "Restore check: made after the backup";
+  if (step === "before-backup") {
+    const made = await owner.request("POST", `/api/companies/${state.companyId}/goals`, { title: KEPT });
+    must(made.status === 201 && made.json?.id, `goal made before the backup (${made.status})`);
+    writeFileSync(stateFile, JSON.stringify({ ...state, restoreGoalId: made.json.id }));
+  } else if (step === "after-backup") {
+    const renamed = await owner.request("PATCH", `/api/goals/${state.restoreGoalId}`, { title: "Restore check: changed" });
+    must(renamed.status === 200, `goal changed after the backup (${renamed.status})`);
+    must((await owner.request("POST", `/api/companies/${state.companyId}/goals`, { title: LATE })).status === 201, "second goal made after the backup");
+    const titles = (await goals()).map((g) => g.title);
+    must(!titles.includes(KEPT) && titles.includes(LATE), "the data differs from the backup before the restore");
+  } else if (step === "restored") {
+    const titles = (await goals()).map((g) => g.title);
+    check(titles.includes(KEPT), "the goal is back as it was in the backup");
+    check(!titles.includes("Restore check: changed"), "the change made after the backup is gone");
+    check(!titles.includes(LATE), "the goal made after the backup is gone");
+    const companies = list((await owner.request("GET", "/api/companies")).json, "companies");
+    check(companies.length === 1 && companies[0].id === state.companyId, "company Aura is back");
+  } else {
+    console.error("usage: smoke-test.mjs restore <url> before-backup|after-backup|restored <state file>");
+    process.exit(2);
+  }
 } else {
-  console.error("usage: smoke-test.mjs first-run|invite ...");
+  console.error("usage: smoke-test.mjs first-run|invite|restore ...");
   process.exit(2);
 }
 

@@ -69,6 +69,7 @@ fi
 echo "==> 6/7 installer files"
 cp scripts/aura-macos/package/install.sh scripts/aura-macos/package/uninstall.sh "$STAGE/"
 cp scripts/aura-macos/package/gsam-aura "$STAGE/app/bin/gsam-aura"
+cp scripts/aura-macos/package/restore-db.mjs "$STAGE/app/bin/restore-db.mjs"
 cp scripts/aura-macos/package/uninstall.sh "$STAGE/app/bin/uninstall.sh"
 cp scripts/aura-macos/package/README.txt "$STAGE/README.txt"
 chmod 755 "$STAGE/install.sh" "$STAGE/uninstall.sh" "$STAGE/app/bin/gsam-aura" "$STAGE/app/bin/uninstall.sh"

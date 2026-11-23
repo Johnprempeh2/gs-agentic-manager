@@ -3,8 +3,8 @@
 # Builds the package on a GitHub-hosted Apple Silicon Mac (agents run on the
 # PC, which cannot build or run it), then installs it from scratch on the same
 # clean runner: server healthy, first-run owner screen reached, one company
-# "Aura" and nothing else, agent cap 2, invite flow, backup, restart after a
-# crash, uninstall. The package, its file list and sizes are kept as run
+# "Aura" and nothing else, agent cap 2, invite flow, backup and restore,
+# restart after a crash, uninstall. The package, its file list and sizes are kept as run
 # artifacts for Flint's contents check (GRE-6101).
 #
 # Runs only when the package files change, so it never slows Fork CI.

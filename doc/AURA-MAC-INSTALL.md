@@ -69,9 +69,17 @@ to Dock).
 `restart`, `backup` (a backup now), `logs`, `url`, `phone on|off`,
 `telegram on|off`.
 
-Restore: not a one-step command yet (follow-up on GRE-6097). Until then, ask
-Greatstone; the backups folder and `data/instances/default/secrets/master.key`
-together are what a restore needs.
+Restore (GRE-6109): `gsam-aura restore <backup file>` (a full path, or just the
+file name from the backups folder; `gsam-aura status` shows the newest). It
+checks the file, stops GSAM, moves the database aside to
+`data/instances/default/db.before-restore-<date>`, restores the backup into a
+new database with the bundled Postgres (no Postgres needed on the Mac), starts
+GSAM and checks health. If the restore or the start fails, it puts the old
+database back and starts GSAM on it. When all is well, delete the
+`db.before-restore-*` folder. A backup holds the database only: files
+(attachments, workspaces) stay as they are, and
+`data/instances/default/secrets/master.key` must be the same key as when the
+backup was made, so keep a copy of it with any backups taken off the Mac.
 
 Upgrade (a release John has made): build a new package, then
 `bash gsam-aura-macos-arm64/install.sh --upgrade`. It makes a backup, keeps the
@@ -145,7 +153,9 @@ The workflow installs from scratch on a clean Mac, then
 mode; the first-run owner page is open and served; nothing readable before
 sign-in; after the claim exactly one company, "Aura", with only agent "John",
 no secrets, cap 2, one human member; public sign-up closed; the invite flow;
-a backup; the log-in item restarts GSAM after `kill -9`; uninstall leaves
+a backup, then `gsam-aura restore` of it (a goal made before the backup comes
+back; a change and a goal made after it are gone; a damaged file is refused
+with GSAM left running); the log-in item restarts GSAM after `kill -9`; uninstall leaves
 nothing behind. It also checks the prebuilt runner is installed and signed,
 no developer process runs, and `phone`/`telegram` refuse cleanly without
 Tailscale.

@@ -1,8 +1,9 @@
 #!/bin/bash
-# GSAM on this Mac: start, stop, open, back up and finish setup (GRE-6097).
+# GSAM on this Mac: start, stop, open, back up, restore and finish setup (GRE-6097).
 # Installed by install.sh into <GSAM folder>/app/bin. See doc/AURA-MAC-INSTALL.md.
 #
 #   gsam-aura open | start | stop | restart | status | claim | backup | url | logs | uninstall
+#   gsam-aura restore <backup file>     put the data back as it was in that backup
 #   gsam-aura phone on|off | telegram on|off   over the owner's own Tailscale
 #   gsam-aura cli <gsam command...>     the GSAM command line, on this install
 #   gsam-aura serve                     what the log-in item runs (not by hand)
@@ -39,14 +40,16 @@ clean_env() { env -i "${CLEAN_ENV[@]}" "$@"; }
 
 healthy() { curl -fsS --max-time 3 "$(url)/api/health" 2>/dev/null | grep -q '"status":"ok"'; }
 
-wait_healthy() {
+# Up to 5 minutes for the server to answer.
+await_healthy() {
   local i
   for i in $(seq 1 150); do
     healthy && return 0
     sleep 2
   done
-  die "GSAM did not start within 5 minutes; see $LOGS/server.log"
+  return 1
 }
+wait_healthy() { await_healthy || die "GSAM did not start within 5 minutes; see $LOGS/server.log"; }
 
 loaded() { launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; }
 
@@ -199,6 +202,46 @@ cmd_telegram() {
   esac
 }
 
+# Puts the whole database back as it was in one backup. The database from
+# before is kept aside, and comes back by itself if the restore or the start
+# after it fails. Files (attachments, workspaces) and the key file are not in
+# a backup and stay as they are.
+cmd_restore() {
+  local file="${1:-}" backups="$DATA/instances/default/data/backups" pgdir port aside
+  [ -n "$file" ] || die "say which backup: gsam-aura restore <backup file> (backups are in $backups)"
+  [ -f "$file" ] || [ ! -f "$backups/$file" ] || file="$backups/$file"
+  [ -f "$file" ] || die "no backup file at $file"
+  file="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
+  case "$file" in
+    *.sql.gz) gzip -t "$file" 2>/dev/null || die "$file is damaged (not a complete .gz file)" ;;
+    *.sql) ;;
+    *) die "$file is not a GSAM backup (.sql.gz or .sql)" ;;
+  esac
+  pgdir="$(cfg database.embeddedPostgresDataDir)"; port="$(cfg database.embeddedPostgresPort)"
+  [ -n "$pgdir" ] && [ -d "$pgdir" ] || die "no database folder at '$pgdir'"
+  aside="$pgdir.before-restore-$(date +%Y%m%d-%H%M%S)"
+
+  say "restoring $(basename "$file")"
+  cmd_stop
+  mv "$pgdir" "$aside"
+  say "the database from before is kept in $aside"
+  if clean_env "$NODE" "$APP/bin/restore-db.mjs" "$APP/payload" "$pgdir" "$port" "$file"; then
+    say "starting GSAM on the restored data"
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" || true
+    if await_healthy; then
+      say "restore done: $(basename "$file"), running on $(url)"
+      say "when all is well, you can delete $aside"
+      return 0
+    fi
+    say "GSAM did not start on the restored data; see $LOGS/server.log"
+    cmd_stop
+  fi
+  rm -rf "$pgdir"
+  mv "$aside" "$pgdir"
+  cmd_start
+  die "restore failed; GSAM runs on the data from before, unchanged"
+}
+
 cmd_status() {
   if healthy; then say "running on $(url)"; else say "not running"; fi
   loaded && say "log-in item: on" || say "log-in item: off"
@@ -227,6 +270,7 @@ case "${1:-open}" in
     healthy || die "GSAM is not running; start it first (gsam-aura start)"
     clean_env "$NODE" "$GSAM_JS" db:backup --data-dir "$DATA"
     ;;
+  restore) cmd_restore "${2:-}" ;;
   url) url; echo ;;
   phone) cmd_phone "${2:-on}" ;;
   telegram) cmd_telegram "${2:-on}" ;;

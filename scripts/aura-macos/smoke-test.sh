@@ -56,8 +56,19 @@ fi
 
 step "status and backup"
 "$CTL" status
+"$NODE" "$HERE/smoke-test.mjs" restore "$URL" before-backup "$SCRATCH/state.json"
 "$CTL" backup
-ls "$HOME_DIR/data/instances/default/data/backups" | grep -q . || { echo "no backup file" >&2; exit 1; }
+BACKUP="$(ls -t "$HOME_DIR/data/instances/default/data/backups"/*.sql* 2>/dev/null | head -1)"
+[ -n "$BACKUP" ] || { echo "no backup file" >&2; exit 1; }
+
+step "restore: data in the backup comes back, data made after it goes"
+printf '\037\213\010\000' > "$SCRATCH/damaged.sql.gz"  # a gzip header and nothing after it
+! "$CTL" restore "$SCRATCH/damaged.sql.gz" || { echo "restore took a damaged file" >&2; exit 1; }
+"$NODE" "$HERE/smoke-test.mjs" restore "$URL" after-backup "$SCRATCH/state.json"
+"$CTL" restore "$BACKUP"
+"$NODE" "$HERE/smoke-test.mjs" restore "$URL" restored "$SCRATCH/state.json"
+ls -d "$HOME_DIR/data/instances/default/db.before-restore-"* >/dev/null || { echo "the database from before was not kept" >&2; exit 1; }
+launchctl print "gui/$(id -u)/com.gsam.aura" | grep -E 'state = running'
 
 step "the log-in item restarts GSAM after a crash"
 pid="$(launchctl print "gui/$(id -u)/com.gsam.aura" | awk '/^\tpid = /{print $3}')"
