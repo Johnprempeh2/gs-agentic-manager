@@ -94,6 +94,21 @@ John's access, only if the owner wants it:
 The CI smoke test proves steps 2 and 3 on a clean install (invite, log-in with
 the invite while public sign-up is closed, approval).
 
+## Telegram (no public URL needed)
+
+GSAM fetches the bot's messages from Telegram itself over the Mac's normal
+internet connection. No public address, tunnel or Tailscale Funnel is needed.
+
+1. In Telegram, open @BotFather and send `/newbot`. Give the bot a name and a
+   username that ends in `bot`. BotFather replies with a token.
+2. In GSAM, add a Telegram connection for the CEO agent John, paste the token
+   and press **Connect bot**. The setup screen says "No public URL needed".
+3. Send the bot a message from the phone. John replies, and that first
+   message finishes the setup.
+
+Messages arrive only while GSAM is running. Messages sent while the Mac is off
+wait at Telegram (up to 24 hours) and arrive when GSAM starts again.
+
 ## Uninstall
 
 `bash ~/GSAM-Aura/app/bin/uninstall.sh` (or `uninstall.sh` in the package),
