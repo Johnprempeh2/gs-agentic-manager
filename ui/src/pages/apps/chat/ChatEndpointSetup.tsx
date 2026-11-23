@@ -1043,16 +1043,24 @@ settings:
           Open BotFather <ExternalLink />
         </Button>
         {field("botToken", "Bot token")}
-        {!endpoint.setup?.webhookUrl && (
-          <p className="text-sm text-destructive">
-            Configure a public HTTPS URL for this {CLIENT_BRAND_NAME} instance before
-            connecting Telegram.
+        {endpoint.setup?.telegramDelivery === "long_poll" ? (
+          <p className="text-sm text-muted-foreground">
+            No public URL needed. {CLIENT_BRAND_NAME} fetches this bot&apos;s
+            messages from Telegram while it is running.
           </p>
+        ) : (
+          !endpoint.setup?.webhookUrl && (
+            <p className="text-sm text-destructive">
+              Configure a public HTTPS URL for this {CLIENT_BRAND_NAME} instance
+              before connecting Telegram.
+            </p>
+          )
         )}
         <Button
           disabled={
             (!repairing && !credentials.botToken) ||
-            !endpoint.setup?.webhookUrl ||
+            (endpoint.setup?.telegramDelivery !== "long_poll" &&
+              !endpoint.setup?.webhookUrl) ||
             pending
           }
           onClick={() =>

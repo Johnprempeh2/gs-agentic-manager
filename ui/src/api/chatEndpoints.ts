@@ -130,6 +130,8 @@ export interface ChatEndpoint {
     authorizationUrl?: string | null;
     providerUrl?: string | null;
     webhookUrl?: string | null;
+    /** Telegram only: `long_poll` needs no public URL. */
+    telegramDelivery?: "webhook" | "long_poll";
     messagingEndpoint?: string | null;
     command?: string | null;
     slackApp?: SlackAppConfiguration;
