@@ -108,6 +108,10 @@ const memberActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
+const companyActivityQuerySchema = z.object({
+  agentId: z.preprocess((value) => (value === "" ? undefined : value), z.string().guid().optional()),
+});
+
 const agentActionAuditActorScopeSchema = z.enum(["agents", "all"]);
 
 const agentActionAuditQuerySchema = z.object({
@@ -239,9 +243,13 @@ export function activityRoutes(db: Db) {
     if (actions.length > 20) throw badRequest("At most 20 actions per request");
     const since = typeof req.query.since === "string" ? new Date(req.query.since) : undefined;
     if (since && Number.isNaN(since.getTime())) throw badRequest("since must be an ISO date");
+    const parsedQuery = companyActivityQuerySchema.safeParse({ agentId: req.query.agentId });
+    if (!parsedQuery.success) {
+      throw badRequest("Invalid activity query", parsedQuery.error.issues);
+    }
     const filters = {
       companyId,
-      agentId: req.query.agentId as string | undefined,
+      agentId: parsedQuery.data.agentId,
       entityType: req.query.entityType as string | undefined,
       entityId: req.query.entityId as string | undefined,
       actions,
