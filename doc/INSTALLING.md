@@ -4,7 +4,7 @@ There are two ways to run GS Agentic Manager: the macOS installer from a GitHub
 Release of this repo, or a source checkout (see the README).
 
 The npm package, `npx` tryout and managed-install sections further down come
-from upstream Paperclip. GS Agentic Manager is not published to npm, so those
+from the upstream project. GS Agentic Manager is not published to npm, so those
 commands do not work for it yet.
 
 ## Install on a Mac
