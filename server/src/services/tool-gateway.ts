@@ -169,6 +169,7 @@ import {
 import { sealToolResultProxyPaths } from "./tool-result-sealed-values.js";
 import { extendApprovedExecutionWaitDeadline } from "./approved-execution-wait.js";
 import { buildSendMessagePreviewLines, isSendMessageTool } from "./tool-send-preview.js";
+import { retryTransientLockContention } from "./transient-lock-contention.js";
 
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000;
 const MAX_SESSION_TTL_MS = 60 * 60 * 1000;
@@ -2068,7 +2069,7 @@ export function createToolGatewayService(
     tool?: ToolGatewayDescriptor | null;
   }) {
     const metadata = input.tool ? toolAuditMetadata(input.tool) : {};
-    await db.insert(toolCallEvents).values({
+    await retryTransientLockContention(() => db.insert(toolCallEvents).values({
       companyId: input.session.companyId,
       invocationId: input.invocationId ?? null,
       actionRequestId: input.actionRequestId ?? null,
@@ -2110,7 +2111,7 @@ export function createToolGatewayService(
               ...(input.metadata ?? {}),
             }
           : null,
-    });
+    }));
   }
 
   async function reflectToolActionInteractionLifecycle(input: {
