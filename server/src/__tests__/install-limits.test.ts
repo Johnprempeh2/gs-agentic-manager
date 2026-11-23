@@ -11,7 +11,7 @@ import {
   applyInstallLimitsToNewAgent,
   parseInstallLimits,
 } from "../services/install-limits.js";
-import { resolveRunAdmissionSettings } from "../services/run-admission.js";
+import { resolveRunAdmissionSettings, resolveRunCap } from "../services/run-admission.js";
 import { agentService } from "../services/agents.js";
 import { budgetService } from "../services/budgets.js";
 import { heartbeatService } from "../services/heartbeat.js";
@@ -50,9 +50,19 @@ describe("install limits (GRE-141)", () => {
     ).toEqual({ budgetMonthlyCents: 900, runtimeConfig: { heartbeat: { dailyRunCap: 3, intervalSec: 60 } } });
   });
 
-  it("puts the install run cap over the stored run admission cap", () => {
-    expect(resolveRunAdmissionSettings({ runAdmission: { maxConcurrentRuns: 10 } }, LIMITS).maxConcurrentRuns).toBe(2);
-    expect(resolveRunAdmissionSettings({ runAdmission: { maxConcurrentRuns: 10 } }, null).maxConcurrentRuns).toBe(10);
+  it("starts at the install run cap, and the cap saved in Settings wins over it (GRE-6094)", () => {
+    expect(resolveRunAdmissionSettings({}, LIMITS).maxConcurrentRuns).toBe(2);
+    expect(resolveRunCap({}, LIMITS)).toEqual({ maxConcurrentRuns: 2, source: "install", defaultMaxConcurrentRuns: 2 });
+    expect(resolveRunAdmissionSettings({ runAdmission: { maxConcurrentRuns: 1 } }, LIMITS).maxConcurrentRuns).toBe(1);
+    expect(resolveRunAdmissionSettings({ runAdmission: { maxConcurrentRuns: 10 } }, LIMITS).maxConcurrentRuns).toBe(10);
+    expect(resolveRunCap({ runAdmission: { maxConcurrentRuns: 10 } }, LIMITS)).toEqual({
+      maxConcurrentRuns: 10,
+      source: "saved",
+      defaultMaxConcurrentRuns: 2,
+    });
+    // Saving only the RAM or disk floor keeps the install cap.
+    expect(resolveRunAdmissionSettings({ runAdmission: { minAvailableMemoryMb: 0 } }, LIMITS).maxConcurrentRuns).toBe(2);
+    expect(resolveRunCap({}, null)).toEqual({ maxConcurrentRuns: 6, source: "default", defaultMaxConcurrentRuns: 6 });
   });
 });
 

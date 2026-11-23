@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
-import type { InstanceSystemMemory } from "@greatstone/shared";
-import type { RunAdmissionRecommendation } from "@/api/instanceSettings";
+import type { InstanceGeneralSettings, InstanceSystemMemory } from "@greatstone/shared";
+import type { RunAdmissionRecommendation, RunAdmissionStatus } from "@/api/instanceSettings";
 import { RunAdmissionSettingsSection } from "@/components/RunAdmissionSettingsSection";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -13,6 +13,14 @@ const memory: InstanceSystemMemory = {
   availableBytes: 5 * GB,
   pressure: "normal",
 } as InstanceSystemMemory;
+
+const queue: RunAdmissionStatus = {
+  maxConcurrentRuns: 4,
+  source: "saved",
+  defaultMaxConcurrentRuns: 2,
+  running: 4,
+  queued: 3,
+};
 
 const noUsage: RunAdmissionRecommendation = {
   windowDays: 7,
@@ -53,12 +61,13 @@ function Seeded({
   useState(() => {
     queryClient.setQueryData(queryKeys.instance.systemMemory, memory);
     queryClient.setQueryData(queryKeys.instance.runAdmissionRecommendation, recommendation);
+    queryClient.setQueryData(queryKeys.instance.runAdmissionStatus, queue);
   });
   return <div className="max-w-3xl p-6">{children}</div>;
 }
 
 function Section({ recommendation }: { recommendation: RunAdmissionRecommendation }) {
-  const [runAdmission, setRunAdmission] = useState(recommendation.current);
+  const [runAdmission, setRunAdmission] = useState<InstanceGeneralSettings["runAdmission"]>(recommendation.current);
   return (
     <Seeded recommendation={recommendation}>
       <RunAdmissionSettingsSection runAdmission={runAdmission} disabled={false} onSave={setRunAdmission} />

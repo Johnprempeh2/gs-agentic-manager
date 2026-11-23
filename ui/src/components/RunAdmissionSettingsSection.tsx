@@ -6,7 +6,11 @@ import {
   DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
   type InstanceGeneralSettings,
 } from "@greatstone/shared";
-import { instanceSettingsApi, type RunAdmissionRecommendation } from "@/api/instanceSettings";
+import {
+  instanceSettingsApi,
+  type RunAdmissionRecommendation,
+  type RunAdmissionStatus,
+} from "@/api/instanceSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +30,8 @@ import {
 type RunAdmission = NonNullable<InstanceGeneralSettings["runAdmission"]>;
 
 const DISK_FLOOR_MAX_GB = 100_000;
+// The running and waiting counts follow the queue while the page is open.
+const STATUS_REFRESH_MS = 5_000;
 
 // The server writes times into its reasons as ISO strings; show them the British way.
 const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
@@ -41,12 +47,22 @@ export function RunAdmissionSettingsSection({
 }: {
   runAdmission: InstanceGeneralSettings["runAdmission"];
   disabled: boolean;
-  onSave: (next: Required<RunAdmission>) => void;
+  onSave: (next: RunAdmission) => void;
 }) {
   const capId = useId();
   const floorId = useId();
   const diskId = useId();
-  const savedCap = runAdmission?.maxConcurrentRuns ?? DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS;
+  const statusQuery = useQuery({
+    queryKey: queryKeys.instance.runAdmissionStatus,
+    queryFn: () => instanceSettingsApi.getRunAdmissionStatus(),
+    refetchInterval: STATUS_REFRESH_MS,
+    retry: false,
+  });
+  const status = statusQuery.data;
+  // A client install starts at its installer's cap (GRE-6094); a saved cap wins over it.
+  const defaultCap = status?.defaultMaxConcurrentRuns ?? DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS;
+  const capIsSaved = runAdmission?.maxConcurrentRuns !== undefined;
+  const savedCap = runAdmission?.maxConcurrentRuns ?? defaultCap;
   const savedFloor = runAdmission?.minAvailableMemoryMb ?? DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB;
   const [capInput, setCapInput] = useState(String(savedCap));
   const savedDiskFloor = runAdmission?.minFreeDiskGb ?? DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB;
@@ -95,7 +111,13 @@ export function RunAdmissionSettingsSection({
           event.preventDefault();
           if (!canSave || cap === null || floor === null || diskFloor === null) return;
           // Send every field: the server replaces the whole runAdmission object.
-          onSave({ maxConcurrentRuns: cap, minAvailableMemoryMb: floor, minFreeDiskGb: diskFloor });
+          // An unchanged cap that was never saved stays unsaved, so it keeps
+          // following the install's starting value.
+          onSave({
+            ...(capIsSaved || cap !== savedCap ? { maxConcurrentRuns: cap } : {}),
+            minAvailableMemoryMb: floor,
+            minFreeDiskGb: diskFloor,
+          });
         }}
       >
         <div className="space-y-1.5">
@@ -108,7 +130,7 @@ export function RunAdmissionSettingsSection({
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
-            <Label htmlFor={capId}>Most at once</Label>
+            <Label htmlFor={capId}>Max agents running at once</Label>
             <Input
               id={capId}
               type="number"
@@ -125,8 +147,9 @@ export function RunAdmissionSettingsSection({
             <p id={`${capId}-help`} className="text-xs text-muted-foreground">
               {cap === null
                 ? `Enter a whole number from ${RUN_CAP_MIN} to ${RUN_CAP_MAX}.`
-                : `Most runs at once, across all agents. Default ${DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS}.`}
+                : `Across all agents. Extra runs wait their turn. Default ${defaultCap}.`}
             </p>
+            {status ? <RunQueueStatus status={status} /> : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={floorId}>Memory to keep free (MB)</Label>
@@ -254,6 +277,15 @@ export function RunAdmissionSettingsSection({
   );
 }
 
+function RunQueueStatus({ status }: { status: RunAdmissionStatus }) {
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="run-queue-status" aria-live="polite">
+      Running now <span className="font-medium text-foreground">{status.running}</span> of {status.maxConcurrentRuns}
+      {" · "}Waiting <span className="font-medium text-foreground">{status.queued}</span>
+    </p>
+  );
+}
+
 function UsageRecommendation({
   recommendation,
   savedCap,
@@ -271,7 +303,7 @@ function UsageRecommendation({
   const matchesSaved =
     suggested.maxConcurrentRuns === savedCap && suggested.minAvailableMemoryMb === savedFloor;
   const rows = [
-    { label: "Most at once", current: String(savedCap), suggested: String(suggested.maxConcurrentRuns) },
+    { label: "Max agents running at once", current: String(savedCap), suggested: String(suggested.maxConcurrentRuns) },
     {
       label: "Memory to keep free",
       current: `${savedFloor} MB`,

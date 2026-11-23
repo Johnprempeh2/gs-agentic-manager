@@ -20,6 +20,8 @@ import {
 import { heartbeatService } from "../services/heartbeat.ts";
 import { getHeartbeatRunRuntimeStatus } from "../services/heartbeat-run-runtime-status.ts";
 import { instanceSettingsService } from "../services/instance-settings.ts";
+import { INSTALL_LIMITS_ENV_KEY } from "../services/install-limits.ts";
+import { runAdmissionStatusService } from "../services/run-admission-recommendation.ts";
 import type { DiskSnapshot, MemorySnapshot } from "../services/run-admission.ts";
 import { runningProcesses } from "../adapters/index.ts";
 
@@ -440,5 +442,85 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
       .from(heartbeatRuns)
       .where(eq(heartbeatRuns.id, runs[1]!));
     expect(row?.status).toBe("queued");
+  });
+
+  // GRE-6094: the laptop cap the owner sets in Settings.
+  it.each([1, 2])(
+    "with the cap at %i, three runs give that many running and the rest queued, and all finish in turn",
+    async (cap) => {
+      await setAdmission({ maxConcurrentRuns: cap });
+      const companyId = await seedCompany();
+      const t0 = Date.now() - 60_000;
+      const runs: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        runs.push(await queueRun(companyId, await seedAgent(companyId, 5), new Date(t0 + i * 1_000)));
+      }
+
+      await heartbeat.resumeQueuedRuns();
+      expect(await waitFor(async () => adapterGate.state.active === cap)).toBe(true);
+      const current = await statuses(runs);
+      expect([...current.values()].filter((status) => status === "running")).toHaveLength(cap);
+      expect([...current.values()].filter((status) => status === "queued")).toHaveLength(3 - cap);
+      expect(await runAdmissionStatusService(db).get()).toEqual({
+        maxConcurrentRuns: cap,
+        source: "saved",
+        defaultMaxConcurrentRuns: 6,
+        running: cap,
+        queued: 3 - cap,
+      });
+
+      // Each finished run frees a slot and the next waiting run starts on its own.
+      const succeeded = async () =>
+        [...(await statuses(runs)).values()].filter((status) => status === "succeeded").length;
+      for (let finished = 0; finished < 3; finished += 1) {
+        const remaining = 3 - finished;
+        expect(await waitFor(async () => adapterGate.waiters.length === Math.min(cap, remaining))).toBe(true);
+        adapterGate.releaseOne();
+        expect(await waitFor(async () => (await succeeded()) === finished + 1)).toBe(true);
+      }
+      expect(adapterGate.state.maxActive).toBe(cap);
+    },
+  );
+
+  it("starts at the install cap and takes a cap saved in Settings at once, without a restart (GRE-6094)", async () => {
+    const previous = process.env[INSTALL_LIMITS_ENV_KEY];
+    process.env[INSTALL_LIMITS_ENV_KEY] = JSON.stringify({
+      v: 1,
+      agentBudgetMonthlyCents: 500,
+      agentMaxDailyRuns: 50,
+      maxConcurrentRuns: 1,
+    });
+    try {
+      const companyId = await seedCompany();
+      const t0 = Date.now() - 60_000;
+      const runs: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        runs.push(await queueRun(companyId, await seedAgent(companyId, 5), new Date(t0 + i * 1_000)));
+      }
+
+      await heartbeat.resumeQueuedRuns();
+      expect(await waitFor(async () => adapterGate.state.active === 1)).toBe(true);
+      expect(await runAdmissionStatusService(db).get()).toMatchObject({
+        maxConcurrentRuns: 1,
+        source: "install",
+        running: 1,
+        queued: 2,
+      });
+
+      // What the Settings route does on save: store the cap, then re-check now.
+      await setAdmission({ maxConcurrentRuns: 3 });
+      heartbeat.recheckRunAdmission();
+      expect(await waitFor(async () => adapterGate.state.active === 3, 2_000)).toBe(true);
+      expect(await runAdmissionStatusService(db).get()).toMatchObject({
+        maxConcurrentRuns: 3,
+        source: "saved",
+        defaultMaxConcurrentRuns: 1,
+        running: 3,
+        queued: 0,
+      });
+    } finally {
+      if (previous === undefined) delete process.env[INSTALL_LIMITS_ENV_KEY];
+      else process.env[INSTALL_LIMITS_ENV_KEY] = previous;
+    }
   });
 });
