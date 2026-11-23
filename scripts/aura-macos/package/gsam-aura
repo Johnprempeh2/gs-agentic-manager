@@ -1,0 +1,162 @@
+#!/bin/bash
+# GSAM on this Mac: start, stop, open, back up and finish setup (GRE-6097).
+# Installed by install.sh into <GSAM folder>/app/bin. See doc/AURA-MAC-INSTALL.md.
+#
+#   gsam-aura open | start | stop | restart | status | claim | backup | url | logs | uninstall
+#   gsam-aura cli <gsam command...>     the GSAM command line, on this install
+#   gsam-aura serve                     what the log-in item runs (not by hand)
+set -euo pipefail
+
+APP="$(cd "$(dirname "$0")/.." && pwd)"
+HOME_DIR="$(dirname "$APP")"
+DATA="$HOME_DIR/data"
+LOGS="$HOME_DIR/logs"
+CONFIG="$DATA/instances/default/config.json"
+LABEL="com.gsam.aura"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+NODE="$APP/node/bin/node"
+GSAM_JS="$APP/payload/node_modules/gsam/dist/index.js"
+CLAIMED_MARK="$HOME_DIR/.owner-claimed"
+
+say() { printf '[gsam] %s\n' "$*"; }
+die() { printf '[gsam] error: %s\n' "$*" >&2; exit 1; }
+
+# Reads one value from config.json, e.g. cfg server.port
+cfg() { "$NODE" -e 'const c=require(process.argv[1]);let v=c;for(const k of process.argv[2].split("."))v=v?.[k];process.stdout.write(String(v??""))' "$CONFIG" "$1"; }
+url() { printf 'http://127.0.0.1:%s' "$(cfg server.port)"; }
+
+# The server and the CLI get only these variables: nothing else from the shell.
+CLEAN_ENV=(
+  HOME="$HOME" USER="${USER:-$(id -un)}" LOGNAME="${LOGNAME:-$(id -un)}" LANG="${LANG:-en_US.UTF-8}"
+  TMPDIR="${TMPDIR:-/tmp}" SHELL=/bin/zsh
+  PATH="$APP/bin:$APP/node/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
+  GSAM_HOME="$DATA" GSAM_INSTANCE_ID=default GSAM_CONFIG="$CONFIG"
+  GSAM_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 DISABLE_AUTOUPDATER=1
+  GSAM_MIGRATION_AUTO_APPLY=true GSAM_MIGRATION_PROMPT=never
+)
+clean_env() { env -i "${CLEAN_ENV[@]}" "$@"; }
+
+healthy() { curl -fsS --max-time 3 "$(url)/api/health" 2>/dev/null | grep -q '"status":"ok"'; }
+
+wait_healthy() {
+  local i
+  for i in $(seq 1 150); do
+    healthy && return 0
+    sleep 2
+  done
+  die "GSAM did not start within 5 minutes; see $LOGS/server.log"
+}
+
+loaded() { launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; }
+
+cmd_start() {
+  [ -f "$PLIST" ] || die "the log-in item is missing ($PLIST); run install.sh again"
+  if ! loaded; then launchctl bootstrap "gui/$(id -u)" "$PLIST"; fi
+  wait_healthy
+  say "running on $(url)"
+}
+
+cmd_stop() {
+  if loaded; then launchctl bootout "gui/$(id -u)/$LABEL" || true; fi
+  local i port db
+  port="$(cfg server.port)"; db="$(cfg database.embeddedPostgresPort)"
+  for i in $(seq 1 60); do
+    if ! nc -z 127.0.0.1 "$port" 2>/dev/null && ! nc -z 127.0.0.1 "$db" 2>/dev/null; then say "stopped"; return 0; fi
+    sleep 1
+  done
+  die "GSAM is still answering on port $port or $db after 60 seconds"
+}
+
+# The newest one-time owner link the server printed, without colour codes.
+claim_link() {
+  [ -f "$LOGS/server.log" ] || return 0
+  "$NODE" -e '
+    const t=require("fs").readFileSync(process.argv[1],"utf8").replace(/\x1b\[[0-9;]*m/g,"");
+    const m=[...t.matchAll(/http:\/\/[^\s]+\/board-claim\/[0-9a-f]+\?code=[0-9a-f]+/g)];
+    if(m.length)process.stdout.write(m[m.length-1][0]);' "$LOGS/server.log"
+}
+
+# available | claimed | expired | none  (none: no owner link is open)
+claim_status() {
+  local link="$1" token code body
+  [ -n "$link" ] || { echo none; return; }
+  token="$(printf '%s' "$link" | sed -E 's#.*/board-claim/([0-9a-f]+)\?code=.*#\1#')"
+  code="$(printf '%s' "$link" | sed -E 's#.*\?code=([0-9a-f]+)$#\1#')"
+  # 404: the server no longer knows this link (owner already set).
+  body="$(curl -fsS --max-time 5 "$(url)/api/board-claim/$token?code=$code" 2>/dev/null || true)"
+  "$NODE" -e 'try{process.stdout.write(JSON.parse(process.argv[1]).status||"none")}catch{process.stdout.write("none")}' "$body"
+  echo
+}
+
+set_sign_up() {
+  "$NODE" -e '
+    const fs=require("fs");const f=process.argv[1];const c=JSON.parse(fs.readFileSync(f,"utf8"));
+    c.auth.disableSignUp=process.argv[2]==="closed";fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n",{mode:0o600});' "$CONFIG" "$1"
+}
+
+# First run: the owner makes their log-in and takes ownership of Aura through
+# the one-time link. Then public sign-up closes; invites still work.
+cmd_claim() {
+  local wait_s="${1:-1800}" link status i
+  healthy || cmd_start
+  link="$(claim_link)"
+  status="$(claim_status "$link")"
+  if [ "$status" = "expired" ]; then
+    say "the owner link expired; restarting GSAM for a new one"
+    cmd_stop; cmd_start; link="$(claim_link)"; status="$(claim_status "$link")"
+  fi
+  if [ "$status" = "available" ]; then
+    say "Open this link, create your log-in, then press \"Claim ownership\":"
+    say "  $link"
+    [ "${GSAM_AURA_NO_OPEN:-}" = 1 ] || open "$link"
+    for i in $(seq 1 "$((wait_s / 3))"); do
+      [ "$(claim_status "$link")" = "available" ] || break
+      sleep 3
+    done
+    status="$(claim_status "$link")"
+    [ "$status" != "available" ] || die "not claimed yet. Run 'gsam-aura claim' again when ready."
+  fi
+  touch "$CLAIMED_MARK"
+  if [ "$(cfg auth.disableSignUp)" != "true" ]; then
+    set_sign_up closed
+    say "owner set; public sign-up is now closed (invites still work). Restarting."
+    cmd_stop; cmd_start
+  fi
+  say "setup finished. Open GSAM from the Dock or with: gsam-aura open"
+}
+
+cmd_status() {
+  if healthy; then say "running on $(url)"; else say "not running"; fi
+  loaded && say "log-in item: on" || say "log-in item: off"
+  local newest
+  newest="$(ls -t "$DATA/instances/default/data/backups" 2>/dev/null | head -1 || true)"
+  say "newest backup: ${newest:-none} (folder: $DATA/instances/default/data/backups)"
+  [ -f "$CLAIMED_MARK" ] && say "owner: set" || say "owner: not set yet (run: gsam-aura claim)"
+}
+
+case "${1:-open}" in
+  serve)
+    # exec: a stop signal from launchd must reach the server itself, which
+    # then stops its own database.
+    exec env -i "${CLEAN_ENV[@]}" "$NODE" "$GSAM_JS" run --data-dir "$DATA"
+    ;;
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_stop; cmd_start ;;
+  status) cmd_status ;;
+  open)
+    healthy || cmd_start
+    if [ ! -f "$CLAIMED_MARK" ] && [ "$(claim_status "$(claim_link)")" = "available" ]; then cmd_claim; else open "$(url)"; fi
+    ;;
+  claim) cmd_claim "${2:-1800}" ;;
+  backup)
+    healthy || die "GSAM is not running; start it first (gsam-aura start)"
+    clean_env "$NODE" "$GSAM_JS" db:backup --data-dir "$DATA"
+    ;;
+  url) url; echo ;;
+  logs) tail -n "${2:-100}" "$LOGS/server.log" ;;
+  cli) shift; clean_env "$NODE" "$GSAM_JS" "$@" ;;
+  uninstall) shift; exec /bin/bash "$APP/bin/uninstall.sh" "$@" ;;
+  -h|--help|help) sed -n '2,8p' "$0" ;;
+  *) die "unknown command '$1' (try: gsam-aura help)" ;;
+esac
