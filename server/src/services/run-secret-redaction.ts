@@ -5,6 +5,20 @@ import { heartbeatRuns } from "@greatstone/db";
 import { REDACTED_EVENT_VALUE } from "../redaction.js";
 import { getSecretProvider } from "../secrets/provider-registry.js";
 import type { StoredSecretVersionMaterial } from "../secrets/types.js";
+import { readRunFailureCause, withoutSqlStatementText } from "@greatstone/shared";
+
+/**
+ * A run row's `error` without SQL statement text. A run error can carry a
+ * Drizzle `Failed query:` statement and its parameters; every run read that
+ * passes through here drops them.
+ */
+function withoutSqlRunError<T>(value: T): T {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (typeof record.error !== "string") return value;
+  const error = withoutSqlStatementText(record.error, readRunFailureCause(record.resultJson));
+  return error === record.error ? value : { ...record, error } as T;
+}
 
 const REGISTRY_KEY = "paperclipSecretRedactions";
 // Project only the registry: run contexts can contain megabytes of prompt data.
@@ -202,12 +216,12 @@ export function createRunSecretRedactionRegistry(db: Db) {
       return runs.map((run) => {
         const values = valuesByRun.get(run.id);
         return values === null
-          ? unavailableRunProjection(run)
-          : redactRegisteredSecretValues(run, values ?? []);
+          ? unavailableRunProjection(withoutSqlRunError(run))
+          : redactRegisteredSecretValues(withoutSqlRunError(run), values ?? []);
       });
     },
     redactForRun: async <T>(companyId: string, runId: string, value: T): Promise<T> =>
-      redactOrMask(value, await valuesForRun(companyId, runId)),
+      redactOrMask(withoutSqlRunError(value), await valuesForRun(companyId, runId)),
     redactForIssue: async <T>(companyId: string, issueId: string, value: T): Promise<T> =>
       redactOrMask(value, await valuesForIssue(companyId, issueId)),
   };

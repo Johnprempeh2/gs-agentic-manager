@@ -4,6 +4,7 @@ import {
   readSignedToolArguments,
   resolveToolActionSigningSecret,
   signToolArguments,
+  summarizeToolValue,
   ToolActionSigningSecretMissingError,
   ToolContentValidationError,
   validateToolContent,
@@ -13,6 +14,14 @@ import {
 
 describe("tool content guards", () => {
   const signingSecret = "test-tool-action-signing-secret";
+
+  it("truncates audit summaries without splitting an emoji, so jsonb accepts them", () => {
+    // `{"text":"` is 9 code units, so the cut at 3997 lands between the emoji's surrogate halves.
+    const value = { text: `${"x".repeat(3987)}${"\u{1F600}".repeat(20)}` };
+    const { summary } = summarizeToolValue(value);
+    expect(summary).toBe(`{"text":"${"x".repeat(3987)}...`);
+    expect(summary).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
 
   it("signs canonical arguments and rejects tampered arguments", () => {
     const canonicalArguments = canonicalToolArguments({ body: "hello", noteId: "n1" });

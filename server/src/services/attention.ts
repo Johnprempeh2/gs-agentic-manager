@@ -47,7 +47,7 @@ import {
   deriveProjectUrlKey,
   readAiCredentialRecord,
 } from "@greatstone/shared";
-import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType, withoutSqlStatementText } from "@greatstone/shared";
 import type {
   AttentionDecisionVerb,
   AttentionFeed,
@@ -2097,7 +2097,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               agentName: run.agentName,
               issueId,
               errorCode: run.errorCode,
-              error: run.error,
+              error: run.error ? withoutSqlStatementText(run.error) : run.error,
               retryExhaustedReason: run.exhaustionMessage,
             },
           },
@@ -2120,7 +2120,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           detail: {
             kind: "failed_run",
             agentName: run.agentName,
-            failureReasonExcerpt: excerpt(run.error ?? run.exhaustionMessage ?? run.errorCode),
+            // Rows saved with SQL text in the run error still carry it.
+            failureReasonExcerpt: excerpt((run.error ? withoutSqlStatementText(run.error) : null) ?? run.exhaustionMessage ?? run.errorCode),
             images: issueImages(failedImageMap, issueId),
           },
         }));

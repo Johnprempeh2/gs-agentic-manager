@@ -56,7 +56,7 @@ import {
   type ReadyPluginWorkerRecovery,
 } from "../services/plugin-environment-driver.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
-import { assertBoard, assertBoardOrgAccess, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertBoard, assertBoardOrgAccess, assertCompanyAccess, boardAccessRequired, getActorInfo, hasCompanyAccess } from "./authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -366,6 +366,7 @@ export function environmentRoutes(
   }
 
   function assertCanAccessInstanceEnvironments(req: Request) {
+    if (req.actor.type === "agent") throw boardAccessRequired(req);
     if (req.actor.type !== "board") {
       throw forbidden("Instance environment management is restricted to board operators");
     }

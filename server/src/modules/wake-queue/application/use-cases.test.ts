@@ -113,7 +113,7 @@ function createFakeTransaction(overrides: Partial<WakeQueueTransaction> = {}): W
       reason: null,
       releasePolicy: null,
     })),
-    getCommentSelfAuthorship: vi.fn(async () => ({ allSelfAuthored: false })),
+    getCommentSelfAuthorship: vi.fn(async () => ({ allSelfAuthored: false, includesPersonComment: false })),
     isCompletedDelegationMention: vi.fn(async () => false),
     reopenIssue: vi.fn(async () => null),
     claimDeferredWakeForPromotion: vi.fn(async () => true),
@@ -575,7 +575,7 @@ describe("releaseIssueExecution", () => {
         liveNonSelfCommentIds: scenario === "done_missing" || scenario === "done_self" ? [] : commentIds,
         containedSelfAuthoredComment: scenario === "done_self",
       })),
-      getCommentSelfAuthorship: vi.fn(async () => ({ allSelfAuthored: scenario === "done_self" })),
+      getCommentSelfAuthorship: vi.fn(async () => ({ allSelfAuthored: scenario === "done_self", includesPersonComment: false })),
       reopenIssue: vi.fn(async () => ({ ...ISSUE, status: "todo" })),
     });
     const release = createReleaseIssueExecution({
@@ -596,6 +596,33 @@ describe("releaseIssueExecution", () => {
       expect(transaction.finalizePromotedWake).not.toHaveBeenCalled();
       expect(result.outcome.kind).toBe("released");
     }
+  });
+
+  it.each([true, false])("reopens a finished task for a person's comment merged into a system wake: %s", async (includesPersonComment) => {
+    const commentIds = ["person-comment"];
+    const queue = [wakeCandidate({
+      agentId: ISSUE.assigneeAgentId!,
+      requestedByActorType: "system",
+      requestedByActorId: null,
+      queuedCommentIds: commentIds,
+      deferredCommentIds: commentIds,
+      deferredContextSeed: { wakeCommentIds: commentIds },
+    })];
+    const transaction = createFakeTransaction({
+      findNextDeferredWake: vi.fn(async () => queue.shift() ?? null),
+      getQueuedCommentLiveness: vi.fn(async () => ({ liveNonSelfCommentIds: commentIds, containedSelfAuthoredComment: false })),
+      getCommentSelfAuthorship: vi.fn(async () => ({ allSelfAuthored: false, includesPersonComment })),
+      reopenIssue: vi.fn(async () => ({ ...ISSUE, status: "todo" })),
+    });
+    const release = createReleaseIssueExecution({
+      issueLock: createFakeIssueLock(createFakeHost(), transaction, { ...ISSUE, status: "done" }),
+      recovery: createFakeRecovery(),
+    });
+
+    const result = await release({ companyId: RUN.companyId, runId: RUN.id, now: new Date() });
+
+    expect(transaction.reopenIssue).toHaveBeenCalledTimes(includesPersonComment ? 1 : 0);
+    expect(result.outcome.kind).toBe(includesPersonComment ? "promoted" : "released");
   });
 
   it("never reopens the issue when the promotion claim loses the race, and moves on to the next wake", async () => {
