@@ -2593,6 +2593,15 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       f.setSupplementalProviderFetch(async (input) => String(input).endsWith("/pulls/81")
         ? Response.json({ ...payload.pull_request, head: { sha: "c".repeat(40) } })
         : undefined);
+      await f.service.handleWebhook(f.endpoint.publicId, "github", signedGitHubWebhookRequest({
+        event: "pull_request", delivery: randomUUID(), webhookSecret: f.webhookSecret,
+        payload: { ...payload, action: "synchronize", before: payload.pull_request.head.sha,
+          pull_request: { ...payload.pull_request, head: { sha: "c".repeat(40) } } },
+      }));
+      await expect.poll(async () => {
+        await f.service.processPendingDeliveries();
+        return (await db.select().from(issueComments).where(eq(issueComments.issueId, task.id))).length;
+      }, { timeout: 10000 }).toBe(2);
       const staleSession = { companyId: f.companyId, agentId: f.assignedAgentId, issueId: task.id, runId: run.id };
       const superseded = githubChatReviewService(db, f.providerFetch).execute(staleSession, "read_pull_request", { section: "metadata" });
       await expect(superseded).rejects.toMatchObject({
@@ -2606,7 +2615,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         payload: { ...payload, action: "synchronize", before: "c".repeat(40),
           pull_request: { ...payload.pull_request, head: { sha: "d".repeat(40) } } },
       }));
-      const waiting = (await readChatDeliveriesByEndpointId(f.endpoint.id)).filter((row) =>
+      const waiting = (await db.select().from(chatDeliveries).where(eq(chatDeliveries.endpointId, f.endpoint.id))).filter((row) =>
         (row.normalizedEvent.githubAutomatic as { context?: { headSha?: string } } | undefined)?.context?.headSha === "d".repeat(40));
       expect(waiting).toHaveLength(1);
       expect(waiting[0]).toMatchObject({ conversationId: null });
