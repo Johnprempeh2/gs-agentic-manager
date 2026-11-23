@@ -6,7 +6,19 @@ It works with the agents you already use (Claude Code, Codex, Cursor, Gemini, Op
 
 GS Agentic Manager is Greatstone International's fork of the open-source [Paperclip](https://github.com/paperclipai/paperclip) project. See [NOTICE.md](NOTICE.md) for attribution.
 
-## Running it locally
+## Install on a Mac
+
+For a Mac with Apple silicon (M1 or newer). You do not need to install anything else first.
+
+**Download:** [GSAM-macOS-arm64.pkg from the latest release](https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest)
+
+1. Download `GSAM-macOS-arm64.pkg` from the link above.
+2. Double-click the file and follow the steps. If your Mac says it cannot check the developer, open **System Settings → Privacy & Security**, click **Open Anyway**, then double-click the file again.
+3. When it finishes, GS Agentic Manager opens in your browser. Create your log-in there. From now on it starts when you log in to your Mac, and the **GSAM** shortcut on your desktop opens it.
+
+To remove it, follow [doc/INSTALLING.md](doc/INSTALLING.md#uninstall-on-a-mac).
+
+## Running it from source
 
 You need Node.js 24.11 or newer and pnpm 9. A full production build also compiles the runner daemon in Rust, so install a stable Rust toolchain (`rustup` or `brew install rust`) if you plan to run `pnpm build`.
 

@@ -1,59 +1,42 @@
 #!/usr/bin/env bash
+# Install GS Agentic Manager on a Mac from a GitHub Release of this repo.
+#
+# The release carries a prebuilt bundle (its own Node runtime, built server and
+# runner), so the Mac needs no Node, pnpm, Xcode command line tools or Rust.
+# This script only downloads the bundle, checks its SHA-256 and hands over to
+# the bundle's own setup.sh, which sets GSAM to start on login, makes the
+# desktop shortcut and opens the first-run screen.
 set -euo pipefail
 
-MIN_NODE_MAJOR=24
-MIN_NODE_MINOR=11
-MIN_NODE_PATCH=0
-MIN_NODE_VERSION="${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.${MIN_NODE_PATCH}"
-DEFAULT_NODE_MAJOR=24
-GSAM_PACKAGE="gsam"
-PUBLIC_NPM_REGISTRY="https://registry.npmjs.org"
-HOMEBREW_INSTALL_COMMIT="99e13e96cbbdc1ac1ac09c0a40b450bf219ef3aa"
-HOMEBREW_INSTALL_SHA256="99287f194a8b3c9e6b0203a11a5fa54518be57209343e6bb954dec4635796d9d"
-NODESOURCE_DISTRIBUTIONS_COMMIT="9b431d8ae0f10df272598585855c6eca6c0e1bd2"
-NODESOURCE_DEB_SHA256="6e3d580f5bd7ccf2aa1e8df8d35c60d78e873c3ff8beb282c9bebd914904ad72"
-NODESOURCE_RPM_SHA256="5550ad302050f887377a0451e720b800466573ebc83392fea80924393dba642b"
+GSAM_REPO="Johnprempeh2/gs-agentic-manager"
+RELEASES_URL="https://github.com/$GSAM_REPO/releases"
+BUNDLE_ASSET="gsam-macos-arm64.tar.gz"
 
-CANARY=0
 VERSION=""
-REF=""
-REPO=""
-NO_ONBOARD=0
+BUNDLE_FILE=""
 NO_PROMPT=0
-INSTALL_SERVICE=0
 DRY_RUN=0
-VERBOSE=0
 TEMP_DIR=""
-PIPED_INSTALL=0
-
-if [ -z "${BASH_SOURCE[0]:-}" ] || [ ! -f "${BASH_SOURCE[0]}" ]; then
-  PIPED_INSTALL=1
-fi
 
 usage() {
-  cat <<'EOF'
-Install GS Agentic Manager on macOS, Linux, or WSL2.
+  cat <<EOF
+Install GS Agentic Manager on a Mac with Apple silicon.
+
+Most people should download the installer package instead:
+  $RELEASES_URL/latest
 
 Usage:
-  curl -fsSLO https://paperclip.ing/install.sh
+  curl -fsSLO https://raw.githubusercontent.com/$GSAM_REPO/main/scripts/install.sh
   bash install.sh [options]
-  curl -fsSL https://paperclip.ing/install.sh | bash -s -- --no-prompt [options]
 
 Options:
-  --canary                 Install the canary channel
-  --version <version>      Install an exact published version
-  --no-onboard             Do not start onboarding after installation
-  --no-prompt              Run non-interactively
-  --install-service        Install the per-user GS Agentic Manager service
-  --dry-run                Print the install plan without changing files
-  --verbose                Enable verbose installer output
+  --version <tag>          Install this release tag (default: the latest release)
+  --file <path>            Install a bundle you already downloaded ($BUNDLE_ASSET)
+  --no-prompt              Do not ask before running setup
+  --dry-run                Print the plan without changing anything
   -h, --help               Show this help
 
-Every option also has a GSAM_INSTALL_* environment equivalent, for example
-GSAM_INSTALL_VERSION=2026.722.0 and GSAM_INSTALL_NO_PROMPT=1.
-
-To install from a git branch, tag, or commit, use the GS Agentic Manager CLI directly:
-npx gsam install --ref <ref>
+To run GS Agentic Manager from a source checkout instead, see the README.
 EOF
 }
 
@@ -66,23 +49,8 @@ fail() {
   exit 1
 }
 
-parse_bool() {
-  local name="$1"
-  local value="${2:-}"
-
-  # ${value,,} requires bash 4; macOS ships bash 3.2, so lowercase portably.
-  value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-  case "$value" in
-    ""|0|false|no|off) printf '0' ;;
-    1|true|yes|on) printf '1' ;;
-    *) fail "$name must be one of: 1, 0, true, false, yes, no, on, off" ;;
-  esac
-}
-
 require_value() {
-  local option="$1"
-  local value="${2:-}"
-  [ -n "$value" ] || fail "$option requires a value"
+  [ -n "${2:-}" ] || fail "$1 requires a value"
 }
 
 cleanup() {
@@ -93,64 +61,29 @@ cleanup() {
 
 trap cleanup EXIT
 
-CANARY="$(parse_bool GSAM_INSTALL_CANARY "${GSAM_INSTALL_CANARY:-}")"
-VERSION="${GSAM_INSTALL_VERSION:-}"
-REF="${GSAM_INSTALL_REF:-}"
-REPO="${GSAM_INSTALL_REPO:-}"
-NO_ONBOARD="$(parse_bool GSAM_INSTALL_NO_ONBOARD "${GSAM_INSTALL_NO_ONBOARD:-}")"
-NO_PROMPT="$(parse_bool GSAM_INSTALL_NO_PROMPT "${GSAM_INSTALL_NO_PROMPT:-}")"
-INSTALL_SERVICE="$(parse_bool GSAM_INSTALL_INSTALL_SERVICE "${GSAM_INSTALL_INSTALL_SERVICE:-}")"
-DRY_RUN="$(parse_bool GSAM_INSTALL_DRY_RUN "${GSAM_INSTALL_DRY_RUN:-}")"
-VERBOSE="$(parse_bool GSAM_INSTALL_VERBOSE "${GSAM_INSTALL_VERBOSE:-}")"
-
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --canary)
-      CANARY=1
-      shift
-      ;;
     --version)
       require_value "$1" "${2:-}"
       VERSION="$2"
       shift 2
       ;;
-    --ref)
+    --file)
       require_value "$1" "${2:-}"
-      REF="$2"
+      BUNDLE_FILE="$2"
       shift 2
-      ;;
-    --repo)
-      require_value "$1" "${2:-}"
-      REPO="$2"
-      shift 2
-      ;;
-    --no-onboard)
-      NO_ONBOARD=1
-      shift
       ;;
     --no-prompt)
       NO_PROMPT=1
-      shift
-      ;;
-    --install-service)
-      INSTALL_SERVICE=1
       shift
       ;;
     --dry-run)
       DRY_RUN=1
       shift
       ;;
-    --verbose)
-      VERBOSE=1
-      shift
-      ;;
     -h|--help)
       usage
       exit 0
-      ;;
-    --)
-      shift
-      break
       ;;
     *)
       fail "unknown option: $1"
@@ -158,253 +91,66 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ "$#" -eq 0 ] || fail "unexpected argument: $1"
-
-if [ "$CANARY" = "1" ] && [ -n "$VERSION" ]; then
-  fail "--canary and --version cannot be used together"
-fi
-
-if [ -n "$REF" ] || [ -n "$REPO" ]; then
-  fail "git-ref installs are not supported by install.sh; run 'npx gsam install --ref <ref>' instead"
-fi
-
-if { [ ! -t 0 ] || [ ! -t 1 ]; } && [ "$NO_PROMPT" != "1" ]; then
-  fail "non-interactive installation requires explicit --no-prompt; download the script first for interactive review"
-fi
-
-if [ "$VERBOSE" = "1" ]; then
-  set -x
+if [ -n "$VERSION" ] && [ -n "$BUNDLE_FILE" ]; then
+  fail "--version and --file cannot be used together"
 fi
 
 OS="$(uname -s 2>/dev/null || true)"
 ARCH="$(uname -m 2>/dev/null || true)"
+[ "$OS" = "Darwin" ] || fail "this installer is for macOS only. On Linux or WSL2, run GS Agentic Manager from a source checkout (see the README)."
+[ "$ARCH" = "arm64" ] || fail "this installer is for Macs with Apple silicon (arm64); this Mac is ${ARCH:-unknown}."
 
-case "$OS" in
-  Darwin) OS_NAME="macos" ;;
-  Linux) OS_NAME="linux" ;;
-  *) fail "unsupported operating system: ${OS:-unknown}. Use macOS, Linux, or WSL2." ;;
-esac
+if [ -n "$VERSION" ]; then
+  DOWNLOAD_BASE="$RELEASES_URL/download/$VERSION"
+else
+  DOWNLOAD_BASE="$RELEASES_URL/latest/download"
+fi
 
-case "$ARCH" in
-  x86_64|amd64) ARCH_NAME="x64" ;;
-  arm64|aarch64) ARCH_NAME="arm64" ;;
-  *) fail "unsupported architecture: ${ARCH:-unknown}. Supported architectures: x64, arm64." ;;
-esac
-
-log "Detected $OS_NAME/$ARCH_NAME"
-
-has_supported_node() {
-  local version major minor patch
-  command -v node >/dev/null 2>&1 || return 1
-  version="$(node --version 2>/dev/null || true)"
-  version="${version#v}"
-  IFS=. read -r major minor patch <<< "$version"
-  patch="${patch%%-*}"
-  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ && "$patch" =~ ^[0-9]+$ ]] || return 1
-  if [ "$major" -lt "$MIN_NODE_MAJOR" ] ||
-    { [ "$major" -eq "$MIN_NODE_MAJOR" ] && [ "$minor" -lt "$MIN_NODE_MINOR" ]; } ||
-    { [ "$major" -eq "$MIN_NODE_MAJOR" ] && [ "$minor" -eq "$MIN_NODE_MINOR" ] && [ "$patch" -lt "$MIN_NODE_PATCH" ]; }; then
-    return 1
+if [ "$DRY_RUN" = "1" ]; then
+  if [ -n "$BUNDLE_FILE" ]; then
+    log "Would check and unpack $BUNDLE_FILE"
+  else
+    log "Would download $DOWNLOAD_BASE/$BUNDLE_ASSET and its .sha256"
   fi
-  command -v npm >/dev/null 2>&1 || return 1
-  command -v npx >/dev/null 2>&1 || return 1
-}
+  log "Would run setup.sh from the bundle"
+  exit 0
+fi
 
-print_command() {
-  printf '[gsam] +'
-  printf ' %q' "$@"
-  printf '\n'
-}
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/gsam-install.XXXXXX")"
 
-confirm_command() {
-  print_command "$@"
-  if [ "$NO_PROMPT" = "1" ]; then
-    return 0
-  fi
+if [ -z "$BUNDLE_FILE" ]; then
+  BUNDLE_FILE="$TEMP_DIR/$BUNDLE_ASSET"
+  log "Downloading $DOWNLOAD_BASE/$BUNDLE_ASSET"
+  curl --proto '=https' --tlsv1.2 -fL --progress-bar "$DOWNLOAD_BASE/$BUNDLE_ASSET" -o "$BUNDLE_FILE" ||
+    fail "download failed. Check the release at $RELEASES_URL"
+  curl --proto '=https' --tlsv1.2 -fsSL "$DOWNLOAD_BASE/$BUNDLE_ASSET.sha256" -o "$BUNDLE_FILE.sha256" ||
+    fail "could not download the checksum for $BUNDLE_ASSET"
+fi
 
-  local answer
-  printf '[gsam] Run this command? [y/N] ' >/dev/tty
+[ -s "$BUNDLE_FILE" ] || fail "bundle not found or empty: $BUNDLE_FILE"
+
+if [ -f "$BUNDLE_FILE.sha256" ]; then
+  expected_sha256="$(awk '{print $1; exit}' "$BUNDLE_FILE.sha256")"
+  actual_sha256="$(shasum -a 256 "$BUNDLE_FILE" | awk '{print $1}')"
+  [ "$actual_sha256" = "$expected_sha256" ] || fail "checksum mismatch for $BUNDLE_FILE"
+  log "Checksum OK"
+else
+  log "No $BUNDLE_FILE.sha256 next to the bundle; skipping the checksum"
+fi
+
+mkdir -p "$TEMP_DIR/bundle"
+tar -xzf "$BUNDLE_FILE" -C "$TEMP_DIR/bundle"
+SETUP="$(find "$TEMP_DIR/bundle" -maxdepth 2 -name setup.sh -type f | head -n 1)"
+[ -n "$SETUP" ] || fail "the bundle has no setup.sh"
+
+if [ "$NO_PROMPT" != "1" ]; then
+  printf '[gsam] Install GS Agentic Manager for user %s? [y/N] ' "$(id -un)" >/dev/tty
   IFS= read -r answer </dev/tty || answer=""
   case "$answer" in
     y|Y|yes|YES|Yes) ;;
     *) fail "installation cancelled" ;;
   esac
-}
-
-run_command() {
-  confirm_command "$@"
-  "$@"
-}
-
-run_privileged() {
-  if [ "$(id -u)" -eq 0 ]; then
-    run_command "$@"
-    return
-  fi
-
-  command -v sudo >/dev/null 2>&1 || fail "sudo is required to install Node.js with the system package manager"
-  run_command sudo "$@"
-}
-
-ensure_temp_dir() {
-  if [ -z "$TEMP_DIR" ]; then
-    TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/paperclip-install.XXXXXX")"
-  fi
-}
-
-download_checked_script() {
-  local url="$1"
-  local destination="$2"
-  local expected_sha256="$3"
-  local actual_sha256
-
-  command -v curl >/dev/null 2>&1 || fail "curl is required to bootstrap Node.js"
-  curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$destination"
-  [ -s "$destination" ] || fail "downloaded script is empty: $url"
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual_sha256="$(sha256sum "$destination" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then
-    actual_sha256="$(shasum -a 256 "$destination" | awk '{print $1}')"
-  else
-    fail "sha256sum or shasum is required to verify downloaded scripts"
-  fi
-  [ "$actual_sha256" = "$expected_sha256" ] || fail "checksum mismatch for downloaded script: $url"
-  [ "$(head -c 2 "$destination")" = '#!' ] || fail "downloaded file is not an executable script: $url"
-  bash -n "$destination" || fail "downloaded script failed syntax validation: $url"
-}
-
-check_version_manager() {
-  if [ -n "${NVM_DIR:-}" ] || [ -d "${HOME:-}/.nvm" ]; then
-    fail "nvm was detected. Run 'nvm install ${DEFAULT_NODE_MAJOR}' and retry this installer."
-  fi
-  if command -v asdf >/dev/null 2>&1 || [ -d "${HOME:-}/.asdf" ]; then
-    fail "asdf was detected. Run 'asdf install nodejs ${DEFAULT_NODE_MAJOR}' and retry this installer."
-  fi
-}
-
-install_node_macos() {
-  if ! command -v brew >/dev/null 2>&1; then
-    ensure_temp_dir
-    local brew_installer="$TEMP_DIR/homebrew-install.sh"
-    log "Homebrew is required to install Node.js"
-    download_checked_script "https://raw.githubusercontent.com/Homebrew/install/$HOMEBREW_INSTALL_COMMIT/install.sh" "$brew_installer" "$HOMEBREW_INSTALL_SHA256"
-    if [ "$NO_PROMPT" = "1" ]; then
-      run_command env NONINTERACTIVE=1 /bin/bash "$brew_installer"
-    else
-      run_command /bin/bash "$brew_installer"
-    fi
-
-    if [ -x /opt/homebrew/bin/brew ]; then
-      eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [ -x /usr/local/bin/brew ]; then
-      eval "$(/usr/local/bin/brew shellenv)"
-    fi
-  fi
-
-  command -v brew >/dev/null 2>&1 || fail "Homebrew installation completed but 'brew' is not available on PATH"
-  run_command brew install node
-}
-
-install_node_apt() {
-  ensure_temp_dir
-  local nodesource_installer="$TEMP_DIR/nodesource-setup.sh"
-  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update
-  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
-  download_checked_script "https://raw.githubusercontent.com/nodesource/distributions/$NODESOURCE_DISTRIBUTIONS_COMMIT/scripts/deb/setup_${DEFAULT_NODE_MAJOR}.x" "$nodesource_installer" "$NODESOURCE_DEB_SHA256"
-  run_privileged env DEBIAN_FRONTEND=noninteractive bash "$nodesource_installer"
-  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-}
-
-install_node_dnf() {
-  ensure_temp_dir
-  local nodesource_installer="$TEMP_DIR/nodesource-setup.sh"
-  run_privileged dnf install -y ca-certificates curl
-  download_checked_script "https://raw.githubusercontent.com/nodesource/distributions/$NODESOURCE_DISTRIBUTIONS_COMMIT/scripts/rpm/setup_${DEFAULT_NODE_MAJOR}.x" "$nodesource_installer" "$NODESOURCE_RPM_SHA256"
-  run_privileged bash "$nodesource_installer"
-  run_privileged dnf install -y nodejs
-}
-
-install_node_linux() {
-  if command -v apt-get >/dev/null 2>&1; then
-    install_node_apt
-  elif command -v dnf >/dev/null 2>&1; then
-    install_node_dnf
-  elif command -v pacman >/dev/null 2>&1; then
-    run_privileged pacman -Sy --noconfirm --needed nodejs npm
-  elif command -v apk >/dev/null 2>&1; then
-    run_privileged apk add --no-cache nodejs npm
-  else
-    fail "no supported Node.js package manager found. Supported: apt, dnf, pacman, apk."
-  fi
-}
-
-if has_supported_node; then
-  log "Using Node.js $(node --version)"
-else
-  if command -v node >/dev/null 2>&1; then
-    log "Node.js $(node --version 2>/dev/null || printf unknown) is too old; Node.js >= $MIN_NODE_VERSION is required"
-  else
-    log "Node.js was not found"
-  fi
-  if [ "$PIPED_INSTALL" = "1" ]; then
-    fail "Node.js bootstrap is disabled for piped installs; download install.sh, review it, and run 'bash install.sh --no-prompt'"
-  fi
-  check_version_manager
-  log "Installing Node.js $DEFAULT_NODE_MAJOR"
-  if [ "$OS_NAME" = "macos" ]; then
-    install_node_macos
-  else
-    install_node_linux
-  fi
-  has_supported_node || fail "Node.js installation finished, but Node.js >= $MIN_NODE_VERSION with npm/npx is not available"
-  log "Installed Node.js $(node --version)"
 fi
 
-PACKAGE_SPEC="$GSAM_PACKAGE@latest"
-if [ "$CANARY" = "1" ]; then
-  PACKAGE_SPEC="$GSAM_PACKAGE@canary"
-elif [ -n "$VERSION" ]; then
-  PACKAGE_SPEC="$GSAM_PACKAGE@$VERSION"
-fi
-
-INSTALL_ARGS=(install)
-[ "$CANARY" = "1" ] && INSTALL_ARGS+=(--canary)
-[ -n "$VERSION" ] && INSTALL_ARGS+=(--version "$VERSION")
-[ "$NO_PROMPT" = "1" ] && INSTALL_ARGS+=(--yes)
-ensure_temp_dir
-NPM_USERCONFIG="$TEMP_DIR/npmrc"
-printf 'registry=%s\n@greatstone:registry=%s\n' "$PUBLIC_NPM_REGISTRY" "$PUBLIC_NPM_REGISTRY" >"$NPM_USERCONFIG"
-chmod 600 "$NPM_USERCONFIG"
-NPM_ENV=(env "NPM_CONFIG_REGISTRY=$PUBLIC_NPM_REGISTRY" "npm_config_registry=$PUBLIC_NPM_REGISTRY" "NPM_CONFIG_USERCONFIG=$NPM_USERCONFIG" "npm_config_userconfig=$NPM_USERCONFIG")
-INSTALL_COMMAND=("${NPM_ENV[@]}" npx --yes "--registry=$PUBLIC_NPM_REGISTRY" "$PACKAGE_SPEC" "${INSTALL_ARGS[@]}")
-
-log "Delegating to the GS Agentic Manager CLI"
-if [ "$DRY_RUN" = "1" ]; then
-  print_command "${INSTALL_COMMAND[@]}"
-  exit 0
-fi
-
-print_command "${INSTALL_COMMAND[@]}"
-"${INSTALL_COMMAND[@]}"
-
-if [ "$INSTALL_SERVICE" = "1" ]; then
-  log "Installing the GS Agentic Manager service"
-  print_command "${NPM_ENV[@]}" npx --yes "--registry=$PUBLIC_NPM_REGISTRY" "$PACKAGE_SPEC" service install
-  "${NPM_ENV[@]}" npx --yes "--registry=$PUBLIC_NPM_REGISTRY" "$PACKAGE_SPEC" service install
-fi
-
-if [ "$NO_ONBOARD" = "0" ] && [ -t 0 ] && [ -t 1 ]; then
-  if command -v gsam >/dev/null 2>&1; then
-    exec gsam onboard
-  elif [ -x "${HOME:-}/.local/bin/paperclipai" ]; then
-    exec "${HOME}/.local/bin/paperclipai" onboard
-  else
-    fail "GS Agentic Manager was installed, but 'gsam' is not available on PATH. Open a new shell and run 'gsam onboard'."
-  fi
-fi
-
-if [ "$NO_ONBOARD" = "0" ]; then
-  log "Installation complete. Next: gsam onboard"
-else
-  log "Installation complete."
-fi
+log "Running setup"
+bash "$SETUP"

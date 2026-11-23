@@ -1,6 +1,6 @@
 export const MINIMUM_NODE_VERSION = "24.11.0";
 export const NODE_VERSION_INSTALL_GUIDE_URL =
-  "https://github.com/paperclipai/paperclip/blob/master/doc/INSTALLING.md#recommended-install";
+  "https://github.com/Johnprempeh2/gs-agentic-manager/blob/main/doc/INSTALLING.md#install-on-a-mac";
 const NODE_VERSION_WARNING_EMITTED = Symbol.for("@greatstone/node-version-warning-emitted");
 
 function parseVersion(version: string): [number, number, number] | null {
@@ -27,9 +27,8 @@ export function formatNodeVersionWarning(version: string): string | null {
   return [
     `[gsam] warning: Node.js ${currentVersion} is unsupported. GS Agentic Manager requires Node.js ${MINIMUM_NODE_VERSION} or newer.`,
     `Running executable: ${process.execPath}`,
-    "Upgrade Node.js with your version manager, or follow the recommended downloaded install.sh workflow:",
+    "Upgrade Node.js with your version manager, or on a Mac use the release installer, which ships its own Node.js:",
     `  ${NODE_VERSION_INSTALL_GUIDE_URL}`,
-    "The piped install.sh form cannot upgrade an unsupported Node.js runtime.",
     "Restart GS Agentic Manager after upgrading.",
     "For a background service, update its startup executable and PATH; installing a newer Node.js in your shell does not change the service runtime.",
   ].join("\n");

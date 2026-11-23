@@ -123,24 +123,8 @@ Use repo script in development:
 pnpm gsam --help
 ```
 
-Recommended installation and interactive onboarding:
-
-```sh
-curl -fsSLO https://paperclip.ing/install.sh
-curl -fsSLO https://paperclip.ing/install.sh.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c install.sh.sha256
-else
-  shasum -a 256 -c install.sh.sha256
-fi
-bash install.sh
-```
-
-The checksum detects transfer or publishing mistakes but is served from the
-same origin as the installer. Use a release-tag or commit-pinned GitHub copy
-when you need an independently hosted source. Piped installs require supported
-Node.js, npm, and npx to already be installed; download the script first before
-allowing it to bootstrap Node.js with privileged package-manager commands.
+To install on a Mac, use the release installer described in
+[INSTALLING.md](INSTALLING.md#install-on-a-mac).
 
 First-time local bootstrap from a source checkout:
 

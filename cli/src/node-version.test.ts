@@ -27,7 +27,7 @@ describe("isSupportedNodeVersion", () => {
     expect(warning).toContain("Node.js v22.23.0 is unsupported");
     expect(warning).toContain("requires Node.js 24.11.0 or newer");
     expect(warning).toContain(NODE_VERSION_INSTALL_GUIDE_URL);
-    expect(warning).toContain("piped install.sh form cannot upgrade");
+    expect(warning).toContain("release installer, which ships its own Node.js");
     expect(warning).toContain("Restart GS Agentic Manager after upgrading");
     expect(warning).toContain(process.execPath);
     expect(warning).toContain("startup executable and PATH");
