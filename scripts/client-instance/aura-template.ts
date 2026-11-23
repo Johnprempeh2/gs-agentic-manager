@@ -13,8 +13,16 @@ import { INSTANCE_FEATURE_KEYS, type InstanceFeatureKey } from "../../packages/s
 
 export const AURA_TEMPLATE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "templates/aura");
 
-/** Stands in for the feature-request address until Everest gives it (GRE-6099). */
+/** Stands in for the feature-request address; the package build fills it in (GRE-6099). */
 export const FEATURE_REQUEST_PLACEHOLDER = "FEATURE_REQUEST_ADDRESS";
+
+/**
+ * The one paragraph of John's instructions that may name Greatstone and the
+ * intake address (text from GRE-6099). The leak check allows exactly this
+ * line, with the placeholder or the filled-in address, and nothing else.
+ */
+export const FEATURE_REQUEST_PARAGRAPH =
+  `**Asking Greatstone for a feature.** When the owner wants a feature or change in GS Agentic Manager itself, write a short email to \`${FEATURE_REQUEST_PLACEHOLDER}\`. Subject: "Feature request (Aura): <short summary>". Body: what the owner wants, why, and one example. Send only the request: no passwords, keys, personal data, or files. Greatstone replies to confirm receipt; John at Greatstone decides what gets built. If you cannot send mail, give the owner this text to send from their own email.`;
 
 /** Our own agent names: none may appear in a template that leaves Greatstone. */
 const OUR_AGENT_NAMES = [
@@ -56,13 +64,15 @@ export interface TemplateLeak {
 /**
  * Every line that names Greatstone, our agents, the owner, an email, an issue
  * code, a token, a Greatstone-only skill, a Fable model or a local path. The
- * one allowed exception is the line that holds only `featureRequestAddress`.
+ * one allowed exception is `FEATURE_REQUEST_PARAGRAPH`, word for word.
  */
 export function templateLeaks(files: Record<string, string>, featureRequestAddress?: string): TemplateLeak[] {
+  const allowed = new Set([FEATURE_REQUEST_PARAGRAPH]);
+  if (featureRequestAddress) allowed.add(FEATURE_REQUEST_PARAGRAPH.split(FEATURE_REQUEST_PLACEHOLDER).join(featureRequestAddress));
   const leaks: TemplateLeak[] = [];
   for (const [file, text] of Object.entries(files)) {
     text.split("\n").forEach((raw, index) => {
-      if (featureRequestAddress && raw.trim() === featureRequestAddress) return;
+      if (allowed.has(raw.trim())) return;
       for (const { label, pattern } of LEAK_PATTERNS) {
         if (pattern.test(raw)) leaks.push({ file, line: index + 1, label });
       }

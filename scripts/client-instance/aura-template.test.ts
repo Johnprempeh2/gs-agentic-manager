@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  FEATURE_REQUEST_PLACEHOLDER,
+  FEATURE_REQUEST_PARAGRAPH,
   readTemplateFiles,
   templateFeaturesOn,
   templateLeaks,
@@ -64,11 +64,14 @@ test("the leak check finds what it must", () => {
   assert.deepEqual(new Set(leaks.map((leak) => leak.line)), new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]));
 });
 
-test("only the feature-request address line may name the intake inbox", () => {
-  assert.ok(files["agents/john/AGENTS.md"].includes(`\n${FEATURE_REQUEST_PLACEHOLDER}\n`));
-  const address = "intake.greatstone@example.com";
+test("only the feature-request paragraph may name Greatstone and the intake inbox", () => {
+  assert.ok(files["agents/john/AGENTS.md"].includes(`\n${FEATURE_REQUEST_PARAGRAPH}\n`));
+  const address = "everest.greatstone@agentmail.to";
   const filled = withFeatureRequestAddress(files, address);
-  assert.ok(filled["agents/john/AGENTS.md"].includes(`\n${address}\n`));
+  assert.ok(filled["agents/john/AGENTS.md"].includes(`write a short email to \`${address}\``));
   assert.deepEqual(templateLeaks(filled, address), []);
+  // The address is allowed only inside that paragraph, word for word.
+  assert.equal(templateLeaks({ "a.md": address }, address).length, 2);
+  assert.equal(templateLeaks({ "a.md": `${FEATURE_REQUEST_PARAGRAPH} Ask Everest.` }).length, 2);
   assert.throws(() => withFeatureRequestAddress(files, "not an address"));
 });

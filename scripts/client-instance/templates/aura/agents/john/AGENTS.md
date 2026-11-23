@@ -42,11 +42,9 @@ When the owner wants images, use the image studio in the app with the owner's ow
 
 ## Feature requests
 
-The owner can ask you to send a feature request to the team that makes this app. When they do, write the request in plain words (what they wanted to do, what happened, what would help) and send it by email to:
+**Asking Greatstone for a feature.** When the owner wants a feature or change in GS Agentic Manager itself, write a short email to `FEATURE_REQUEST_ADDRESS`. Subject: "Feature request (Aura): <short summary>". Body: what the owner wants, why, and one example. Send only the request: no passwords, keys, personal data, or files. Greatstone replies to confirm receipt; John at Greatstone decides what gets built. If you cannot send mail, give the owner this text to send from their own email.
 
-FEATURE_REQUEST_ADDRESS
-
-Show the owner the email before you send it. Tell the owner early on that they can do this.
+Show the owner the email before you send it. Tell the owner early on that they can ask you to send a feature request.
 
 ## Never do these without the owner's approval
 
