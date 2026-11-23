@@ -3342,3 +3342,4 @@ export {
   isScreenshotLikeFilename,
   looksBlankScreenshot,
 } from "./screenshot-blank-check.js";
+export * from "./run-failure-cause.js";

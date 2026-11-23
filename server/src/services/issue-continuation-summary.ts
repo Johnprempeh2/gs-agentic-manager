@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { documents, issueDocuments, issues } from "@greatstone/db";
-import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY, type SourceTrustMetadata } from "@greatstone/shared";
+import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY, readRunFailureCause, withoutSqlStatementText, type SourceTrustMetadata } from "@greatstone/shared";
 import { documentService } from "./documents.js";
 
 export { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY };
@@ -146,7 +146,9 @@ export function buildContinuationSummaryMarkdown(input: {
     resultSummary ? truncateText(resultSummary, SUMMARY_SECTION_MAX_CHARS) : "No adapter-provided result summary was captured for this run.",
   ];
   if (run.error) {
-    recentActions.push(`Latest run error${run.errorCode ? ` (${run.errorCode})` : ""}: ${truncateText(run.error, 500)}`);
+    // Keep SQL statement text and its parameters out of the agent's summary.
+    const error = withoutSqlStatementText(run.error, readRunFailureCause(run.resultJson));
+    recentActions.push(`Latest run error${run.errorCode ? ` (${run.errorCode})` : ""}: ${truncateText(error, 500)}`);
   }
 
   const paths = extractPathCandidates(resultSummary, run.stdoutExcerpt, run.stderrExcerpt, input.previousSummaryBody);
