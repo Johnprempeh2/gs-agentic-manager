@@ -545,6 +545,7 @@ import {
   updateWorkflowTemplateSchema,
   upsertBoardSnapshotSchema,
   upsertIntelligenceReportSchema,
+  updateIntelligenceSettingsSchema,
   addTeamChatMembersSchema,
   createDirectMessageSchema,
   createTeamChatSchema,
@@ -16188,6 +16189,23 @@ registerCurrentRoute({
 // enableIntelligence gates every route: off answers 403 not_entitled.
 
 const intelligenceResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/settings",
+  tags: ["intelligence"],
+  summary: "Get the topics this company's intelligence follows (configured is false until the owner sets them up)",
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/intelligence/settings",
+  tags: ["intelligence"],
+  summary: "Replace the company's intelligence topics and Pulse section titles (owner or admin)",
+  body: updateIntelligenceSettingsSchema,
+  responses: intelligenceResponses,
+});
 
 registerCurrentRoute({
   method: "get",

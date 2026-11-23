@@ -5,11 +5,11 @@ import {
   intelligenceBoardSnapshots,
   intelligenceRecommendations,
   intelligenceReports,
+  intelligenceSettings,
   issues,
   projects,
 } from "@greatstone/db";
 import {
-  INTELLIGENCE_BOARDS,
   INTELLIGENCE_REPORT_KINDS,
   INTELLIGENCE_WRITE_PERMISSION,
   computeBoardMovement,
@@ -18,6 +18,7 @@ import {
   intelligenceDateSchema,
   pickComparisonSnapshotDate,
   updateIntelligenceRecommendationSchema,
+  updateIntelligenceSettingsSchema,
   upsertBoardSnapshotSchema,
   upsertIntelligenceReportSchema,
   type IntelligenceBoard,
@@ -28,6 +29,9 @@ import {
   type IntelligenceReport,
   type IntelligenceReportKind,
   type IntelligenceReportSummary,
+  type IntelligenceSettings,
+  type IntelligenceTopic,
+  type UpdateIntelligenceSettings,
   type UpsertIntelligenceReport,
 } from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
@@ -35,13 +39,15 @@ import { validate } from "../middleware/validate.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { intelligenceMediaService, type Media } from "../services/intelligence-media.js";
 import { accessService, issueService, logActivity } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 // Intelligence page: the Daily Pulse and the AI Intelligence Hub inside GSAM.
 // Everyone in the company reads. Board users write; an agent writes only with
 // the `intelligence:write` grant (a refusal names it, so the board gets a
 // Grant / Deny item). Accept, dismiss and create-task are board actions.
 // `enableIntelligence` gates every route first: off answers 403 not_entitled.
+// What the page follows is per company (GRE-6095): the owner or an admin edits
+// the topics; leaderboards and Pulse topic tags must name one of them.
 
 function parseDate(raw: unknown): string {
   const parsed = intelligenceDateSchema.safeParse(raw);
@@ -57,14 +63,34 @@ function parseKind(raw: unknown): IntelligenceReportKind {
   return kind as IntelligenceReportKind;
 }
 
-function parseBoard(raw: unknown): IntelligenceBoard {
-  if (!(INTELLIGENCE_BOARDS as readonly unknown[]).includes(raw)) {
-    throw unprocessable(`board must be one of: ${INTELLIGENCE_BOARDS.join(", ")}`);
+function parseBoard(raw: unknown, settings: IntelligenceSettings): IntelligenceBoard {
+  const boards = settings.topics.filter((topic) => topic.leaderboard).map((topic) => topic.key);
+  if (!boards.includes(raw as string)) {
+    throw unprocessable(
+      boards.length
+        ? `board must be one of this company's leaderboard topics: ${boards.join(", ")}`
+        : "This company has no leaderboard topics. The owner adds them in Intelligence settings.",
+    );
   }
   return raw as IntelligenceBoard;
 }
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
+
+function toSettings(companyId: string, row: typeof intelligenceSettings.$inferSelect | undefined): IntelligenceSettings {
+  if (!row) return { companyId, configured: false, topics: [], sectionTitles: {}, updatedAt: null };
+  return {
+    companyId,
+    configured: true,
+    topics: row.topics as unknown as IntelligenceTopic[],
+    sectionTitles: row.sectionTitles,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function boardMeta(topic: IntelligenceTopic) {
+  return { board: topic.key, label: topic.label, scoreLabel: topic.scoreLabel ?? "Score" };
+}
 
 function toReport(row: typeof intelligenceReports.$inferSelect): IntelligenceReport {
   return {
@@ -139,6 +165,47 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
     });
   }
 
+  async function loadSettings(companyId: string) {
+    const [row] = await db.select().from(intelligenceSettings).where(eq(intelligenceSettings.companyId, companyId));
+    return toSettings(companyId, row);
+  }
+
+  // ---------- Settings (topics) ----------
+
+  /** Everyone in the company reads, so any agent can steer its run by them. */
+  router.get("/companies/:companyId/intelligence/settings", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await loadSettings(companyId));
+  });
+
+  /** The owner or an admin replaces the whole list; order is the page order. Snapshots of a removed topic are kept. */
+  router.put(
+    "/companies/:companyId/intelligence/settings",
+    validate(updateIntelligenceSettingsSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyOwnerOrAdmin(req, companyId);
+      const body = req.body as UpdateIntelligenceSettings;
+      const actor = getActorInfo(req);
+      const values = {
+        topics: body.topics as unknown as Record<string, unknown>[],
+        sectionTitles: body.sectionTitles as Record<string, string>,
+        updatedByUserId: actor.actorType === "user" ? actor.actorId : null,
+        updatedAt: new Date(),
+      };
+      const [row] = await db
+        .insert(intelligenceSettings)
+        .values({ companyId, ...values })
+        .onConflictDoUpdate({ target: intelligenceSettings.companyId, set: values })
+        .returning();
+      await log(req, companyId, "intelligence.settings_updated", "company", companyId, {
+        topics: body.topics.map((topic) => topic.key),
+      });
+      res.json(toSettings(companyId, row));
+    },
+  );
+
   // ---------- Reports ----------
 
   router.get("/companies/:companyId/intelligence/reports", async (req, res) => {
@@ -200,6 +267,16 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
       await assertCanWrite(req, companyId);
       const reportDate = parseDate(req.params.reportDate);
       const body = req.body as UpsertIntelligenceReport;
+      if (body.kind === "daily_pulse") {
+        const tagged = body.sections.trends.flatMap((trend) => (trend.topic ? [trend.topic] : []));
+        if (tagged.length > 0) {
+          const keys = new Set((await loadSettings(companyId)).topics.map((topic) => topic.key));
+          const unknown = [...new Set(tagged.filter((key) => !keys.has(key)))];
+          if (unknown.length) {
+            throw unprocessable(`Unknown topic ${unknown.join(", ")}: read GET .../intelligence/settings for this company's topics`);
+          }
+        }
+      }
       const actor = getActorInfo(req);
       const now = new Date();
       const publishedAt = body.status === "published" ? now : null;
@@ -245,7 +322,9 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
     assertCompanyAccess(req, companyId);
     const date = req.query.date === undefined ? null : parseDate(req.query.date);
     const boards: IntelligenceBoardView[] = [];
-    for (const board of INTELLIGENCE_BOARDS) {
+    const topics = (await loadSettings(companyId)).topics.filter((topic) => topic.leaderboard);
+    for (const topic of topics) {
+      const board = topic.key;
       const scope = and(eq(intelligenceBoardSnapshots.companyId, companyId), eq(intelligenceBoardSnapshots.board, board));
       const [current] = await db
         .select()
@@ -272,7 +351,7 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
       const entries = [...(current.entries as unknown as IntelligenceBoardEntry[])].sort((a, b) => a.rank - b.rank);
       const movement = computeBoardMovement(entries, prior ? (prior.entries as unknown as IntelligenceBoardEntry[]) : null);
       boards.push({
-        board,
+        ...boardMeta(topic),
         snapshotDate: current.snapshotDate,
         comparedTo,
         entries: entries.map((entry, index) => ({ ...entry, movement: movement[index]! })),
@@ -288,7 +367,8 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
     const date = req.query.date === undefined ? null : parseDate(req.query.date);
     const limit = Math.min(Math.max(Number(req.query.limit) || 12, 2), 90);
     const history: IntelligenceBoardHistory[] = [];
-    for (const board of INTELLIGENCE_BOARDS) {
+    const topics = (await loadSettings(companyId)).topics.filter((topic) => topic.leaderboard);
+    for (const { key: board } of topics) {
       const rows = await db
         .select({ snapshotDate: intelligenceBoardSnapshots.snapshotDate, entries: intelligenceBoardSnapshots.entries })
         .from(intelligenceBoardSnapshots)
@@ -321,7 +401,7 @@ export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await assertCanWrite(req, companyId);
-      const board = parseBoard(req.params.board);
+      const board = parseBoard(req.params.board, await loadSettings(companyId));
       const snapshotDate = parseDate(req.params.snapshotDate);
       const entries = (req.body as { entries: IntelligenceBoardEntry[] }).entries as unknown as Record<string, unknown>[];
       const actor = getActorInfo(req);
