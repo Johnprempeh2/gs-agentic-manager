@@ -207,6 +207,8 @@ export interface ChatEndpointSetupState {
   command?: string | null;
   slackApp?: SlackAppConfiguration;
   webhookUrl?: string | null;
+  /** Telegram only: `long_poll` needs no public URL; the server fetches updates itself. */
+  telegramDelivery?: "webhook" | "long_poll";
   messagingEndpoint?: string | null;
   /** Safe presence signal only; the secret value is returned once by its generation endpoint. */
   webhookSecretConfigured?: boolean;

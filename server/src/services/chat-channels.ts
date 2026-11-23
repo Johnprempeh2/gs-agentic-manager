@@ -199,6 +199,16 @@ import {
   telegramStopSubscriptionConfirmed,
 } from "./chat-telegram-stop-subscription.js";
 import {
+  isSupportedTelegramWebhookBaseUrl,
+  startTelegramLongPoll,
+  telegramDeliveryMode,
+  TELEGRAM_ALLOWED_UPDATES,
+  type TelegramLongPoller,
+  type TelegramPollDeliveryOutcome,
+  type TelegramPollOffset,
+  type TelegramUpdate,
+} from "./chat-telegram-long-poll.js";
+import {
   nativeFailedRunRetryStateIsSafe,
   nativePreProviderRetryAfterCleanupStateIsSafe,
   nativeProviderRecoveryEvidence,
@@ -891,6 +901,8 @@ type SlackCallbackSurface = keyof ChatEndpointCallbackSurfaces;
 type SlackCallbackObservation = { url: string; observedAt: string };
 type InternalSetupState = ChatEndpointSetupState & {
   photonIntakeAfter?: string;
+  /** Next getUpdates offset for a long-polled Telegram bot (GRE-6102). */
+  telegramPollOffset?: TelegramPollOffset;
   runtimeGeneration?: number;
   slackCallbackSurfaces?: Partial<
     Record<SlackCallbackSurface, SlackCallbackObservation>
@@ -2054,17 +2066,6 @@ function absoluteBaseUrl(value: string | null | undefined): string | null {
   }
 }
 
-const TELEGRAM_WEBHOOK_PORTS = new Set(["", "80", "88", "443", "8443"]);
-
-function isSupportedTelegramWebhookBaseUrl(value: string | null): boolean {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && TELEGRAM_WEBHOOK_PORTS.has(url.port);
-  } catch {
-    return false;
-  }
-}
 
 type GitHubLifecycleEvent = {
   actor?: LifecycleActor;
@@ -2667,6 +2668,7 @@ function providerSetupState(
   >,
   publicBaseUrl: string | null,
   assignedAgentName?: string | null,
+  telegramDelivery: "webhook" | "long_poll" = "webhook",
 ) {
   const path = `/api/chat-webhooks/${endpoint.publicId}/${endpoint.provider}`;
   const webhookUrl = publicBaseUrl ? `${publicBaseUrl}${path}` : null;
@@ -2754,7 +2756,8 @@ function providerSetupState(
         providerUrl: endpoint.botUsername
           ? `https://t.me/${encodeURIComponent(endpoint.botUsername)}`
           : "https://t.me/BotFather",
-        webhookUrl,
+        webhookUrl: telegramDelivery === "long_poll" ? null : webhookUrl,
+        telegramDelivery,
       } as const;
   }
 }
@@ -3034,6 +3037,19 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   // can remove credentials or other evidence that makes it unsafe to publish.
   const getTaskBaseUrl = () => runtimeCanonicalOrigin() ?? options.publicBaseUrl;
   const getWebhookPublicBaseUrl = () => configuredWebhookPublicBaseUrl ?? getPublicBaseUrl();
+  const currentTelegramDeliveryMode = () =>
+    telegramDeliveryMode({
+      configuredWebhookPublicBaseUrl,
+      publicBaseUrl: getPublicBaseUrl() ?? null,
+    });
+  const telegramUsesLongPolling = () =>
+    currentTelegramDeliveryMode() === "long_poll";
+  // One poller per bot in this process, keyed by endpoint and fenced by the
+  // runtime generation and credentials it started with (GRE-6102).
+  const telegramPollers = new Map<
+    string,
+    { key: string; poller: TelegramLongPoller; reportedError: string | null }
+  >();
   const issuesSvc = issueService(db);
   const secrets = secretService(db);
   const questionResponses = questionResponseDeliveryService(db, {
@@ -5884,6 +5900,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           endpoint,
           getWebhookPublicBaseUrl(),
           row.assignedAgentName,
+          currentTelegramDeliveryMode(),
         ),
         ...(endpoint.provider === "github"
           ? {
@@ -8133,10 +8150,223 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     }
   }
 
+  // Paused endpoints are polled too: the webhook path acknowledges and ignores
+  // their updates, and polling must not hold them back for after a resume.
+  const TELEGRAM_POLL_STATUSES = [
+    "verifying",
+    "active",
+    "attention",
+    "paused",
+  ] as const;
+
+  async function stopTelegramPoller(endpointId: string) {
+    const entry = telegramPollers.get(endpointId);
+    if (!entry) return;
+    telegramPollers.delete(endpointId);
+    await entry.poller.stop();
+  }
+
+  async function deliverPolledTelegramUpdate(
+    endpointId: string,
+    key: string,
+    update: TelegramUpdate,
+  ): Promise<TelegramPollDeliveryOutcome> {
+    if (shuttingDown) return "stop";
+    const record = await endpointRecord(endpointId);
+    if (
+      !record ||
+      record.endpoint.provider !== "telegram" ||
+      !(TELEGRAM_POLL_STATUSES as readonly string[]).includes(
+        record.endpoint.status,
+      )
+    )
+      return "stop";
+    const context = runtimeContextForRecord(record);
+    if (`${context.generation}:${context.credentialFingerprint}` !== key)
+      return "stop";
+    const credentials = await resolveCredentials(record.endpoint);
+    // The same authenticated entry point as a pushed webhook: secret check,
+    // pause fence, delivery-ledger dedupe and agent routing all apply.
+    const request = new Request(
+      `http://telegram-long-poll.invalid/api/chat-webhooks/${record.endpoint.publicId}/telegram`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-telegram-bot-api-secret-token": credentials.webhookSecret ?? "",
+        },
+        body: JSON.stringify(update),
+      },
+    );
+    try {
+      const response = await handleWebhook(
+        record.endpoint.publicId,
+        "telegram",
+        request,
+      );
+      return response.ok ? "accepted" : "retry";
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) return "stop";
+      logger.warn(
+        { endpointId, updateId: update.update_id, error: redactError(error) },
+        "Telegram long-poll update was not accepted",
+      );
+      return "retry";
+    }
+  }
+
+  async function saveTelegramPollOffset(
+    endpointId: string,
+    offset: TelegramPollOffset,
+  ) {
+    // jsonb_set touches only this key, so it cannot undo a concurrent setup
+    // write. A stale setup write can at worst roll the offset back, which
+    // replays updates the delivery ledger already deduplicates.
+    await db
+      .update(chatEndpoints)
+      .set({
+        setup: sql`jsonb_set(${chatEndpoints.setup}, '{telegramPollOffset}', ${JSON.stringify(offset)}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(chatEndpoints.id, endpointId),
+          eq(chatEndpoints.provider, "telegram"),
+        ),
+      );
+  }
+
+  function reportTelegramPollHealth(
+    endpointId: string,
+    failure: { consecutiveFailures: number; message: string } | null,
+  ) {
+    const entry = telegramPollers.get(endpointId);
+    if (!entry) return;
+    const previous = entry.reportedError;
+    const next = failure
+      ? redactError(`Telegram polling is failing: ${failure.message}`)
+      : null;
+    if (previous === next || (failure && previous)) return;
+    entry.reportedError = next;
+    // Clear only the message this poller wrote; never someone else's error.
+    void db
+      .update(chatEndpoints)
+      .set({ lastError: next })
+      .where(
+        and(
+          eq(chatEndpoints.id, endpointId),
+          next === null && previous !== null
+            ? eq(chatEndpoints.lastError, previous)
+            : undefined,
+        ),
+      )
+      .catch((error: unknown) =>
+        logger.warn(
+          { endpointId, error: redactError(error) },
+          "could not record Telegram long-poll health",
+        ),
+      );
+  }
+
+  async function ensureTelegramPoller(endpointId: string) {
+    if (shuttingDown || !telegramUsesLongPolling()) return;
+    const record = await endpointRecord(endpointId);
+    if (
+      !record ||
+      record.endpoint.provider !== "telegram" ||
+      !record.endpoint.botExternalId ||
+      !(TELEGRAM_POLL_STATUSES as readonly string[]).includes(
+        record.endpoint.status,
+      )
+    ) {
+      await stopTelegramPoller(endpointId);
+      return;
+    }
+    const context = runtimeContextForRecord(record);
+    const key = `${context.generation}:${context.credentialFingerprint}`;
+    const existing = telegramPollers.get(endpointId);
+    if (existing?.key === key) return;
+    if (existing) await stopTelegramPoller(endpointId);
+    const credentials = await resolveCredentials(record.endpoint);
+    if (!credentials.botToken || !credentials.webhookSecret) return;
+    if (shuttingDown || telegramPollers.has(endpointId)) return;
+    const poller = startTelegramLongPoll({
+      botToken: credentials.botToken,
+      fetch: fetchImpl,
+      loadOffset: async () =>
+        ((await endpointRecord(endpointId))?.endpoint.setup as
+          | InternalSetupState
+          | undefined)?.telegramPollOffset ?? null,
+      saveOffset: (offset) => saveTelegramPollOffset(endpointId, offset),
+      deliver: (update) => deliverPolledTelegramUpdate(endpointId, key, update),
+      onHealth: (failure) => reportTelegramPollHealth(endpointId, failure),
+      logger: {
+        warn: (details, message) =>
+          logger.warn({ endpointId, ...details }, message),
+      },
+    });
+    const entry = { key, poller, reportedError: null };
+    telegramPollers.set(endpointId, entry);
+    // A loop that ends by itself (endpoint gone, credentials rotated) frees
+    // its slot so the next reconcile can start a fresh one.
+    void poller.done.then(() => {
+      if (telegramPollers.get(endpointId) === entry)
+        telegramPollers.delete(endpointId);
+    });
+  }
+
+  async function reconcileTelegramPollers() {
+    if (shuttingDown || !telegramUsesLongPolling()) {
+      await Promise.allSettled(
+        [...telegramPollers.keys()].map((id) => stopTelegramPoller(id)),
+      );
+      return;
+    }
+    const rows = await db
+      .select({ endpointId: chatEndpoints.id })
+      .from(chatEndpoints)
+      .innerJoin(
+        toolConnections,
+        and(
+          eq(toolConnections.id, chatEndpoints.connectionId),
+          eq(toolConnections.companyId, chatEndpoints.companyId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEndpoints.provider, "telegram"),
+          inArray(chatEndpoints.status, [...TELEGRAM_POLL_STATUSES]),
+          eq(toolConnections.status, "active"),
+          eq(toolConnections.enabled, true),
+        ),
+      );
+    const eligible = new Set(rows.map((row) => row.endpointId));
+    await Promise.allSettled(
+      [...telegramPollers.keys()]
+        .filter((id) => !eligible.has(id))
+        .map((id) => stopTelegramPoller(id)),
+    );
+    for (const endpointId of eligible) {
+      try {
+        await ensureTelegramPoller(endpointId);
+      } catch (error) {
+        logger.warn(
+          { endpointId, error: redactError(error) },
+          "could not start Telegram long-poll",
+        );
+      }
+    }
+  }
+
   async function reconcileProviderRuntimes() {
     if (shuttingDown) {
       return { eligible: 0, local: 0, ownedElsewhere: 0, failed: 0 };
     }
+    await reconcileTelegramPollers().catch((error: unknown) =>
+      logger.warn(
+        { error: redactError(error) },
+        "could not reconcile Telegram long-poll delivery",
+      ),
+    );
     const eligibleRows = await db
       .select({ endpointId: chatEndpoints.id })
       .from(chatEndpoints)
@@ -9554,6 +9784,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       });
       await invalidateRuntime(endpoint.id).catch(() => undefined);
       if (endpoint.provider === "telegram") {
+        await stopTelegramPoller(endpoint.id);
         await credentialLease.assertOwned();
         const action = await stageTelegramMaintenance(
           endpoint,
@@ -9574,13 +9805,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     ) {
       throw unprocessable("Unsupported chat endpoint setup action");
     }
-    if (!getWebhookPublicBaseUrl() && endpoint.provider !== "discord" && endpoint.provider !== "imessage-photon") {
+    const telegramLongPoll =
+      endpoint.provider === "telegram" && telegramUsesLongPolling();
+    if (!getWebhookPublicBaseUrl() && endpoint.provider !== "discord" && endpoint.provider !== "imessage-photon" && !telegramLongPoll) {
       throw unprocessable(
         `A public HTTPS GS Agentic Manager URL is required before connecting ${PROVIDER_LABELS[endpoint.provider]}`,
       );
     }
     if (
       endpoint.provider === "telegram" &&
+      !telegramLongPoll &&
       (input.action === "configure" || input.action === "reconnect") &&
       !isSupportedTelegramWebhookBaseUrl(getWebhookPublicBaseUrl())
     ) {
@@ -9900,7 +10134,27 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         waitForDiscordOwnership: next.endpoint.provider === "discord",
       });
 
-      if (endpoint.provider === "telegram" && getWebhookPublicBaseUrl()) {
+      if (telegramLongPoll) {
+        // No public URL: Telegram cannot push to us, so pull instead
+        // (GRE-6102). Clear any old webhook so getUpdates is allowed. As with
+        // setWebhook below, a first connection drops a stale backlog and a
+        // reconnect keeps it.
+        await credentialLease.assertOwned();
+        await telegramMaintenanceRequest(credentials.botToken, "deleteWebhook", {
+          drop_pending_updates: input.action === "configure",
+        });
+        const commandAction = await stageTelegramMaintenance(
+          endpoint,
+          "register_commands",
+        );
+        if (commandAction)
+          await processTelegramMaintenance(
+            commandAction.id,
+            false,
+            credentialLease,
+          );
+        await ensureTelegramPoller(endpoint.id);
+      } else if (endpoint.provider === "telegram" && getWebhookPublicBaseUrl()) {
         const webhookUrl = `${getWebhookPublicBaseUrl()}/api/chat-webhooks/${endpoint.publicId}/telegram`;
         const infoResponse = await fetchImpl(
           `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getWebhookInfo`,
@@ -9926,14 +10180,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
             body: JSON.stringify({
               url: webhookUrl,
               secret_token: credentials.webhookSecret,
-              allowed_updates: [
-                "message",
-                "edited_message",
-                "callback_query",
-                "stopped_message_generation",
-                "message_reaction",
-                "my_chat_member",
-              ],
+              allowed_updates: TELEGRAM_ALLOWED_UPDATES,
               // A first-time connection may inherit stale updates from a bot
               // that was used before GS Agentic Manager owned it. Reconnect is
               // different: Telegram may be holding legitimate updates while
@@ -32519,10 +32766,13 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     endpoint: EndpointRow,
     context: LifecycleRuntimeFence,
   ) {
+    // A long-polled bot has no webhook to upgrade; every getUpdates call
+    // already asks for the same update types.
     if (
       endpoint.provider !== "telegram" ||
       !endpoint.botExternalId ||
-      !getWebhookPublicBaseUrl()
+      !getWebhookPublicBaseUrl() ||
+      telegramUsesLongPolling()
     )
       return null;
     const webhookUrlSha256 = createHash("sha256")
@@ -38474,6 +38724,10 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     getIssueBinding,
     shutdown: async () => {
       shuttingDown = true;
+      // Stop pulling new Telegram updates before draining the work they start.
+      await Promise.allSettled(
+        [...telegramPollers.keys()].map((id) => stopTelegramPoller(id)),
+      );
       await Promise.allSettled([...failedRetryTasks.values()]);
       unregisterFailedRetryAuthority();
       unregisterSlackTaskAuthority();
