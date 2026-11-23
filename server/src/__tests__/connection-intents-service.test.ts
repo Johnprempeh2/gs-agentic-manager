@@ -708,6 +708,24 @@ describeEmbeddedPostgres("connectionIntentService", () => {
     expect((await service.search(claims, "heliotrope")).results[0]).toMatchObject({ state: "unavailable" });
   });
 
+  it("names a connection in the caller's audience whose sign-in must be renewed, and no one else's", async () => {
+    const [application] = await db.insert(toolApplications).values({ companyId: claims.company_id, applicationKey: randomUUID(), name: "sentry", type: "mcp_http", metadata: { sourceTemplateKey: "sentry" } }).returning();
+    const [connection] = await db.insert(toolConnections).values({ companyId: claims.company_id, applicationId: application!.id, uid: randomUUID(), name: "Saved sentry", transport: "mcp_remote", authKind: "oauth", credentialPolicy: "shared", enabled: false, status: "draft", healthStatus: "ok", config: { sourceTemplateKey: "sentry" } }).returning();
+    // The rows a rejected refresh writes for an organization grant: the grant
+    // needs reauthorization and the connection is disabled.
+    const [grant] = await db.insert(connectionGrants).values({ companyId: claims.company_id, connectionId: connection!.id, kind: "organization", status: "needs_reauthorization" }).returning();
+    const service = connectionIntentService(db);
+    const sentry = async () => (await service.search(claims, "sentry")).results.find(item => item.service === "sentry");
+    const result = await sentry();
+    expect(result).toMatchObject({ state: "needs_user_action", connectionId: null });
+    expect(result?.reason).toContain("Saved sentry");
+    expect(result?.reason).toMatch(/signed in again/i);
+    expect(result?.reason).toMatch(/reconnect/i);
+    await db.update(connectionGrants).set({ kind: "user", subjectUserId: "other-user" }).where(eq(connectionGrants.id, grant!.id));
+    await db.update(toolConnections).set({ name: "Private Sentry of another person", credentialPolicy: "per_user" }).where(eq(toolConnections.id, connection!.id));
+    expect((await sentry())?.reason ?? "").not.toContain("Private Sentry of another person");
+  });
+
   it("returns only selection metadata for an agent-authorized custom connection", async () => {
     const [application] = await db.insert(toolApplications).values({ companyId: claims.company_id, applicationKey: randomUUID(), name: "Private archive", type: "mcp_http", status: "active" }).returning();
     const [connection] = await db.insert(toolConnections).values({
