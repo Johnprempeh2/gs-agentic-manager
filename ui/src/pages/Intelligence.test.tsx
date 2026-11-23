@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IntelligenceBoardView, IntelligenceReport } from "@greatstone/shared";
+import { INTELLIGENCE_AI_PRESET, type IntelligenceBoardView, type IntelligenceReport } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import { Intelligence } from "./Intelligence";
 
@@ -19,6 +19,8 @@ const apiMock = vi.hoisted(() => ({
   recommendations: vi.fn(),
   decide: vi.fn(),
   createTask: vi.fn(),
+  settings: vi.fn(),
+  saveSettings: vi.fn(),
 }));
 const settingsMock = vi.hoisted(() => ({ getExperimental: vi.fn() }));
 
@@ -103,6 +105,7 @@ beforeEach(() => {
   apiMock.boards.mockResolvedValue({ boards: [] });
   apiMock.boardHistory.mockResolvedValue({ history: [] });
   apiMock.recommendations.mockResolvedValue({ recommendations: [] });
+  apiMock.settings.mockResolvedValue({ companyId: "co-1", configured: true, ...INTELLIGENCE_AI_PRESET, updatedAt: "2026-11-23T00:00:00.000Z" });
 });
 
 afterEach(() => {
@@ -130,25 +133,27 @@ describe("Intelligence page", () => {
     apiMock.report.mockRejectedValue(new ApiError("Not found", 404, null));
     await render("/intelligence?tab=today");
     await vi.waitFor(() => expect(text()).toContain("No Daily Pulse yet"));
-    expect(text()).toContain("Lodestone, the Intelligence Analyst agent, publishes the Daily Pulse around 07:00 UK time");
+    expect(text()).toContain("Your intelligence agent publishes the Daily Pulse each morning");
   });
 
   it("explains when the briefing lands on an empty News tab and an empty GSAM ideas tab", async () => {
     apiMock.report.mockRejectedValue(new ApiError("Not found", 404, null));
     await render("/intelligence?tab=news");
     await vi.waitFor(() => expect(text()).toContain("No briefing yet"));
-    expect(text()).toContain("publishes the AI briefing around 06:00 UK time");
+    expect(text()).toContain("publishes the briefing each morning");
     act(() => root.unmount());
     root = createRoot(container);
     await render("/intelligence?tab=gsam");
     await vi.waitFor(() => expect(text()).toContain("No GSAM feature ideas yet"));
-    expect(text()).toContain("around 06:00 UK time");
+    expect(text()).toContain("with the morning briefing");
   });
 
   it("opens each board with a 2nd, 1st, 3rd podium carrying movement, then the rest as a table", async () => {
     apiMock.report.mockRejectedValue(new ApiError("Not found", 404, null));
     const systems: IntelligenceBoardView = {
       board: "ai_systems",
+      label: "AI Systems",
+      scoreLabel: "Score",
       snapshotDate: "2026-10-13",
       comparedTo: "2026-10-06",
       entries: [
@@ -239,6 +244,8 @@ describe("Intelligence page", () => {
       boards: [
         {
           board: "tools_agents",
+          label: "Tools and Agents",
+          scoreLabel: "Score",
           snapshotDate: "2026-10-13",
           comparedTo: null,
           entries: [
@@ -261,6 +268,53 @@ describe("Intelligence page", () => {
     const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src") ?? "");
     expect(sources.length).toBeGreaterThan(3);
     expect(sources.every((src) => src.startsWith("/api/companies/co-1/intelligence/"))).toBe(true);
+  });
+
+  it("keeps the AI preset's headings and tags a trend with its topic", async () => {
+    const tagged = { ...pulse, sections: { ...pulse.sections, trends: [{ ...pulse.sections.trends[0]!, topic: "frontier_models" }] } } as IntelligenceReport;
+    apiMock.report.mockImplementation(async (_company: string, _date: string, kind: string) => {
+      if (kind === "daily_pulse") return tagged;
+      throw new ApiError("Not found", 404, null);
+    });
+    await render("/intelligence?tab=today");
+    await vi.waitFor(() => expect(text()).toContain("AI industry trends"));
+    expect(text()).toContain("Frontier Models");
+    expect(text()).not.toContain("Set up your intelligence");
+  });
+
+  it("asks a new company to set up its topics, and saves the owner's topics in order", async () => {
+    apiMock.report.mockRejectedValue(new ApiError("Not found", 404, null));
+    apiMock.settings.mockResolvedValue({ companyId: "co-1", configured: false, topics: [], sectionTitles: {}, updatedAt: null });
+    apiMock.saveSettings.mockImplementation(async (_company: string, body: object) => ({ companyId: "co-1", configured: true, updatedAt: "now", ...body }));
+    await render();
+    await vi.waitFor(() => expect(text()).toContain("Set up your intelligence"));
+    expect(text()).not.toContain("AI industry trends");
+
+    const button = (name: string) =>
+      [...document.querySelectorAll("button")].find((el) => el.textContent?.trim() === name || el.getAttribute("aria-label") === name)!;
+    const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    await act(async () => button("Choose topics").click());
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Intelligence topics"));
+    await act(async () => type(document.getElementById("topic-0-label") as HTMLInputElement, "Investment banking"));
+    await act(async () => type(document.getElementById("topic-0-sources") as HTMLTextAreaElement, "Financial Times\nReuters"));
+    await act(async () => type(document.getElementById("topic-0-keywords") as HTMLTextAreaElement, "M&A, IPO"));
+    await act(async () => button("Add a topic").click());
+    await act(async () => type(document.getElementById("topic-1-label") as HTMLInputElement, "Job search"));
+    await act(async () => button("Move Job search up").click());
+    await act(async () => button("Save topics").click());
+
+    await vi.waitFor(() => expect(apiMock.saveSettings).toHaveBeenCalled());
+    expect(apiMock.saveSettings).toHaveBeenCalledWith("co-1", {
+      topics: [
+        { key: "job_search", label: "Job search", covers: "", sources: [], keywords: [], leaderboard: false },
+        { key: "investment_banking", label: "Investment banking", covers: "", sources: ["Financial Times", "Reuters"], keywords: ["M&A", "IPO"], leaderboard: false },
+      ],
+      sectionTitles: {},
+    });
   });
 
   it("explains the page is off while the switch is off", async () => {

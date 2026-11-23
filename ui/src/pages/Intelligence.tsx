@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ClipboardList, Lock, Radar, Sparkles } from "lucide-react";
+import { Check, ClipboardList, Lock, Radar, Settings2, Sparkles } from "lucide-react";
 import { ListenButton } from "../components/ListenButton";
 import {
-  INTELLIGENCE_BOARD_LABELS,
   type AiBriefingSections,
   type DailyPulseSections,
   type IntelligenceBoardView,
   type IntelligenceRecommendation,
   type IntelligenceRecommendationKind,
   type IntelligenceReportSummary,
+  type IntelligenceSettings,
 } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -30,6 +30,7 @@ import {
   VerdictCard,
 } from "../components/intelligence/IntelligenceCards";
 import { ArticleImage, BrandLogo, TagChip } from "../components/intelligence/IntelligenceMedia";
+import { IntelligenceSettingsDialog } from "../components/intelligence/IntelligenceSettings";
 import { Button } from "@/components/ui/button";
 import { pulseText } from "@/lib/pulse-text";
 import { useCopyAction } from "@/lib/use-copy-action";
@@ -65,16 +66,30 @@ function Empty({ title, message, action, onAction }: { title: string; message: s
   return <EmptyState icon={Radar} title={title} message={message} action={action} onAction={onAction} hideActionIcon />;
 }
 
-// What fills each tab, and when. Lodestone is the Intelligence Analyst agent.
+// What fills each tab, and when: whichever agent runs the gsam-intelligence routine for this company.
 const WHEN = {
-  pulse: "Lodestone, the Intelligence Analyst agent, publishes the Daily Pulse around 07:00 UK time each morning.",
-  briefing: "Lodestone, the Intelligence Analyst agent, publishes the AI briefing around 06:00 UK time each morning.",
-  ideas: "Lodestone, the Intelligence Analyst agent, proposes them with the morning briefing, around 06:00 UK time. Each one can become a task in one click.",
+  pulse: "Your intelligence agent publishes the Daily Pulse each morning, on the topics in Topics.",
+  briefing: "Your intelligence agent publishes the briefing each morning.",
+  ideas: "Your intelligence agent proposes them with the morning briefing. Each one can become a task in one click.",
 } as const;
+
+type SectionTitles = IntelligenceSettings["sectionTitles"];
 
 // ---------- Today (Daily Pulse) ----------
 
-function TodayView({ sections, headline, date }: { sections: DailyPulseSections; headline: string | null; date: string }) {
+function TodayView({
+  sections,
+  headline,
+  date,
+  titles,
+  topicLabels,
+}: {
+  sections: DailyPulseSections;
+  headline: string | null;
+  date: string;
+  titles: SectionTitles;
+  topicLabels: Map<string, string>;
+}) {
   const { quickWin } = sections;
   return (
     <div className="space-y-6">
@@ -98,13 +113,19 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
       ) : null}
 
       {sections.trends.length > 0 ? (
-        <IntelligenceSection title="AI industry trends" count={sections.trends.length}>
+        <IntelligenceSection title={titles.trends ?? "Trends"} count={sections.trends.length}>
           {sections.trends.map((trend) => (
             <VerdictCard
               key={trend.url + trend.headline}
               media={<ArticleImage url={trend.url} imageUrl={trend.imageUrl} fallback={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="xl" />} />}
               leading={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="sm" />}
-              eyebrow={<><span className="font-medium text-foreground">{trend.sourceName}</span><TagChip>{FRESHNESS_LABEL[trend.freshness]}</TagChip></>}
+              eyebrow={
+                <>
+                  <span className="font-medium text-foreground">{trend.sourceName}</span>
+                  {trend.topic && topicLabels.has(trend.topic) ? <TagChip>{topicLabels.get(trend.topic)}</TagChip> : null}
+                  <TagChip>{FRESHNESS_LABEL[trend.freshness]}</TagChip>
+                </>
+              }
               title={trend.headline}
               href={trend.url}
               verdict={trend.whyItMatters}
@@ -174,7 +195,7 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
       ) : null}
 
       {sections.opportunities.length > 0 ? (
-        <IntelligenceSection title="Greatstone opportunities" count={sections.opportunities.length}>
+        <IntelligenceSection title={titles.opportunities ?? "Opportunities"} count={sections.opportunities.length}>
           {sections.opportunities.map((item) => (
             <VerdictCard
               key={item.title}
@@ -214,14 +235,14 @@ function CompareView({ view }: { view: IntelligenceBoardView | undefined }) {
   const [left, setLeft] = useState<string | null>(null);
   const [right, setRight] = useState<string | null>(null);
   if (!view || names.length < 2) {
-    return <Empty title="Nothing to compare yet" message="Compare needs a Frontier Models snapshot with at least two models." />;
+    return <Empty title="Nothing to compare yet" message="Compare needs a leaderboard snapshot with at least two entries." />;
   }
   const a = view.entries.find((entry) => entry.name === (left ?? names[0]))!;
   const b = view.entries.find((entry) => entry.name === (right ?? names[1]))!;
   const specKeys = [...new Set([...Object.keys(a.specs ?? {}), ...Object.keys(b.specs ?? {})])];
   const rows: [string, string, string][] = [
     ["Rank", String(a.rank), String(b.rank)],
-    ["Intelligence Index", String(a.score ?? "n/a"), String(b.score ?? "n/a")],
+    [view.scoreLabel === "Index" ? "Intelligence Index" : view.scoreLabel, String(a.score ?? "n/a"), String(b.score ?? "n/a")],
     ...specKeys.map((key): [string, string, string] => [humanise(key), String(a.specs?.[key] ?? "n/a"), String(b.specs?.[key] ?? "n/a")]),
   ];
   return (
@@ -408,24 +429,26 @@ function IntelligenceSkeleton() {
 function OverviewView({
   boards,
   briefing,
-  systemsSeries,
+  series,
   onOpen,
 }: {
   boards: IntelligenceBoardView[];
   briefing: AiBriefingSections | null;
-  systemsSeries: ScoreSeries | undefined;
+  series: Map<string, ScoreSeries>;
   onOpen: (tab: Tab) => void;
 }) {
   const byBoard = (board: IntelligenceBoardView["board"]) => boards.find((view) => view.board === board);
-  const systems = byBoard("ai_systems");
+  // The AI preset's boards keep their own tiles and strip; other topics get a tile each and the first board's podium.
   const models = byBoard("frontier_models");
   const tools = byBoard("tools_agents");
+  const preset = !!(byBoard("ai_systems") ?? models ?? tools);
+  const systems = byBoard("ai_systems") ?? (preset ? undefined : boards[0]);
   const news = briefing?.news ?? [];
   if (boards.length === 0 && news.length === 0) {
     return (
       <Empty
         title="Nothing to show yet"
-        message={`The overview draws on the AI briefing and the leaderboards. ${WHEN.briefing} The Daily Pulse follows around 07:00.`}
+        message={`The overview draws on the briefing and the leaderboards. ${WHEN.briefing}`}
       />
     );
   }
@@ -434,10 +457,17 @@ function OverviewView({
   const top = (view: IntelligenceBoardView | undefined) => view?.entries[0];
   const logoOf = (entry: IntelligenceBoardView["entries"][number] | undefined) =>
     entry ? { name: entry.maker ?? entry.name, domain: entry.domain, url: entry.url } : undefined;
+  const topTile = (view: IntelligenceBoardView | undefined, label: string): Stat | null =>
+    top(view) ? { label, value: String(top(view)!.score ?? "n/a"), sub: top(view)!.name, logo: logoOf(top(view)) } : null;
+  const boardStats = preset
+    ? [
+        topTile(systems, "Top system"),
+        topTile(models, "Top model, Index"),
+        tools ? { label: "Tools tracked", value: String(tools.entries.length), sub: "Agents and builders" } : null,
+      ]
+    : boards.slice(0, 3).map((view) => topTile(view, `Top in ${view.label}`));
   const stats: Stat[] = [
-    top(systems) ? { label: "Top system", value: String(top(systems)!.score ?? "n/a"), sub: top(systems)!.name, logo: logoOf(top(systems)) } : null,
-    top(models) ? { label: "Top model, Index", value: String(top(models)!.score ?? "n/a"), sub: top(models)!.name, logo: logoOf(top(models)) } : null,
-    tools ? { label: "Tools tracked", value: String(tools.entries.length), sub: "Agents and builders" } : null,
+    ...boardStats,
     briefing ? { label: "Updates", value: String(news.length), sub: "In the briefing" } : null,
   ].filter((stat) => stat !== null);
   return (
@@ -460,8 +490,8 @@ function OverviewView({
 
       {systems ? (
         <section className="space-y-3" aria-label="The podium">
-          <OverviewHeading title={`Podium, ${INTELLIGENCE_BOARD_LABELS.ai_systems}`} action={{ label: "Full leaderboard", onClick: () => onOpen("boards") }} />
-          <Podium view={systems} series={systemsSeries} />
+          <OverviewHeading title={`Podium, ${systems.label}`} action={{ label: "Full leaderboard", onClick: () => onOpen("boards") }} />
+          <Podium view={systems} series={series.get(systems.board)} />
         </section>
       ) : null}
 
@@ -691,6 +721,7 @@ export function Intelligence() {
   const [searchParams, setSearchParams] = useSearchParams();
   const todayRef = useRef<HTMLDivElement>(null);
   const pulseCopy = useCopyAction();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const newsRef = useRef<HTMLDivElement>(null);
   const tabParam = searchParams.get("tab");
   const tab: Tab = TABS.some(([id]) => id === tabParam) ? (tabParam as Tab) : "overview";
@@ -718,6 +749,11 @@ export function Intelligence() {
   const on = settingsQuery.data?.enableIntelligence === true && !!selectedCompanyId;
   const companyId = selectedCompanyId ?? "";
 
+  const topicsQuery = useQuery({
+    queryKey: queryKeys.intelligence.settings(companyId),
+    queryFn: () => intelligenceApi.settings(companyId),
+    enabled: on,
+  });
   const pulseQuery = useQuery({
     queryKey: queryKeys.intelligence.report(companyId, reportDate, "daily_pulse"),
     queryFn: () => reportOrNull(companyId, reportDate, "daily_pulse"),
@@ -749,9 +785,17 @@ export function Intelligence() {
     enabled: on,
   });
 
-  const frontier = useMemo(
-    () => boardsQuery.data?.boards.find((view) => view.board === "frontier_models"),
+  // Compare reads the board with specs: Frontier Models on the AI preset, else the first board that has them.
+  const compared = useMemo(
+    () =>
+      boardsQuery.data?.boards.find((view) => view.board === "frontier_models") ??
+      boardsQuery.data?.boards.find((view) => view.entries.some((entry) => entry.specs)) ??
+      boardsQuery.data?.boards[0],
     [boardsQuery.data],
+  );
+  const topicLabels = useMemo(
+    () => new Map((topicsQuery.data?.topics ?? []).map((topic) => [topic.key, topic.label])),
+    [topicsQuery.data],
   );
   // Sparklines are a nice-to-have: a failed history read leaves them out rather than failing the page.
   const series = useMemo(
@@ -795,10 +839,14 @@ export function Intelligence() {
         <div className="space-y-1">
           <h1 className="text-xl font-bold">Intelligence</h1>
           <p className="text-sm text-muted-foreground">
-            The Daily Pulse and the AI leaderboards, written by your intelligence agent from real sources.
+            The Daily Pulse and leaderboards on the topics you follow, written by your intelligence agent from real sources.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)} disabled={!topicsQuery.data}>
+            <Settings2 className="size-3.5" />
+            Topics
+          </Button>
           <Input
             type="date"
             aria-label="Show a past day"
@@ -814,6 +862,31 @@ export function Intelligence() {
           ) : null}
         </div>
       </header>
+
+      <IntelligenceSettingsDialog
+        companyId={companyId}
+        settings={topicsQuery.data}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
+
+      {topicsQuery.data && !topicsQuery.data.configured ? (
+        <section
+          aria-label="Set up your intelligence"
+          className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold">Set up your intelligence</h2>
+            <p className="text-sm text-muted-foreground">
+              Choose the topics you want followed each morning, such as your industry, markets or job search. Your
+              intelligence agent reads them before every run.
+            </p>
+          </div>
+          <Button size="sm" className="shrink-0" onClick={() => setSettingsOpen(true)}>
+            Choose topics
+          </Button>
+        </section>
+      ) : null}
 
       <Tabs value={tab} onValueChange={(value) => setParams({ tab: value as Tab })}>
         <div className="-mx-1 overflow-x-auto px-1">
@@ -832,7 +905,7 @@ export function Intelligence() {
               <OverviewView
                 boards={boards}
                 briefing={briefing?.sections ?? null}
-                systemsSeries={series.get("ai_systems")}
+                series={series}
                 onOpen={(next) => setParams({ tab: next })}
               />
             )}
@@ -855,13 +928,19 @@ export function Intelligence() {
                   <ListenButton targetRef={todayRef} label="Listen to the Pulse" />
                 </div>
                 <div ref={todayRef}>
-                  <TodayView sections={pulse.sections} headline={pulse.headline} date={pulse.reportDate} />
+                  <TodayView
+                    sections={pulse.sections}
+                    headline={pulse.headline}
+                    date={pulse.reportDate}
+                    titles={topicsQuery.data?.sectionTitles ?? {}}
+                    topicLabels={topicLabels}
+                  />
                 </div>
               </div>
             ) : (
               <Empty
                 title={date ? "No Daily Pulse for this day" : "No Daily Pulse yet"}
-                message={date ? "Lodestone did not publish a Daily Pulse on this day. Try another day, or the Archive." : `${WHEN.pulse} It shows here as soon as it lands.`}
+                message={date ? "No Daily Pulse was published on this day. Try another day, or the Archive." : `${WHEN.pulse} It shows here as soon as it lands.`}
                 action={date ? "Show latest" : undefined}
                 onAction={date ? () => setParams({ date: null }) : undefined}
               />
@@ -875,13 +954,13 @@ export function Intelligence() {
             ) : (
               <Empty
                 title="No leaderboard snapshots yet"
-                message="Lodestone, the Intelligence Analyst agent, writes a snapshot of each board with its morning run. Movement arrows appear once there is a week of history."
+                message="Your intelligence agent writes a snapshot of each leaderboard topic with its morning run. Turn on a leaderboard for a topic in Topics. Movement arrows appear once there is a week of history."
               />
             ))}
         </TabsContent>
 
         <TabsContent value="compare" className="mt-4">
-          {loading(boardsQuery) ?? <CompareView view={frontier} />}
+          {loading(boardsQuery) ?? <CompareView view={compared} />}
         </TabsContent>
 
         <TabsContent value="radar" className="mt-4">
