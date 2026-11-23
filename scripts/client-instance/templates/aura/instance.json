@@ -1,0 +1,8 @@
+{
+  "company": "Aura",
+  "modules": {
+    "website": ["enableWebsiteView"],
+    "intelligence": ["enableIntelligence"],
+    "image": []
+  }
+}
