@@ -50,10 +50,21 @@ case "$(uname -m)/$CPU" in
   arm64/arm64|x86_64/x64) ;;
   *) die "this package is for $CPU Macs; this Mac is $(uname -m)" ;;
 esac
+# Everything else GSAM needs is inside this package: Node, the database, the
+# prebuilt agent runner (no Rust, pnpm or build step on this Mac). Only git,
+# which agents use, comes from Apple's Command Line Tools.
 if ! xcode-select -p >/dev/null 2>&1; then
-  say "NOTE: agents need git. macOS will offer to install the Command Line Tools;"
-  say "      run 'xcode-select --install' after this installer if it does not."
+  say "agents need git: macOS now asks to install Apple's Command Line Tools. Press Install."
+  xcode-select --install >/dev/null 2>&1 || true
 fi
+
+# The agent runner is a native program built for this CPU. Sign the copied
+# file again (ad hoc, as the build does) so macOS runs the new copy.
+resign_runner() {
+  local bin
+  while IFS= read -r bin; do codesign --force --sign - "$bin" 2>/dev/null || true; done < <(
+    find "$APP/payload" -type f -name paperclip-runnerd 2>/dev/null)
+}
 
 port_free() { ! nc -z 127.0.0.1 "$1" 2>/dev/null; }
 first_free() {
@@ -75,6 +86,7 @@ if [ "$UPGRADE" = 1 ]; then
   mv "$APP" "$HOME_DIR/app.previous"
   ditto "$PKG/app" "$APP"
   xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+  resign_runner
   say "4/4 start and health check"
   "$APP/bin/gsam-aura" start
   say "upgraded to $("$NODE" -p 'require(process.argv[1]).gsamVersion' "$PKG/manifest.json")"
@@ -90,6 +102,7 @@ mkdir -p "$HOME_DIR" "$LOGS" "$INSTANCE/secrets"
 chmod 700 "$HOME_DIR"
 ditto "$PKG/app" "$APP"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+resign_runner
 cp "$PKG/manifest.json" "$HOME_DIR/manifest.json"
 
 PORT="${PORT:-$(first_free 3300)}"

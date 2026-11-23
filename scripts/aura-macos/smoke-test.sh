@@ -29,6 +29,12 @@ test -x "$HOME/Applications/GSAM.app/Contents/MacOS/GSAM"
 launchctl print "gui/$(id -u)/com.gsam.aura" | grep -E 'state = running'
 "$HOME_DIR/app/bin/claude" --version
 "$HOME_DIR/app/bin/codex" --version
+# Not developer mode: the log-in item runs the built server, and the installed
+# runner is the prebuilt one (macOS accepts its signature after the copy).
+! pgrep -fl 'pnpm|tsx watch|vite' | grep -F "$HOME_DIR" || { echo "a developer-mode process runs" >&2; exit 1; }
+RUNNER="$(find "$HOME_DIR/app/payload" -type f -name paperclip-runnerd | head -1)"
+test -x "$RUNNER"
+codesign --verify "$RUNNER"
 
 step "first run: owner link, Aura only, cap 2"
 "$NODE" "$HERE/smoke-test.mjs" first-run "$URL" "$HOME_DIR/logs/server.log" "$SCRATCH/state.json"
@@ -38,6 +44,15 @@ GSAM_AURA_NO_OPEN=1 "$CTL" claim 5
 
 step "invite flow (the owner invites a helper, as for John's optional access)"
 "$NODE" "$HERE/smoke-test.mjs" invite "$URL" "$SCRATCH/state.json"
+
+step "Tailscale commands refuse cleanly when Tailscale is missing"
+if [ ! -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ] && ! command -v tailscale >/dev/null; then
+  for cmd in telegram phone; do
+    ! "$CTL" "$cmd" on 2> "$SCRATCH/ts.err" || { echo "gsam-aura $cmd ran without Tailscale" >&2; exit 1; }
+    grep -q "Tailscale is not installed" "$SCRATCH/ts.err"
+  done
+  if grep -q GSAM_CHAT_WEBHOOK_PUBLIC_URL "$HOME_DIR/data/instances/default/.env"; then echo "webhook URL set without Funnel" >&2; exit 1; fi
+fi
 
 step "status and backup"
 "$CTL" status

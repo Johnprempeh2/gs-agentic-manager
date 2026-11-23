@@ -37,5 +37,18 @@ if [ -d "$DIR/app/template" ]; then
   done < <(grep -rIin 'greatstone' "$DIR/app/template" 2>/dev/null || true)
 fi
 
+# 5. Nothing is built on the owner's Mac: the agent runner ships prebuilt for
+#    the package's CPU (a stock Mac has no Rust or pnpm).
+CPU="$(node -p 'require(process.argv[1]).cpu' "$DIR/manifest.json" 2>/dev/null || true)"
+[ "$CPU" = x64 ] && WANT_ARCH=x86_64 || WANT_ARCH=arm64
+RUNNERS="$(find "$DIR/app/payload" -type f -name paperclip-runnerd 2>/dev/null)"
+[ -n "$RUNNERS" ] || bad "no prebuilt agent runner (paperclip-runnerd) in the payload"
+while IFS= read -r bin; do
+  [ -n "$bin" ] || continue
+  [ -x "$bin" ] || bad "agent runner is not executable: $bin"
+  archs="$(lipo -archs "$bin" 2>/dev/null || true)"
+  case " $archs " in *" $WANT_ARCH "*) ;; *) bad "agent runner is not $WANT_ARCH ($archs): $bin" ;; esac
+done <<< "$RUNNERS"
+
 [ "$fail" = 0 ] || exit 1
-echo "contents check passed: no data, keys, local paths or Greatstone-only skills"
+echo "contents check passed: no data, keys, local paths or Greatstone-only skills; prebuilt $WANT_ARCH agent runner"

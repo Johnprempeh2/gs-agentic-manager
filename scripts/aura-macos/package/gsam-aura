@@ -3,6 +3,7 @@
 # Installed by install.sh into <GSAM folder>/app/bin. See doc/AURA-MAC-INSTALL.md.
 #
 #   gsam-aura open | start | stop | restart | status | claim | backup | url | logs | uninstall
+#   gsam-aura phone on|off | telegram on|off   over the owner's own Tailscale
 #   gsam-aura cli <gsam command...>     the GSAM command line, on this install
 #   gsam-aura serve                     what the log-in item runs (not by hand)
 set -euo pipefail
@@ -125,6 +126,79 @@ cmd_claim() {
   say "setup finished. Open GSAM from the Dock or with: gsam-aura open"
 }
 
+# The owner's own Tailscale (never Greatstone's tailnet). The Mac app keeps its
+# command line inside the app; Homebrew puts it on the PATH.
+tailscale_cli() {
+  local c
+  for c in /Applications/Tailscale.app/Contents/MacOS/Tailscale /opt/homebrew/bin/tailscale /usr/local/bin/tailscale; do
+    [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  die "Tailscale is not installed. Install it from tailscale.com/download and sign in to YOUR OWN account."
+}
+
+# <mac>.<tailnet>.ts.net of this Mac, or nothing when Tailscale is signed out.
+tailscale_host() {
+  "$1" status --json 2>/dev/null | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write((JSON.parse(s).Self?.DNSName||"").replace(/\.$/,""))}catch{}})'
+}
+
+# Sets or clears one KEY=value line in the instance .env (the server reads it at start).
+set_env_line() { # <key> [value]
+  local env="$DATA/instances/default/.env"
+  "$NODE" -e '
+    const fs=require("fs");const [f,k,v]=process.argv.slice(1);
+    const lines=(fs.existsSync(f)?fs.readFileSync(f,"utf8"):"").split("\n").filter(l=>l&&!l.startsWith(k+"="));
+    if(v)lines.push(k+"="+v);fs.writeFileSync(f,lines.join("\n")+"\n",{mode:0o600});' "$env" "$1" "${2:-}"
+}
+
+# Phone access: the whole app on https://<mac>.<tailnet>.ts.net:8443, for the
+# owner's own tailnet only. Port 8443 is never made public (Funnel is on 443).
+cmd_phone() {
+  local ts host port
+  ts="$(tailscale_cli)"; host="$(tailscale_host "$ts")"; port="$(cfg server.port)"
+  [ -n "$host" ] || die "Tailscale is signed out. Open the Tailscale app and sign in to your own account."
+  case "${1:-on}" in
+    on)
+      "$ts" serve --bg --https=8443 "http://127.0.0.1:$port"
+      clean_env "$NODE" "$GSAM_JS" allowed-hostname "$host" --data-dir "$DATA" >/dev/null
+      cmd_stop; cmd_start
+      say "phone access on: https://$host:8443 (only devices signed in to your Tailscale)"
+      ;;
+    off)
+      "$ts" serve --https=8443 off || true
+      say "phone access off"
+      ;;
+    *) die "usage: gsam-aura phone on|off" ;;
+  esac
+}
+
+# Telegram: Telegram must reach the server on a public HTTPS address. Tailscale
+# Funnel makes ONLY the path /api/chat-webhooks public, on port 443; the rest of
+# GSAM stays on this Mac and the owner's tailnet.
+cmd_telegram() {
+  local ts host port
+  ts="$(tailscale_cli)"; host="$(tailscale_host "$ts")"; port="$(cfg server.port)"
+  [ -n "$host" ] || die "Tailscale is signed out. Open the Tailscale app and sign in to your own account."
+  case "${1:-on}" in
+    on)
+      say "making only https://$host/api/chat-webhooks public (Tailscale Funnel)."
+      say "If Tailscale asks, open its link and allow Funnel for this tailnet, then run this again."
+      "$ts" funnel --bg --https=443 --set-path=/api/chat-webhooks "http://127.0.0.1:$port/api/chat-webhooks" \
+        || die "Funnel did not start. Allow Funnel in your Tailscale admin page (Access controls), then run 'gsam-aura telegram' again."
+      clean_env "$NODE" "$GSAM_JS" allowed-hostname "$host" --data-dir "$DATA" >/dev/null
+      set_env_line GSAM_CHAT_WEBHOOK_PUBLIC_URL "https://$host"
+      cmd_stop; cmd_start
+      say "Telegram webhooks on: https://$host/api/chat-webhooks. Now connect Telegram in GSAM (Apps > Chat)."
+      ;;
+    off)
+      "$ts" funnel --https=443 --set-path=/api/chat-webhooks off || true
+      set_env_line GSAM_CHAT_WEBHOOK_PUBLIC_URL
+      cmd_stop; cmd_start
+      say "Telegram webhooks off; nothing of GSAM is public"
+      ;;
+    *) die "usage: gsam-aura telegram on|off" ;;
+  esac
+}
+
 cmd_status() {
   if healthy; then say "running on $(url)"; else say "not running"; fi
   loaded && say "log-in item: on" || say "log-in item: off"
@@ -154,9 +228,11 @@ case "${1:-open}" in
     clean_env "$NODE" "$GSAM_JS" db:backup --data-dir "$DATA"
     ;;
   url) url; echo ;;
+  phone) cmd_phone "${2:-on}" ;;
+  telegram) cmd_telegram "${2:-on}" ;;
   logs) tail -n "${2:-100}" "$LOGS/server.log" ;;
   cli) shift; clean_env "$NODE" "$GSAM_JS" "$@" ;;
   uninstall) shift; exec /bin/bash "$APP/bin/uninstall.sh" "$@" ;;
-  -h|--help|help) sed -n '2,8p' "$0" ;;
+  -h|--help|help) sed -n '2,9p' "$0" ;;
   *) die "unknown command '$1' (try: gsam-aura help)" ;;
 esac
