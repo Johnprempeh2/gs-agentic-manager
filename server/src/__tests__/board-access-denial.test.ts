@@ -39,6 +39,14 @@ describe("board-only denial", () => {
     ["patch", `/api/agents/${AGENT_ID}/permissions`, `[Open the agent's permissions](/<prefix>/agents/${AGENT_ID}/permissions)`],
     ["post", `/api/agents/${AGENT_ID}/keys`, `[Open the agent's API keys](/<prefix>/agents/${AGENT_ID}/api-keys)`],
     ["post", `/api/agents/${AGENT_ID}/pause`, `[Open the agent's profile](/<prefix>/agents/${AGENT_ID})`],
+    ["post", `/api/companies/${COMPANY_ID}/costs/retry-accounting`, "[Open costs](/<prefix>/activity/costs)"],
+    ["get", `/api/companies/${COMPANY_ID}/environments`, "[Open environment settings](/<prefix>/company/settings/instance/environments)"],
+    ["get", `/api/companies/${COMPANY_ID}/environments/capabilities`, "[Open environment settings](/<prefix>/company/settings/instance/environments)"],
+    ["post", `/api/environments/${AGENT_ID}/probe`, "[Open environment settings](/<prefix>/company/settings/instance/environments)"],
+    ["get", `/api/environment-leases/${AGENT_ID}`, "[Open environment settings](/<prefix>/company/settings/instance/environments)"],
+    ["get", `/api/environment-custom-image-setup-sessions/${AGENT_ID}`, "[Open environment settings](/<prefix>/company/settings/instance/environments)"],
+    ["get", "/api/instance/settings/experimental", "[Open Experimental settings](/<prefix>/company/settings/instance/experimental)"],
+    ["patch", "/api/instance/settings/experimental", "[Open Experimental settings](/<prefix>/company/settings/instance/experimental)"],
   ] as const)("tells an agent %s %s is final and names the board page", async (method, path, link) => {
     const res = await request(createApp(agentActor))[method](path).expect(403);
     expect(res.body.error).toBe("Board access required");
@@ -46,6 +54,43 @@ describe("board-only denial", () => {
     expect(res.body.remediation).toContain("This denial is final");
     expect(res.body.remediation).toContain("Do not search for one");
     expect(res.body.remediation).toContain(link);
+  });
+
+  it("tells an agent denied any plugin route that every plugin management step is board-only", async () => {
+    // An agent asked to finish configuring a plugin usually reads the plugin list first.
+    // That denial must also settle configuration and secret binding.
+    for (const path of ["/api/plugins", `/api/plugins/${AGENT_ID}/config`]) {
+      const res = await request(createApp(agentActor)).get(path).expect(403);
+      expect(res.body.remediation).toContain("Plugin management is board-only throughout");
+      expect(res.body.remediation).toContain("configuring (including choosing a secret for a plugin setting)");
+    }
+    const other = await request(createApp(agentActor)).post(`/api/companies/${COMPANY_ID}/secrets`).expect(403);
+    expect(other.body.remediation).not.toContain("Plugin management");
+  });
+
+  it("tells an agent denied an environment route that testing and changing computers are board-only too", async () => {
+    const res = await request(createApp(agentActor, assertBoardOrgAccess)).get(`/api/companies/${COMPANY_ID}/environments/capabilities`).expect(403);
+    expect(res.body.remediation).toContain("Execution environments are board-only throughout");
+    expect(res.body.remediation).toContain("testing (probing) them");
+    const other = await request(createApp(agentActor)).get(`/api/companies/${COMPANY_ID}/project-environments`).expect(403);
+    expect(other.body.remediation).not.toContain("Execution environments");
+    expect(other.body.remediation).not.toContain("/instance/environments");
+  });
+
+  it.each([
+    ["instance.environments", "get", `/api/companies/${COMPANY_ID}/environments`, "/instance/environments"],
+    ["instance.experimental", "patch", "/api/instance/settings/experimental", "/instance/experimental"],
+  ] as const)("does not link a settings page while the operator hides %s", async (key, method, path, hiddenLink) => {
+    const previous = process.env.GSAM_HIDDEN_SETTINGS;
+    process.env.GSAM_HIDDEN_SETTINGS = key;
+    try {
+      const res = await request(createApp(agentActor))[method](path).expect(403);
+      expect(res.body.remediation).toContain("This denial is final");
+      expect(res.body.remediation).not.toContain(hiddenLink);
+    } finally {
+      if (previous === undefined) delete process.env.GSAM_HIDDEN_SETTINGS;
+      else process.env.GSAM_HIDDEN_SETTINGS = previous;
+    }
   });
 
   it("falls back to a general board instruction when no page is known", async () => {

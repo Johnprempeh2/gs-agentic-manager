@@ -4,6 +4,7 @@ import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { responsibleUserAuthzShadowMode } from "../services/authorization.js";
 import { isCompanyOwnerOrAdminRole } from "../services/company-member-roles.js";
+import { getHiddenSettings } from "../services/settings-visibility.js";
 
 export const OWNER_OR_ADMIN_REQUIRED_MESSAGE = "Owner or admin role required";
 export const OWNER_OR_ADMIN_REQUIRED_CODE = "owner_or_admin_required";
@@ -46,11 +47,15 @@ const AGENT_PROFILE_TABS: Record<string, [string, string]> = {
   "runtime-state": ["harness settings", "runtime"],
 };
 
+const ENVIRONMENT_ROUTE = /^\/(?:companies\/[^/]+\/)?environments(?:\/|$)|^\/environment-(?:leases|custom-image-setup-sessions)(?:\/|$)/;
+
 // The board page that holds the control behind a board-only API route, when one
 // is known. Paths keep <prefix> for the agent to fill from its own task identifier.
-const BOARD_CONTROL_PAGES: Array<[RegExp, (match: RegExpExecArray) => [string, string]]> = [
+const BOARD_CONTROL_PAGES: Array<[RegExp, (match: RegExpExecArray) => [string, string] | null]> = [
   [/^\/(?:companies\/[^/]+\/)?secrets?(?:[-/]|$)/, () => ["company secrets", "/<prefix>/company/settings/secrets"]],
-  [/^\/companies\/[^/]+\/(?:budgets|budget-incidents|costs)(?:\/|$)/, () => ["budgets", "/<prefix>/activity/budgets"]],
+  [/^\/companies\/[^/]+\/(?:budgets|budget-incidents)(?:\/|$)/, () => ["budgets", "/<prefix>/activity/budgets"]],
+  // Cost recording controls (such as retrying a run's saved-usage cost) are on the Costs page, not Budgets.
+  [/^\/companies\/[^/]+\/costs(?:\/|$)/, () => ["costs", "/<prefix>/activity/costs"]],
   [/^\/companies\/[^/]+\/(?:members|invites|join-requests)(?:\/|$)/, () => ["company members", "/<prefix>/company/settings/members"]],
   [/^\/companies\/[^/]+\/(?:tools\/)?gateways(?:\/|$)|^\/tool-gateway\//, () => ["tool gateways", "/<prefix>/apps/gateways"]],
   [/^\/approvals\/([^/]+)/, match => ["the approval", `/<prefix>/approvals/${match[1]}`]],
@@ -59,10 +64,25 @@ const BOARD_CONTROL_PAGES: Array<[RegExp, (match: RegExpExecArray) => [string, s
     return tab ? [`the agent's ${tab[0]}`, `/<prefix>/agents/${match[1]}/${tab[1]}`] : ["the agent's profile", `/<prefix>/agents/${match[1]}`];
   }],
   [/^\/companies\/[^/]+(?:\/(?:archive|branding|settings))?\/?$/, () => ["company settings", "/<prefix>/company/settings"]],
+  // An operator can hide a settings page, so link it only while it is visible.
+  [ENVIRONMENT_ROUTE, () => getHiddenSettings().has("instance.environments")
+    ? null : ["environment settings", "/<prefix>/company/settings/instance/environments"]],
+  [/^\/instance\/settings\/experimental\/?$/, () => getHiddenSettings().has("instance.experimental")
+    ? null : ["Experimental settings", "/<prefix>/company/settings/instance/experimental"]],
 ];
 
+// Some board-only areas have no agent route at all. A denial on one of their
+// routes (often the list an agent reads first) also answers the area's other steps.
+const PLUGIN_ROUTE = /^\/plugins(?:\/|$)/;
+const PLUGIN_ADMINISTRATION_SCOPE = "Plugin management is board-only throughout: listing, installing, configuring (including choosing a secret for a plugin setting), enabling, disabling, upgrading and removing plugins have no agent route either.";
+const ENVIRONMENT_ADMINISTRATION_SCOPE = "Execution environments are board-only throughout: listing computers, reading which coding harnesses they support, testing (probing) them and changing them have no agent route either.";
+
+function deniedApiPath(req: Request) {
+  return (req.originalUrl ?? "").split("?")[0]!.replace(/^\/api(?=\/)/, "");
+}
+
 function boardControlPage(req: Request) {
-  const path = (req.originalUrl ?? "").split("?")[0]!.replace(/^\/api(?=\/)/, "");
+  const path = deniedApiPath(req);
   for (const [pattern, page] of BOARD_CONTROL_PAGES) {
     const match = pattern.exec(path);
     if (match) return page(match);
@@ -77,12 +97,15 @@ function boardControlPage(req: Request) {
 export function boardAccessRequired(req: Request) {
   if (req.actor.type !== "agent") return forbidden("Board access required");
   const page = boardControlPage(req);
+  const deniedPath = deniedApiPath(req);
+  const scope = PLUGIN_ROUTE.test(deniedPath) ? `${PLUGIN_ADMINISTRATION_SCOPE} `
+    : ENVIRONMENT_ROUTE.test(deniedPath) ? `${ENVIRONMENT_ADMINISTRATION_SCOPE} ` : "";
   const where = page
     ? `They do it in the GS Agentic Manager web app. Link [Open ${page[0]}](${page[1]}) and put this conversation's company prefix in place of <prefix>.`
     : "They do it in the GS Agentic Manager web app or with their own board credentials. Link a page only if you already know its route. Do not search for one.";
   return forbidden("Board access required", {
     code: BOARD_ACCESS_REQUIRED_CODE,
-    remediation: `Only a board user can do this action. This denial is final: no agent credential, tool or other API route can do it. Do not search for one. Tell the person that a board user must do it. ${where}`,
+    remediation: `Only a board user can do this action. This denial is final: no agent credential, tool or other API route can do it. Do not search for one. Tell the person that a board user must do it. ${scope}${where}`,
   });
 }
 
