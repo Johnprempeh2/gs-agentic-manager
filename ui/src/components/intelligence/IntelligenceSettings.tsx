@@ -225,7 +225,7 @@ export function IntelligenceSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90dvh] sm:max-w-2xl"
+        className="max-h-(--sz-85vh) sm:max-w-2xl"
         scrollBody
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
