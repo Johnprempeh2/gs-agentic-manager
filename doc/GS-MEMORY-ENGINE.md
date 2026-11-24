@@ -13,7 +13,7 @@ John's shared memory across Claude Code, Codex and GSAM (bank `greatstone-john`,
 
 | Item | Value |
 |---|---|
-| Service user | `gsmemory` (system user, no login shell). Agents run as `johnprempeh` and cannot read its files. |
+| Service user | `gsmemory` (system user, no login shell). Agents run as `<agent-user>` and cannot read its files. |
 | Root folder | `/home/gsmemory/gs-memory/` (`~/gs-memory/` of the service user), mode `0700` |
 | Sub-folders | `app/` (venv, `hindsight.env`, `extension/` (the two Greatstone modules), `setup/` copy of `scripts/gs-memory`), `pg/data`, `pg/run` (socket), `models/`, `secrets/`, `backups/`, `logs/`, `home/` |
 | Engine | `127.0.0.1:18888`, every API call needs the gateway key **and** a signed 60-second assertion from the GSAM gateway that names one bank, one operation and the allowed tags (Greatstone extension, GRE-672). MCP off. Prompt log off. Claude CLI telemetry, error reports and update checks off (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`). Main PID for the egress check: `systemctl show -p MainPID --value gs-memory-hindsight`. |
@@ -103,7 +103,7 @@ with an isolated config folder, so it cannot use John's existing sign-in anyway.
 ```sh
 sudo systemctl start gs-memory-hindsight      # also starts gs-memory-postgres
 curl -fsS http://127.0.0.1:18888/health
-scripts/gs-memory/gs-memory.sh check          # run as johnprempeh = agent-side evidence
+scripts/gs-memory/gs-memory.sh check          # run as <agent-user> = agent-side evidence
 sudo systemctl stop gs-memory-hindsight gs-memory-postgres
 ```
 
@@ -117,7 +117,7 @@ The check writes nothing; its bank does not exist, so "accepted" shows as `404 B
 ## Gateway secrets for the GSAM server
 
 The GSAM server reads the engine URL, the key and the assertion secret from `~/gs-memory/secrets/gateway.env` of the
-user it runs as (`/home/johnprempeh/gs-memory/secrets/gateway.env`; a sandbox GSAM can use
+user it runs as (`/home/<agent-user>/gs-memory/secrets/gateway.env`; a sandbox GSAM can use
 `GSAM_MEMORY_GATEWAY_CONFIG=<path>`). The server refuses the file unless it is mode `600`. The secrets are
 deliberately not in the server environment, because agent processes inherit it.
 
@@ -128,7 +128,7 @@ home, so `sudo .../gs-memory.sh link-gateway` copies it there (owner = the user 
 Rotating: delete `secrets/engine.env`, run `install` and `link-gateway`, restart the engine.
 
 **Residual risk (accepted by Everest, 5 Oct 2026, synthetic data only).** The GSAM server and the agents run as the
-same Linux user (`johnprempeh`). Mode `600` therefore does not hide `gateway.env` from agents: an agent that reads it
+same Linux user (`<agent-user>`). Mode `600` therefore does not hide `gateway.env` from agents: an agent that reads it
 can sign its own assertions and call the engine directly, past the gateway's permission checks. `check` prints this
 as a `NOTE`. This is accepted while memory holds only synthetic data. It **must be closed before G4** (real data);
 it is an open item on the G4 gate in GRE-646. Possible fixes: run agents as a different user, or give the server a
@@ -338,7 +338,7 @@ John chose an external drive for the off-disk copy (5 Oct 2026). The Windows cop
 
 - `install` (or the first `backup`) makes `secrets/backup.key`: 48 random bytes, base64, owner `gsmemory`, mode `600`,
   in `/home/gsmemory/gs-memory/secrets/` (mode `700`). It is never written to `/mnt/c` and never printed or logged.
-  Agents (user `johnprempeh`) cannot read it.
+  Agents (user `<agent-user>`) cannot read it.
 - **John keeps a second copy off the PC** (password manager). Without it, a lost WSL disk means the Windows copies
   cannot be opened. One time, in John's own terminal: `sudo cat /home/gsmemory/gs-memory/secrets/backup.key`, paste
   it into the password manager, clear the screen. Never paste it into GSAM, an issue, a chat or a file on `/mnt/c`.
