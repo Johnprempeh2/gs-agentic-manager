@@ -19,6 +19,12 @@ export const FLEET_AUDIENCE = "gsam-fleet/v1";
 /** v2 (GRE-1366) adds `lifecycle`, `connections` and `usage.runsFailedLast24h`. The hub still takes v1 until every spoke runs a v2 release. */
 export const FLEET_CHECK_IN_SCHEMA = "gsam-fleet-check-in/v2";
 export const FLEET_CHECK_IN_SCHEMA_V1 = "gsam-fleet-check-in/v1";
+/**
+ * v3 (GSAM for Mac P2): what the Mac spoke sends. Adds the results of signed
+ * operator orders, the `stopped` lifecycle and the install's tailnet name.
+ * Host-script spokes keep sending v2; the hub takes v1, v2 and v3.
+ */
+export const FLEET_CHECK_IN_SCHEMA_V3 = "gsam-fleet-check-in/v3";
 /** The spoke sends one check-in per watch pass. */
 export const FLEET_CHECK_IN_INTERVAL_SECONDS = 5 * 60;
 /** A signed message is good for this long after it is made. */
@@ -46,8 +52,72 @@ export const FLEET_INSTANCE_STATUSES = ["pending", "active", "revoked"] as const
 export type FleetInstanceStatus = (typeof FLEET_INSTANCE_STATUSES)[number];
 
 /** What the operator did to the instance on the host (B9: `pause`, `resume`, `archive`). Not the same as up or down. */
-export const FLEET_LIFECYCLES = ["active", "paused", "archived"] as const;
+const FLEET_LIFECYCLES_V2 = ["active", "paused", "archived"] as const;
+/** `stopped` (v3, GSAM for Mac): Greatstone stopped the service with a signed order. Agents stop, data stays. */
+export const FLEET_LIFECYCLES = [...FLEET_LIFECYCLES_V2, "stopped"] as const;
 export type FleetLifecycle = (typeof FLEET_LIFECYCLES)[number];
+
+/**
+ * Signed operator orders (GSAM for Mac P2). The hub signs each with its
+ * entitlement key; the install checks it with the key it pinned at
+ * activation, obeys each `seq` once and reports the result in its next
+ * check-in. An order is good for FLEET_ORDER_LIFETIME_HOURS.
+ */
+export const FLEET_ORDER_KINDS = ["pause", "resume", "stop", "update"] as const;
+export type FleetOrderKind = (typeof FLEET_ORDER_KINDS)[number];
+export const FLEET_ORDER_JWS_TYPE = "gsam-fleet-order+jwt";
+export const FLEET_ORDER_AUDIENCE = "gsam-fleet-order/v1";
+export const FLEET_ORDER_LIFETIME_HOURS = 24;
+export const FLEET_ORDER_RESULTS = ["done", "failed", "refused"] as const;
+export type FleetOrderResult = (typeof FLEET_ORDER_RESULTS)[number];
+/** Why an order failed or was refused. No free text leaves the install. */
+export const FLEET_ORDER_RESULT_CODES = ["expired", "already_handled", "update_unavailable", "update_failed"] as const;
+export type FleetOrderResultCode = (typeof FLEET_ORDER_RESULT_CODES)[number];
+
+export const fleetOrderClaimsSchema = z
+  .object({
+    v: z.literal(1),
+    aud: z.literal(FLEET_ORDER_AUDIENCE),
+    /** The hub's instance id. */
+    sub: z.string().uuid(),
+    /** The instance code; must match the install's pinned code. */
+    client: z.string().min(1).max(64),
+    seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    kind: z.enum(FLEET_ORDER_KINDS),
+    iat: z.number().int(),
+    exp: z.number().int(),
+  })
+  .strict();
+export type FleetOrderClaims = z.infer<typeof fleetOrderClaimsSchema>;
+
+/** `POST /api/fleet/instances/:id/orders`: what and why. The reason stays on the hub. */
+export const fleetOrderCreateSchema = z
+  .object({ kind: z.enum(FLEET_ORDER_KINDS), reason: z.string().trim().min(1).max(1000) })
+  .strict();
+
+export const fleetOrderReportSchema = z
+  .object({ seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), result: z.enum(FLEET_ORDER_RESULTS), code: z.enum(FLEET_ORDER_RESULT_CODES).nullable() })
+  .strict();
+export type FleetOrderReport = z.infer<typeof fleetOrderReportSchema>;
+
+/** A tailnet machine name (MagicDNS), for example `gsam-mac-1a2b.tailnet-name.ts.net`. */
+export const FLEET_TAILNET_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}\.){1,5}ts\.net$/;
+
+/** pending: not yet reported. expired: never reported and past its expiry. */
+export type FleetOrderStatus = "pending" | "expired" | FleetOrderResult;
+
+export interface FleetOrderView {
+  id: string;
+  seq: number;
+  kind: FleetOrderKind;
+  reason: string;
+  issuedBy: string;
+  createdAt: string;
+  expiresAt: string;
+  status: FleetOrderStatus;
+  resultCode: FleetOrderResultCode | null;
+  resultAt: string | null;
+}
 
 /** The instance code (the `<root>` folder name), never a client name. */
 export const fleetInstanceCodeSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/, "code: a-z, 0-9 and -, 3 to 32 characters");
@@ -123,16 +193,29 @@ export const fleetCheckInV2Schema = z
     schema: z.literal(FLEET_CHECK_IN_SCHEMA),
     ...checkInV1Fields,
     usage: usageV2Schema,
-    lifecycle: z.enum(FLEET_LIFECYCLES),
+    lifecycle: z.enum(FLEET_LIFECYCLES_V2),
     connections: fleetConnectionsSchema.nullable(),
   })
   .strict();
 
-/** What a spoke signs and sends: always the newest version. */
+/** What a host-script spoke signs and sends. */
 export type FleetCheckIn = z.infer<typeof fleetCheckInV2Schema>;
 
-/** What the hub takes: the newest version, or v1 from a spoke not yet upgraded. Any other field is refused. */
-export const fleetCheckInSchema = z.discriminatedUnion("schema", [fleetCheckInV2Schema, fleetCheckInV1Schema]);
+/** The Mac spoke (P2): v2 plus order results, `stopped` and the tailnet name. */
+export const fleetCheckInV3Schema = fleetCheckInV2Schema
+  .extend({
+    schema: z.literal(FLEET_CHECK_IN_SCHEMA_V3),
+    lifecycle: z.enum(FLEET_LIFECYCLES),
+    /** Results of orders handled since the last check-in the hub answered. */
+    orders: z.array(fleetOrderReportSchema).max(50),
+    /** Remote help: the install's tailnet machine name, or null when it has not joined. */
+    remote: z.object({ tailnetName: z.string().regex(FLEET_TAILNET_NAME_PATTERN).nullable() }).strict(),
+  })
+  .strict();
+export type FleetCheckInV3 = z.infer<typeof fleetCheckInV3Schema>;
+
+/** What the hub takes: v3 from a Mac, v2 from a host script, or v1 from a spoke not yet upgraded. Any other field is refused. */
+export const fleetCheckInSchema = z.discriminatedUnion("schema", [fleetCheckInV3Schema, fleetCheckInV2Schema, fleetCheckInV1Schema]);
 export type FleetReceivedCheckIn = z.infer<typeof fleetCheckInSchema>;
 
 /** Ed25519 public key as a JWK; the hub stores `x` only. */
@@ -177,7 +260,7 @@ export const fleetRegisterRequestSchema = z
  * stopped on purpose, so it is never "stale" or "down" (AT-3.8). The two
  * limits are hub settings, not constants.
  */
-export const FLEET_INSTANCE_STATES = ["pending", "revoked", "paused", "archived", "waiting", "ok", "stale", "down"] as const;
+export const FLEET_INSTANCE_STATES = ["pending", "revoked", "paused", "stopped", "archived", "waiting", "ok", "stale", "down"] as const;
 export type FleetInstanceState = (typeof FLEET_INSTANCE_STATES)[number];
 
 export function fleetInstanceState(
@@ -186,7 +269,7 @@ export function fleetInstanceState(
   now = new Date(),
 ): FleetInstanceState {
   if (input.status !== "active") return input.status;
-  if (input.lifecycle === "paused" || input.lifecycle === "archived") return input.lifecycle;
+  if (input.lifecycle === "paused" || input.lifecycle === "stopped" || input.lifecycle === "archived") return input.lifecycle;
   if (!input.lastCheckInAt) return "waiting";
   const ageMinutes = (now.getTime() - input.lastCheckInAt.getTime()) / 60_000;
   if (ageMinutes >= limits.downAfterMinutes || input.lastAppHealth === "down") return "down";
@@ -209,6 +292,10 @@ export interface FleetInstanceView {
   /** GSAM for Mac: the newest signed document's version, and the operator log-in's email (never the password). */
   entitlementVersion?: number | null;
   operatorEmail?: string | null;
+  /** GSAM for Mac (P2): what the newest signed document grants. Null when the hub holds none. */
+  entitlement?: FleetEntitlementSummary | null;
+  /** GSAM for Mac (P2): the newest operator orders, newest first. */
+  orders?: FleetOrderView[];
   createdAt: string;
   latestCheckIn: { receivedAt: string; checkIn: FleetReceivedCheckIn } | null;
 }
@@ -262,10 +349,31 @@ export interface FleetActivateResponse {
   entitlement: z.infer<typeof entitlementEnvelopeSchema>;
   /** Greatstone's operator log-in for this install (instance admin). The hub keeps the password in its secrets store. */
   operator: { email: string; password: string };
+  /**
+   * P2: a one-use Tailscale auth key, tagged `tag:gsam-customer`, when the hub
+   * has Tailscale set up. Null: the install skips remote network access.
+   */
+  tailscale?: { authKey: string } | null;
 }
 
-/** The hub's answer to a check-in: when it was taken, and the newest signed document for the instance. */
+export interface FleetEntitlementSummary {
+  version: number;
+  features: Record<string, boolean>;
+  limits: Record<string, number>;
+  validUntil: string;
+  grace: number;
+  issuedAt: string;
+  issuedBy: string;
+  reason: string | null;
+}
+
+/**
+ * The hub's answer to a check-in: when it was taken, the newest signed
+ * document for the instance, and (P2) the signed orders it has not yet
+ * reported on, oldest first. An older spoke ignores `orders`.
+ */
 export interface FleetCheckInResponse {
   receivedAt: string;
   entitlement: z.infer<typeof entitlementEnvelopeSchema> | null;
+  orders?: string[];
 }

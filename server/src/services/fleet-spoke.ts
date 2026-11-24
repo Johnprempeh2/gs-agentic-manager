@@ -9,27 +9,37 @@
  *   `fleet/operator.json`, delete that file, and set backups to 30 days.
  *   The owner comes first because a bootstrap invite only makes the FIRST
  *   instance admin.
- * - Check-in: every 5 minutes, a signed check-in to the hub (the same closed
- *   schema the host scripts send). The answer carries the hub's newest signed
- *   entitlement document; a good one is written to the entitlement file and
- *   applied at once.
+ * - Check-in: every 5 minutes, a signed check-in to the hub (the closed
+ *   schema, v3). The answer carries the hub's newest signed entitlement
+ *   document; a good one is written to the entitlement file and applied at
+ *   once. It also carries signed operator orders (P2): pause, resume, stop,
+ *   update. Each is checked against the pinned hub key, obeyed once in seq
+ *   order, and its result goes in the next check-in.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { randomBytes, randomUUID, type JsonWebKey } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { agents, authAccounts, authUsers, companies, heartbeatRuns, instanceUserRoles, invites, type Db } from "@greatstone/db";
-import { FLEET_CHECK_IN_INTERVAL_SECONDS, type FleetCheckIn, type FleetCheckInResponse } from "@greatstone/shared/fleet";
-import { buildCheckIn, nextSeq, signFleetMessage } from "@greatstone/shared/fleet-spoke";
+import {
+  FLEET_CHECK_IN_INTERVAL_SECONDS,
+  FLEET_TAILNET_NAME_PATTERN,
+  type FleetCheckIn,
+  type FleetCheckInResponse,
+  type FleetOrderReport,
+} from "@greatstone/shared/fleet";
+import { buildCheckIn, macCheckIn, nextSeq, signFleetMessage } from "@greatstone/shared/fleet-spoke";
 import { hashInviteToken } from "../lib/invite-token-hash.js";
 import { logger } from "../middleware/logger.js";
 import { parseEntitlementPublicKey, readEntitlementConfig, verifyEntitlementEnvelope } from "./entitlement-document.js";
 import { getEntitlementRuntime } from "./entitlement-runtime.js";
 import { fleetSpokePaths, readFleetSpokeConfig, type FleetSpokeConfig } from "./fleet-spoke-config.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { verifyFleetOrder } from "./fleet-orders.js";
+import { setServiceHoldSpoke } from "./service-hold.js";
 
 const LOCAL_BOARD_USER_ID = "local-board";
 const OWNER_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -193,6 +203,102 @@ async function usage(db: Db): Promise<FleetCheckIn["usage"]> {
   };
 }
 
+// ---------------------------------------------------------------- orders
+
+const ORDER_RESULTS_KEPT = 50;
+
+export interface SpokeOrders {
+  /** The highest order seq obeyed or refused. An order at or below it is never obeyed again. */
+  lastSeq: number;
+  hold: "paused" | "stopped" | null;
+  results: Array<FleetOrderReport & { reported: boolean }>;
+}
+
+export function readSpokeOrders(paths: Paths): SpokeOrders {
+  const saved = readJson<Partial<SpokeOrders>>(paths.orders);
+  return {
+    lastSeq: typeof saved?.lastSeq === "number" ? saved.lastSeq : 0,
+    hold: saved?.hold === "paused" || saved?.hold === "stopped" ? saved.hold : null,
+    results: Array.isArray(saved?.results) ? saved.results : [],
+  };
+}
+
+function record(orders: SpokeOrders, report: FleetOrderReport) {
+  orders.results = [...orders.results.filter((r) => r.seq !== report.seq), { ...report, reported: false }].slice(-ORDER_RESULTS_KEPT);
+}
+
+/** Ask launchd to run this install's updater now (the `<label>.update` LaunchAgent gsam.sh made). */
+export function kickUpdater(env: NodeJS.ProcessEnv = process.env): Promise<FleetOrderReport["code"]> {
+  const label = env.GSAM_LAUNCHD_LABEL?.trim();
+  if (!label || !/^[A-Za-z0-9.-]{1,120}$/.test(label) || process.platform !== "darwin") return Promise.resolve("update_unavailable");
+  const uid = process.getuid?.() ?? 0;
+  return new Promise((resolve) => {
+    execFile("launchctl", ["kickstart", `gui/${uid}/${label}.update`], { timeout: 10_000 }, (err) => resolve(err ? "update_failed" : null));
+  });
+}
+
+/**
+ * Obey signed orders from a check-in answer, oldest first. Each verified order
+ * above `lastSeq` is obeyed once; an older one is reported again, never
+ * obeyed again. An expired one is refused. A badly signed one, or one for
+ * another install, is dropped and logged: nothing about it can be trusted.
+ * The file is written before an update is started, so a restart never
+ * loses the result.
+ */
+export async function obeySpokeOrders(
+  messages: string[],
+  config: FleetSpokeConfig,
+  paths: Paths,
+  deps: { runUpdate?: () => Promise<FleetOrderReport["code"]>; now?: Date } = {},
+): Promise<string[]> {
+  const orders = readSpokeOrders(paths);
+  const done: string[] = [];
+  const checked = messages
+    .map((message) => verifyFleetOrder(message, config.entitlementPublicKey, { instanceId: config.instanceId, code: config.code }, deps.now))
+    .sort((a, b) => (a.ok ? a.claims.seq : (a.seq ?? 0)) - (b.ok ? b.claims.seq : (b.seq ?? 0)));
+  for (const check of checked) {
+    if (!check.ok) {
+      if (check.reason === "expired" && check.seq !== null && check.seq > orders.lastSeq) {
+        record(orders, { seq: check.seq, result: "refused", code: "expired" });
+        orders.lastSeq = check.seq;
+        writePrivate(paths.orders, orders);
+      }
+      logger.warn({ reason: check.reason, seq: check.seq }, "fleet spoke: order refused");
+      continue;
+    }
+    const { seq, kind } = check.claims;
+    if (seq <= orders.lastSeq) {
+      const previous = orders.results.find((r) => r.seq === seq);
+      record(orders, previous ? { seq, result: previous.result, code: previous.code } : { seq, result: "refused", code: "already_handled" });
+      writePrivate(paths.orders, orders);
+      continue;
+    }
+    orders.lastSeq = seq;
+    if (kind === "update") {
+      record(orders, { seq, result: "done", code: null });
+      writePrivate(paths.orders, orders);
+      const code = await (deps.runUpdate ?? kickUpdater)();
+      if (code) {
+        record(orders, { seq, result: "failed", code });
+        writePrivate(paths.orders, orders);
+      }
+    } else {
+      orders.hold = kind === "pause" ? "paused" : kind === "stop" ? "stopped" : null;
+      record(orders, { seq, result: "done", code: null });
+      writePrivate(paths.orders, orders);
+      setServiceHoldSpoke(true, orders.hold);
+    }
+    done.push(`${kind} #${seq}`);
+    logger.info({ kind, seq }, "fleet spoke: order obeyed");
+  }
+  return done;
+}
+
+function tailnetName(paths: Paths): string | null {
+  const name = readJson<{ name?: string }>(paths.tailnet)?.name?.replace(/\.$/, "").toLowerCase() ?? null;
+  return name && FLEET_TAILNET_NAME_PATTERN.test(name) ? name : null;
+}
+
 interface SpokeState {
   lastSeq: number;
   lastCheckIn?: { at: string; ok: boolean; detail: string };
@@ -216,7 +322,15 @@ export async function applyHubEntitlement(envelope: unknown, config: FleetSpokeC
 
 export async function sendSpokeCheckIn(
   db: Db,
-  input: { config: FleetSpokeConfig; paths: Paths; backupDir: string; appVersion: string | null; releaseTag: string | null; entitlementFile: string | null },
+  input: {
+    config: FleetSpokeConfig;
+    paths: Paths;
+    backupDir: string;
+    appVersion: string | null;
+    releaseTag: string | null;
+    entitlementFile: string | null;
+    runUpdate?: () => Promise<FleetOrderReport["code"]>;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ ok: boolean; detail: string }> {
   const { config, paths } = input;
@@ -228,7 +342,9 @@ export async function sendSpokeCheckIn(
   writePrivate(paths.state, { ...state, lastSeq: seq });
   let outcome: { ok: boolean; detail: string };
   try {
-    const checkIn = buildCheckIn({
+    const orders = readSpokeOrders(paths);
+    const reports = orders.results.filter((r) => !r.reported).map(({ seq, result, code }) => ({ seq, result, code }));
+    const base = buildCheckIn({
       edition: "managed",
       appUp: true,
       newestBackupAt: newestFileMtime(input.backupDir),
@@ -240,6 +356,11 @@ export async function sendSpokeCheckIn(
       usage: await usage(db),
       signals: [],
       connections: null,
+    });
+    const checkIn = macCheckIn(base, {
+      lifecycle: orders.hold ?? "active",
+      orders: reports,
+      tailnetName: tailnetName(paths),
     });
     const message = signFleetMessage(key.privateJwk, { act: "check-in", sub: config.instanceId, seq, checkIn });
     const res = await fetchImpl(`${config.hubUrl}/api/fleet/spoke/check-in`, {
@@ -253,6 +374,13 @@ export async function sendSpokeCheckIn(
       outcome = { ok: false, detail: `hub refused: ${body?.error ?? `HTTP ${res.status}`}` };
     } else {
       let detail = `hub answered ${res.status}`;
+      // The hub recorded these results in the same step that answered; never send them again.
+      if (reports.length > 0) {
+        const sent = new Set(reports.map((r) => r.seq));
+        const latest = readSpokeOrders(paths);
+        latest.results = latest.results.map((r) => (sent.has(r.seq) ? { ...r, reported: true } : r));
+        writePrivate(paths.orders, latest);
+      }
       if (body?.entitlement && input.entitlementFile) {
         try {
           const version = await applyHubEntitlement(body.entitlement, config, input.entitlementFile);
@@ -260,6 +388,10 @@ export async function sendSpokeCheckIn(
         } catch (err) {
           detail += `, entitlement document refused: ${(err as Error).message}`;
         }
+      }
+      if (Array.isArray(body?.orders) && body.orders.length > 0) {
+        const obeyed = await obeySpokeOrders(body.orders.filter((m): m is string => typeof m === "string"), config, paths, { runUpdate: input.runUpdate });
+        if (obeyed.length > 0) detail += `, orders obeyed: ${obeyed.join(", ")}`;
       }
       outcome = { ok: true, detail };
     }
@@ -277,6 +409,7 @@ export function startFleetSpoke(opts: { db: Db; instanceRoot: string; port: numb
   const config = readFleetSpokeConfig(opts.instanceRoot);
   if (!config) return null;
   const paths = fleetSpokePaths(opts.instanceRoot);
+  setServiceHoldSpoke(true, readSpokeOrders(paths).hold);
   // The operator log-in has no phone; compulsory two-step sign-in leaves it out.
   const exempt = process.env.GSAM_TWO_STEP_EXEMPT_EMAILS?.trim();
   process.env.GSAM_TWO_STEP_EXEMPT_EMAILS = exempt ? `${exempt},${config.operatorEmail}` : config.operatorEmail;

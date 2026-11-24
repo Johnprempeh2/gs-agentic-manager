@@ -74,6 +74,38 @@ export const fleetCheckIns = pgTable(
 );
 
 /**
+ * Signed operator orders to a GSAM for Mac install (P2): pause, resume,
+ * stop, update. `seq` grows per instance; `message` is the compact JWS the
+ * hub signed with its entitlement key and sends with each check-in answer
+ * until the install reports a result. Who and why stay here (and in the
+ * activity log); only kind, seq and expiry travel.
+ */
+export const fleetOrders = pgTable(
+  "fleet_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fleetInstanceId: uuid("fleet_instance_id")
+      .notNull()
+      .references(() => fleetInstances.id, { onDelete: "cascade" }),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    kind: text("kind").notNull(),
+    reason: text("reason").notNull(),
+    issuedBy: text("issued_by").notNull(),
+    issuedByUserId: text("issued_by_user_id"),
+    message: text("message").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** done, failed or refused, as the install reported it. Null until then. */
+    result: text("result"),
+    resultCode: text("result_code"),
+    resultAt: timestamp("result_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    instanceSeqUq: uniqueIndex("fleet_orders_instance_seq_uq").on(table.fleetInstanceId, table.seq),
+  }),
+);
+
+/**
  * A support ticket that came from a client instance (GRE-1084). Links the
  * spoke's ticket id to the hub's support ticket. The ticket itself (title,
  * summary, status, owner, priority, category, SLA times) lives in the issue

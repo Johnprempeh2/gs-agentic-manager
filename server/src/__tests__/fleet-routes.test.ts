@@ -208,7 +208,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     const { id, key, seq } = await register("c001");
     const res = await sendCheckIn(key, id, nextSeq(seq));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ receivedAt: expect.any(String), entitlement: null });
+    expect(res.body).toEqual({ receivedAt: expect.any(String), entitlement: null, orders: [] });
     const list = await request(app()).get(`/api/fleet/instances/${id}/check-ins`);
     expect(list.status).toBe(200);
     expect(list.body).toHaveLength(1);
@@ -491,6 +491,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     expect((await request(app()).get(`/api/fleet/instances/${a.id}/check-ins`)).status).toBe(403);
   });
 
+  // The only commands are signed operator orders (P2): made on /orders, sent on the spoke's own check-in answer.
   it("has no route that sends a command to a spoke", () => {
     const paths = [fleetHubRoutes(db), fleetSpokeRoutes(db)].flatMap((router) =>
       (router.stack as Array<{ route?: { path: string } }>).flatMap((layer) => (layer.route ? [layer.route.path] : [])),
@@ -509,6 +510,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
       "/fleet/instances/:id/check-ins",
       "/fleet/instances/:id/entitlement",
       "/fleet/instances/:id/operator-login",
+      "/fleet/instances/:id/orders",
       "/fleet/instances/:id/registration-code",
       "/fleet/instances/:id/revoke",
       "/fleet/instances/:id/support-queue",
