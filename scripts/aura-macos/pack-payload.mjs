@@ -89,6 +89,25 @@ if (!cli || workspace.length !== ordered.length) {
 fs.mkdirSync(payload, { recursive: true });
 run("npm", ["install", "--prefix", payload, path.join(scratch, cli), ...workspace.map((name) => path.join(scratch, name)), "--no-audit", "--no-fund"], { cwd: scratch });
 
-const reported = execFileSync(process.execPath, [path.join(payload, "node_modules", "gsam", "dist", "index.js"), "--version"], { encoding: "utf8" }).trim().split(/\s+/)[0];
+// Our packages ship their compiled tests (`*.test.js` next to the code). The
+// app never loads them, and their fake tokens would trip the contents check.
+let removedTests = 0;
+const dropTests = (dir, ours) => {
+  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      const parent = path.basename(dir);
+      const inOurs = parent === "node_modules" ? false : parent === "@greatstone" && path.basename(path.dirname(dir)) === "node_modules" ? true : ours;
+      dropTests(full, inOurs);
+    } else if (ours && /\.test\.(js|mjs|cjs|d\.ts)(\.map)?$/.test(item.name)) {
+      fs.rmSync(full);
+      removedTests += 1;
+    }
+  }
+};
+dropTests(path.join(payload, "node_modules"), false);
+console.log(`removed ${removedTests} compiled test files from @greatstone packages`);
+
+const reported =execFileSync(process.execPath, [path.join(payload, "node_modules", "gsam", "dist", "index.js"), "--version"], { encoding: "utf8" }).trim().split(/\s+/)[0];
 if (reported !== version) throw new Error(`payload CLI reports ${reported || "no version"}; expected ${version}`);
 console.log(`payload ready: gsam ${version} in ${payload}`);

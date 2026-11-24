@@ -11,21 +11,32 @@ ADDRESS="${2:-}"
 fail=0
 bad() { echo "CHECK FAILED: $*" >&2; fail=1; }
 
+# Checks 1-3 read only the files Greatstone writes: the installer, template,
+# our @greatstone packages, web UI and skills. Third-party npm packages come
+# from the public registry and cannot carry our data; their own test keys and
+# doc examples (ssh2 test certs, AWS and Octokit example keys) are not ours.
+ours() { awk '{ i = 0; rest = $0; while ((j = index(rest, "node_modules/")) > 0) { i = 1; rest = substr(rest, j + 13) } if (!i || rest ~ /^@greatstone\//) print }'; }
+OURS="$(mktemp)"; trap 'rm -f "$OURS"' EXIT
+(cd "$DIR" && find . -type f -print) | ours > "$OURS"
+grep_ours() { (cd "$DIR" && tr '\n' '\0' < "$OURS" | xargs -0 grep -IE "$@" 2>/dev/null) || true; }
+
 # 1. No data, log-ins or keys: no instance folders, databases, env or key files.
 while IFS= read -r file; do bad "data or key file: $file"; done < <(
-  cd "$DIR" && find . \( -name '.env' -o -name '*.pem' -o -name '*.p12' -o -name 'master.key' \
-    -o -name 'PG_VERSION' -o -name 'postmaster.pid' -o -name '*.sql.gz' -o -name 'config.json' -path '*instances*' \) -print)
+  grep -E '/\.env$|\.pem$|\.p12$|/master\.key$|/PG_VERSION$|/postmaster\.pid$|\.sql\.gz$|instances.*/config\.json$' "$OURS")
 [ ! -e "$DIR/app/data" ] || bad "app/data exists"
 
 # 2. No live secrets in any text file (keys of the shapes our tools use).
 SECRET_RE='sk-ant-[A-Za-z0-9_-]{30,}|sk-proj-[A-Za-z0-9_-]{30,}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{50,}|xox[bap]-[0-9]{9,}-[0-9A-Za-z-]+|AKIA[0-9A-Z]{16}'
 while IFS= read -r hit; do bad "secret-shaped text: $hit"; done < <(
-  grep -rIEo --exclude-dir=.git "$SECRET_RE" "$DIR" 2>/dev/null | cut -c1-160 | head -20)
+  grep_ours -o "$SECRET_RE" | cut -c1-160 | head -20)
 
-# 3. Nothing from Greatstone's own machine or install.
-LOCAL_RE='/Users/johnprempeh|/home/johnprempeh|GSAM/data/instances|GSAM/live|gsam-client-instances'
+# 3. Nothing from Greatstone's own machine or install. The app code
+#    (@greatstone/*/dist) names the install folders to keep agents out of
+#    them, so only home folders are checked there.
+HOME_RE='/Users/johnprempeh|/home/johnprempeh'
+INSTALL_RE='GSAM/data/instances|GSAM/live|gsam-client-instances'
 while IFS= read -r hit; do bad "local path of Greatstone's machine: $hit"; done < <(
-  grep -rIEl "$LOCAL_RE" "$DIR" 2>/dev/null | head -20)
+  { grep_ours -l "$HOME_RE"; grep_ours -l "$INSTALL_RE" | grep -Ev 'node_modules/@greatstone/[^/]+/dist/' || true; } | head -20)
 while IFS= read -r skill; do bad "Greatstone-only skill: $skill"; done < <(
   cd "$DIR" && find . -type d \( -name 'greatstone-voice*' -o -name 'greatstone-brand*' -o -name 'greatstone-way*' \) -print)
 
