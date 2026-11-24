@@ -50,8 +50,9 @@ while IFS= read -r bin; do
   case " $archs " in *" $WANT_ARCH "*) ;; *) bad "agent runner is not $WANT_ARCH ($archs): $bin" ;; esac
 done <<< "$RUNNERS"
 
-# 6. The server carries the web UI.
+# 6. The server carries the web UI and the bundled skills.
 [ -f "$DIR/app/payload/node_modules/@greatstone/server/ui-dist/index.html" ] || bad "no web UI (server/ui-dist/index.html) in the payload"
+[ -f "$DIR/app/payload/node_modules/@greatstone/server/skills/paperclip/SKILL.md" ] || bad "no bundled skills (server/skills) in the payload"
 
 [ "$fail" = 0 ] || exit 1
-echo "contents check passed: no data, keys, local paths or Greatstone-only skills; prebuilt $WANT_ARCH agent runner; web UI"
+echo "contents check passed: no data, keys, local paths or Greatstone-only skills; prebuilt $WANT_ARCH agent runner; web UI; skills"
