@@ -10,11 +10,14 @@ GS Agentic Manager is Greatstone International's fork of the open-source [Paperc
 
 For a Mac with Apple silicon (M1 or newer). You do not need to install anything else first.
 
-**Download:** [GSAM-macOS-arm64.pkg from the latest release](https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest)
+**Download:** [the latest release](https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest) (`gsam-aura-macos-arm64.tar.gz`)
 
-1. Download `GSAM-macOS-arm64.pkg` from the link above.
-2. Double-click the file and follow the steps. If your Mac says it cannot check the developer, open **System Settings → Privacy & Security**, click **Open Anyway**, then double-click the file again.
-3. When it finishes, GS Agentic Manager opens in your browser. Create your log-in there. From now on it starts when you log in to your Mac, and the **GSAM** shortcut on your desktop opens it.
+1. Open **Terminal** (press Command and Space, type `Terminal`, press Return).
+2. Paste this line and press Return. It downloads the release, checks it and installs it. No administrator password is needed. If your Mac asks to install the Command Line Tools, click **Install**.
+   ```sh
+   curl -fsSLO https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/install.sh && bash install.sh
+   ```
+3. When it finishes, GS Agentic Manager opens in your browser. Choose **Sign in / Create account**, make your log-in, then click **Claim ownership**. From now on it starts when you log in to your Mac, and the **GSAM** icon in the Dock opens it.
 
 To remove it, follow [doc/INSTALLING.md](doc/INSTALLING.md#uninstall-on-a-mac).
 

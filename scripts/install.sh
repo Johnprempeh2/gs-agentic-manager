@@ -4,13 +4,14 @@
 # The release carries a prebuilt bundle (its own Node runtime, built server and
 # runner), so the Mac needs no Node, pnpm, Xcode command line tools or Rust.
 # This script only downloads the bundle, checks its SHA-256 and hands over to
-# the bundle's own setup.sh, which sets GSAM to start on login, makes the
-# desktop shortcut and opens the first-run screen.
+# the bundle's own install.sh, which installs into ~/GSAM-Aura, sets GSAM to
+# start on login, adds GSAM.app to ~/Applications and the Dock, and opens the
+# first-run screen.
 set -euo pipefail
 
 GSAM_REPO="Johnprempeh2/gs-agentic-manager"
 RELEASES_URL="https://github.com/$GSAM_REPO/releases"
-BUNDLE_ASSET="gsam-macos-arm64.tar.gz"
+BUNDLE_ASSET="gsam-aura-macos-arm64.tar.gz"
 
 VERSION=""
 BUNDLE_FILE=""
@@ -22,11 +23,10 @@ usage() {
   cat <<EOF
 Install GS Agentic Manager on a Mac with Apple silicon.
 
-Most people should download the installer package instead:
-  $RELEASES_URL/latest
+Releases: $RELEASES_URL
 
 Usage:
-  curl -fsSLO https://raw.githubusercontent.com/$GSAM_REPO/main/scripts/install.sh
+  curl -fsSLO $RELEASES_URL/latest/download/install.sh
   bash install.sh [options]
 
 Options:
@@ -112,7 +112,7 @@ if [ "$DRY_RUN" = "1" ]; then
   else
     log "Would download $DOWNLOAD_BASE/$BUNDLE_ASSET and its .sha256"
   fi
-  log "Would run setup.sh from the bundle"
+  log "Would run install.sh from the bundle"
   exit 0
 fi
 
@@ -140,8 +140,8 @@ fi
 
 mkdir -p "$TEMP_DIR/bundle"
 tar -xzf "$BUNDLE_FILE" -C "$TEMP_DIR/bundle"
-SETUP="$(find "$TEMP_DIR/bundle" -maxdepth 2 -name setup.sh -type f | head -n 1)"
-[ -n "$SETUP" ] || fail "the bundle has no setup.sh"
+SETUP="$TEMP_DIR/bundle/${BUNDLE_ASSET%.tar.gz}/install.sh"
+[ -f "$SETUP" ] || fail "the bundle has no install.sh"
 
 if [ "$NO_PROMPT" != "1" ]; then
   printf '[gsam] Install GS Agentic Manager for user %s? [y/N] ' "$(id -un)" >/dev/tty

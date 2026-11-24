@@ -12,24 +12,27 @@ commands do not work for it yet.
 Releases live at <https://github.com/Johnprempeh2/gs-agentic-manager/releases>.
 Each release carries:
 
-- `GSAM-macOS-arm64.pkg`: the installer most people use. Double-click it.
-- `gsam-macos-arm64.tar.gz` and its `.sha256`: the same prebuilt bundle, for
-  `scripts/install.sh`.
+- `gsam-aura-macos-arm64.tar.gz` and its `.sha256`: the prebuilt package.
+- `install.sh`: the same file as `scripts/install.sh`. It downloads the
+  package, checks its SHA-256 and runs the package's own `install.sh`.
 
-The bundle ships its own Node runtime, built server and runner, so the Mac needs
-no Node, pnpm, Xcode command line tools or Rust. Setup sets GSAM to start on
-login, puts a GSAM shortcut on the desktop and opens the first-run screen.
+The package ships its own Node runtime, built server and prebuilt agent runner,
+so the Mac needs no Node, pnpm or Rust. Only git comes from Apple: if the
+Command Line Tools are missing, macOS asks to install them. The install goes
+into `~/GSAM-Aura`, adds a log-in item that starts GSAM, puts `GSAM.app` in
+`~/Applications` and the Dock, and opens the first-run screen. No
+administrator password is needed. Full detail: [AURA-MAC-INSTALL.md](AURA-MAC-INSTALL.md).
 
-From Terminal instead of the package:
+In Terminal:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/Johnprempeh2/gs-agentic-manager/main/scripts/install.sh
+curl -fsSLO https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/install.sh
 bash install.sh                    # latest release
 bash install.sh --version <tag>    # one release
-bash install.sh --file ~/Downloads/gsam-macos-arm64.tar.gz
+bash install.sh --file ~/Downloads/gsam-aura-macos-arm64.tar.gz
 ```
 
-`install.sh` checks the bundle's SHA-256 before it runs the bundle's `setup.sh`.
+With `--file`, put the `.sha256` next to the package so the check runs.
 Apple silicon only for now.
 
 ## Uninstall on a Mac
@@ -37,11 +40,12 @@ Apple silicon only for now.
 In Terminal:
 
 ```sh
-bash "$HOME/Library/Application Support/GSAM/uninstall.sh"
+bash ~/GSAM-Aura/app/bin/uninstall.sh
 ```
 
-It stops GSAM, removes the login item, the desktop shortcut and the app files.
-It asks before it deletes your data and backups.
+Type `DELETE` when it asks. It stops GSAM and removes the log-in item,
+`GSAM.app` and its Dock icon, and `~/GSAM-Aura` with all data and backups.
+`--keep-backups` copies the backups to `~/GSAM-Aura-backups-<date>` first.
 
 ## Agent runtime notes
 
