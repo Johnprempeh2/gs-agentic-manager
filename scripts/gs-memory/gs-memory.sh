@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install, run, back up and check the organization memory engine (Hindsight + PostgreSQL 16).
-# See doc/GS-MEMORY-ENGINE.md. G2 change list: GRE-649 section 5.3, approved by John on 4 Oct 2026 (GRE-674).
+# See scripts/gs-memory/README.md. G2 change list: GRE-649 section 5.3, approved by John on 4 Oct 2026 (GRE-674).
 #
 # Commands:
 #   preflight      (any user)  read-only checks before system-setup. PASS/FAIL per line, exit 1 on any FAIL.
@@ -16,7 +16,7 @@
 #   check          (any user)  bind, key and reachability checks. Exit 1 on any failure.
 #   serve-postgres / serve-hindsight  (gsmemory) foreground processes used by the systemd units.
 #
-# Every path and port can be overridden for a sandbox run (see doc/GS-MEMORY-ENGINE.md, "Sandbox test").
+# Every path and port can be overridden for a sandbox run (see scripts/gs-memory/README.md, "Sandbox test").
 set -euo pipefail
 
 # Fixed locale. A sudo or ssh session passes the caller's locale (a Mac sends LC_CTYPE=UTF-8, which
@@ -103,10 +103,10 @@ pg() { "$GS_MEMORY_PG_BIN/$1" "${@:2}"; }
 ensure_backup_key() {
   [[ -s "$BACKUP_KEY" ]] && return 0
   if compgen -G "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-*.dump.enc" >/dev/null; then
-    die "no $BACKUP_KEY, but encrypted copies exist in $GS_MEMORY_WINDOWS_BACKUPS. Put the saved key back (doc/GS-MEMORY-ENGINE.md, \"Backup key\")"
+    die "no $BACKUP_KEY, but encrypted copies exist in $GS_MEMORY_WINDOWS_BACKUPS. Put the saved key back (scripts/gs-memory/README.md, \"Backup key\")"
   fi
   (umask 077; openssl rand -base64 48 > "$BACKUP_KEY")
-  log "new backup key written to $BACKUP_KEY (mode 600). Save a copy off this PC (doc/GS-MEMORY-ENGINE.md, \"Backup key\")"
+  log "new backup key written to $BACKUP_KEY (mode 600). Save a copy off this PC (scripts/gs-memory/README.md, \"Backup key\")"
 }
 
 # AES-256 with a PBKDF2 key from the key file. Integrity comes from the plain dump's checksum, checked after decrypt.
@@ -157,7 +157,7 @@ cmd_system_setup() {
   install -d -m 0700 -o "$GS_MEMORY_USER" -g "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS" 2>/dev/null \
     || install -d -m 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
   can_write_as "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS" \
-    || die "$GS_MEMORY_USER cannot write $GS_MEMORY_WINDOWS_BACKUPS, so nightly backups would fail. See doc/GS-MEMORY-ENGINE.md, \"Windows copy folder\"."
+    || die "$GS_MEMORY_USER cannot write $GS_MEMORY_WINDOWS_BACKUPS, so nightly backups would fail. See scripts/gs-memory/README.md, \"Copy folder\"."
   log "Windows copy folder is writable by $GS_MEMORY_USER: $GS_MEMORY_WINDOWS_BACKUPS"
 
   log "install systemd units (not enabled; the engine is started by hand)"
