@@ -56,6 +56,20 @@ for (const [index, entry] of ordered.entries()) {
   if (bundled.length > 0) {
     const staged = path.join(scratch, `workspace-package-${index}`);
     run(process.execPath, [path.join(root, "scripts", "prepare-bundled-package.mjs"), dir, staged]);
+    // prepare-bundled-package pins every workspace dependency to this
+    // package's own version; scripts/release.sh first sets one version on
+    // all packages, but this checkout does not (plugin-sdk is 1.0.0). Pin
+    // each one to the version of the tarball packed above instead.
+    const stagedManifestPath = path.join(staged, "package.json");
+    const stagedManifest = readJson(stagedManifestPath);
+    for (const section of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+      for (const dep of Object.keys(stagedManifest[section] ?? {})) {
+        const depEntry = byName.get(dep);
+        if (!depEntry) continue;
+        stagedManifest[section][dep] = readJson(path.join(root, depEntry.dir, "package.json")).version;
+      }
+    }
+    fs.writeFileSync(stagedManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
     // The staged copy is already built and has no ../scripts, so its prepack
     // hook cannot run there. scripts/release.sh packs it the same way.
     run("npm", ["pack", staged, "--pack-destination", scratch, "--ignore-scripts"]);
