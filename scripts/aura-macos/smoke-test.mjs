@@ -77,6 +77,11 @@ if (phase === "first-run") {
     expectTemplate ? agents.length === 1 && agents[0] === "John" : agents.length === 0,
     `agents: ${agents.join(", ") || "none"} (expected ${expectTemplate ? "John only" : "none"})`,
   );
+  if (expectTemplate) {
+    const issues = list((await owner.request("GET", `/api/companies/${companyId}/issues`)).json, "issues");
+    const link = issues.find((i) => i.title?.startsWith("Link your Claude and ChatGPT subscriptions"));
+    check(link?.status === "todo" && link?.priority === "critical", `owner's first task: link Claude and ChatGPT (${link ? `${link.status}, ${link.priority}` : "missing"})`);
+  }
   const secrets = await owner.request("GET", `/api/companies/${companyId}/secrets`);
   check(secrets.status === 200 && list(secrets.json, "secrets").length === 0, `no secrets (${list(secrets.json, "secrets").length})`);
   const general = (await owner.request("GET", "/api/instance/settings/general")).json;

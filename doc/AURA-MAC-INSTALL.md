@@ -43,8 +43,14 @@ keeps the file list (`*-FILES.txt`), sizes and `manifest.json` for Flint.
    make the owner log-in, then press **Claim ownership**. The installer then
    closes public sign-up and restarts GSAM. If the page was closed too early:
    `~/GSAM-Aura/app/bin/gsam-aura claim`.
-4. In GSAM, link the owner's own Claude and ChatGPT subscriptions (Connections).
-   Never sign in with a Greatstone account.
+4. In GSAM, link the owner's own Claude and ChatGPT subscriptions. John
+   cannot work until Claude is linked. Never sign in with a Greatstone account.
+   - Claude: **Connectors > Anthropic > Connect**, keep **Claude Subscription**
+     (the default). The card says "Anthropic APIs with a restricted key";
+     pick it anyway.
+   - ChatGPT: **Connectors > OpenAI > Connect > OpenAI Subscription**.
+   The template's first task, "Link your Claude and ChatGPT subscriptions",
+   gives the owner the same steps, and the claim command prints them.
 
 What the installer makes:
 
@@ -59,7 +65,8 @@ What the installer makes:
 
 Settings at install: authenticated mode, this Mac only (`127.0.0.1`, port 3300
 or the next free one), at most 2 agents at once (Instance settings), the
-template's modules on, no install-wide AI route. To make GSAM an app window,
+template's modules on, no install-wide AI route, no local image models
+(`GSAM_COMFYUI_URL=off`, so nothing on port 8188 is ever used). To make GSAM an app window,
 open it in Chrome or Edge and choose **Install GSAM** (or Safari: File > Add
 to Dock).
 

@@ -24,3 +24,8 @@ routines:
         label: Every day at 07:00
         cronExpression: "0 7 * * *"
         timezone: Africa/Accra
+tasks:
+  # The owner's first step; it sits on top of the task list.
+  link-claude-and-chatgpt:
+    status: todo
+    priority: critical

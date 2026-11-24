@@ -35,6 +35,8 @@ CLEAN_ENV=(
   GSAM_HOME="$DATA" GSAM_INSTANCE_ID=default GSAM_CONFIG="$CONFIG"
   GSAM_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 DISABLE_AUTOUPDATER=1
   GSAM_MIGRATION_AUTO_APPLY=true GSAM_MIGRATION_PROMPT=never
+  # No local image models, even if something answers on port 8188.
+  GSAM_COMFYUI_URL=off
 )
 clean_env() { env -i "${CLEAN_ENV[@]}" "$@"; }
 
@@ -127,6 +129,9 @@ cmd_claim() {
     cmd_stop; cmd_start
   fi
   say "setup finished. Open GSAM from the Dock or with: gsam-aura open"
+  say "Next, link your own subscriptions (John cannot work until Claude is linked):"
+  say "  Claude:  Connectors > Anthropic > Connect > \"Claude Subscription\""
+  say "  ChatGPT: Connectors > OpenAI > Connect > \"OpenAI Subscription\""
 }
 
 # The owner's own Tailscale (never Greatstone's tailnet). The Mac app keeps its

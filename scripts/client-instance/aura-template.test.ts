@@ -75,3 +75,13 @@ test("only the feature-request paragraph may name Greatstone and the intake inbo
   assert.equal(templateLeaks({ "a.md": `${FEATURE_REQUEST_PARAGRAPH} Ask Everest.` }).length, 2);
   assert.throws(() => withFeatureRequestAddress(files, "not an address"));
 });
+
+test("the owner's first task names the real place to link Claude and ChatGPT", () => {
+  const task = files["projects/life-admin/tasks/link-claude-and-chatgpt/TASK.md"];
+  assert.ok(task, "the link task is in the template");
+  assert.doesNotMatch(task, /^assignee:/m);
+  assert.match(files[".paperclip.yaml"], /link-claude-and-chatgpt:\n\s+status: todo\n\s+priority: critical/);
+  assert.match(task, /Connectors\*\*[^\n]*\*\*Anthropic\*\*[^\n]*\*\*Claude Subscription\*\*/);
+  assert.match(task, /\*\*OpenAI\*\*[^\n]*\*\*OpenAI Subscription\*\*/);
+  assert.doesNotMatch(Object.values(files).join("\n"), /AI connections/i);
+});
