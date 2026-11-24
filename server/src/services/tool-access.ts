@@ -1058,6 +1058,64 @@ function connectionMethodForConnection(
   return connectionMethodFor(app, methodKey);
 }
 
+function httpsUrl(value: string | null | undefined): URL | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A deployment OAuth client may go only to the token endpoint that its app
+ * definition fixes: the pinned `tokenEndpoint`, or, when the method pins none,
+ * a URL on the exact host of one of its fixed URLs. Custom connections and
+ * connections that name another app's provider never qualify.
+ */
+export function instanceClientTokenUrlAllowed(
+  connection: typeof toolConnections.$inferSelect,
+  provider: string,
+  tokenUrl: string | null | undefined,
+): boolean {
+  const target = httpsUrl(tokenUrl);
+  if (!target) return false;
+  const sourceTemplateKey = connection.config.sourceTemplateKey;
+  if (
+    typeof sourceTemplateKey !== "string" ||
+    !sourceTemplateKey ||
+    provider !== sourceTemplateKey
+  )
+    return false;
+  const app = getConnectableAppDefinition(sourceTemplateKey);
+  if (!app) return false;
+  let method: ReturnType<typeof connectionMethodForConnection>;
+  try {
+    method = connectionMethodForConnection(app, connection);
+  } catch {
+    return false;
+  }
+  if (method.auth !== "oauth" || !method.ownershipModes.includes("customer"))
+    return false;
+  const defaults = method.defaults ?? {};
+  if (defaults.tokenEndpoint) {
+    return httpsUrl(defaults.tokenEndpoint)?.href === target.href;
+  }
+  const fixedHosts = [
+    defaults.serverUrl,
+    defaults.discoveryUrl,
+    defaults.metadataUrl,
+    defaults.authorizationEndpoint,
+  ]
+    .map((value) => httpsUrl(value))
+    .filter((url): url is URL => url !== null)
+    .map((url) => url.host.toLowerCase());
+  return fixedHosts.includes(target.host.toLowerCase());
+}
+
 function credentialFieldsFor(app: AppDefinition, methodKey?: string | null) {
   const method = connectionMethodFor(app, methodKey);
   return (method.credentialFields ?? []).map((field) => ({
@@ -8801,6 +8859,24 @@ export function toolAccessService(
     };
   }
 
+  const REFUSED_DEPLOYMENT_CLIENT_MESSAGE =
+    "The sign-in app set up for this GS Agentic Manager server can only be used with the app it was set up for. Add a client ID and secret for this server to the connection, then sign in again.";
+
+  function refusedDeploymentClientError(provider: string) {
+    if (!oauthClientConfig(provider).clientId) return null;
+    return unprocessable(REFUSED_DEPLOYMENT_CLIENT_MESSAGE, {
+      code: "oauth_instance_client_endpoint_mismatch",
+    });
+  }
+
+  function manualOAuthClientRequiredError(provider: string, message: string) {
+    const refused = Boolean(oauthClientConfig(provider).clientId);
+    return unprocessable(refused ? REFUSED_DEPLOYMENT_CLIENT_MESSAGE : message, {
+      code: "oauth_manual_client_required",
+      ...(refused ? { reason: REFUSED_DEPLOYMENT_CLIENT_MESSAGE } : {}),
+    });
+  }
+
   function isSmokeLabOAuthFixture(
     connection: typeof toolConnections.$inferSelect,
   ) {
@@ -8839,6 +8915,7 @@ export function toolAccessService(
   function configuredOAuthClientForConnection(
     connection: typeof toolConnections.$inferSelect,
     provider: string,
+    tokenUrl: string | null | undefined,
   ) {
     if (isSmokeLabOAuthFixture(connection) && provider === "smoke_lab") {
       return {
@@ -8848,22 +8925,36 @@ export function toolAccessService(
         clientSecret: null,
       };
     }
-    return oauthClientConfig(provider);
+    // A deployment-wide client (GSAM_TOOL_OAUTH_*) goes only to the token
+    // endpoint its app definition fixes. A pasted server never gets one.
+    const configured = oauthClientConfig(provider);
+    return instanceClientTokenUrlAllowed(connection, provider, tokenUrl)
+      ? configured
+      : { ...configured, clientId: null, clientSecret: null };
   }
 
   async function oauthClientForConnection(
     connection: typeof toolConnections.$inferSelect,
     provider: string,
+    tokenUrl: string | null | undefined,
     actor?: ActorInfo,
   ) {
-    const configured = configuredOAuthClientForConnection(connection, provider);
+    const configured = configuredOAuthClientForConnection(
+      connection,
+      provider,
+      tokenUrl,
+    );
     if (configured.clientId) return configured;
     const oauth = oauthConfig(connection);
     const clientId =
       typeof oauth.clientId === "string" && oauth.clientId.trim()
         ? oauth.clientId.trim()
         : null;
-    if (!clientId) return configured;
+    if (!clientId) {
+      const refused = refusedDeploymentClientError(provider);
+      if (refused) throw refused;
+      return configured;
+    }
     // CIMD clients and public DCR clients have no token-endpoint secret. A DCR
     // authorization server may instead issue a confidential client (for
     // example, `client_secret_basic`); in that case the registration secret is
@@ -10344,6 +10435,7 @@ export function toolAccessService(
     const configured = configuredOAuthClientForConnection(
       input.connection,
       input.endpoints.provider,
+      input.endpoints.tokenUrl,
     );
     if (configured.clientId) {
       return {
@@ -10378,6 +10470,7 @@ export function toolAccessService(
         client: await oauthClientForConnection(
           bound,
           input.endpoints.provider,
+          input.endpoints.tokenUrl,
           input.actor,
         ),
         source: storedOAuthClientRegistrationSource(bound),
@@ -10404,6 +10497,9 @@ export function toolAccessService(
         input.galleryEntry,
       )
     ) {
+      if (refusedDeploymentClientError(input.endpoints.provider)) {
+        throw manualOAuthClientRequiredError(input.endpoints.provider, "");
+      }
       throw unprocessable(
         `OAuth client id is not configured for ${input.endpoints.provider}`,
         {
@@ -10421,6 +10517,7 @@ export function toolAccessService(
       const latestConfigured = configuredOAuthClientForConnection(
         latest,
         input.endpoints.provider,
+        input.endpoints.tokenUrl,
       );
       if (latestConfigured.clientId) {
         return {
@@ -10447,6 +10544,7 @@ export function toolAccessService(
           client: await oauthClientForConnection(
             bound,
             input.endpoints.provider,
+            input.endpoints.tokenUrl,
             input.actor,
           ),
           source: storedOAuthClientRegistrationSource(bound),
@@ -10466,6 +10564,7 @@ export function toolAccessService(
           client: await oauthClientForConnection(
             adopted,
             input.endpoints.provider,
+            input.endpoints.tokenUrl,
             input.actor,
           ),
           source: "cimd" as const,
@@ -10473,9 +10572,9 @@ export function toolAccessService(
       }
       // 4. Dynamic client registration.
       if (!input.endpoints.registrationUrl) {
-        throw unprocessable(
+        throw manualOAuthClientRequiredError(
+          input.endpoints.provider,
           "This server needs sign-in details you create yourself. Add a client ID and secret under Advanced authentication.",
-          { code: "oauth_manual_client_required" },
         );
       }
       const registered = await registerOAuthClient({
@@ -10489,6 +10588,7 @@ export function toolAccessService(
         client: await oauthClientForConnection(
           registered,
           input.endpoints.provider,
+          input.endpoints.tokenUrl,
           input.actor,
         ),
         source: "dcr" as const,
@@ -10863,6 +10963,7 @@ export function toolAccessService(
     const client = await oauthClientForConnection(
       connection,
       oauth.provider,
+      oauth.tokenUrl,
       actor,
     );
     if (!client.clientId)
@@ -11584,6 +11685,7 @@ export function toolAccessService(
         const client = await oauthClientForConnection(
           connection,
           oauthProvider,
+          oauthTokenUrl,
           credentialActor,
         );
         if (!client.clientId)
@@ -16140,6 +16242,7 @@ export function toolAccessService(
     const client = await oauthClientForConnection(
       connection,
       endpoints.provider,
+      endpoints.tokenUrl,
       input.actor,
     );
     if (!client.clientId)

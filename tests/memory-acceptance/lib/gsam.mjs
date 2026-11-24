@@ -671,8 +671,8 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       return { tables: found, searched: tables };
     },
     async retentionPolicy() {
-      // GRE-887 item 6: backup expiry for deleted content is written in the engine runbook.
-      const doc = resolve(REPO_ROOT, "doc/GS-MEMORY-ENGINE.md");
+      // GRE-887 item 6: backup expiry for deleted content is written in the engine README.
+      const doc = resolve(REPO_ROOT, "scripts/gs-memory/README.md");
       if (!existsSync(doc)) return "";
       return readFileSync(doc, "utf8").split(/\n\s*\n/).filter((p) => /backup/i.test(p) && /delet/i.test(p)).join("\n\n");
     },

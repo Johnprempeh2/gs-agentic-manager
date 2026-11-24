@@ -8,7 +8,7 @@ import {
   type Db,
 } from "@greatstone/db";
 import { conflict, forbidden, notFound } from "../errors.js";
-import { assertIssueThreadInteractionResolverAudience } from "./issue-thread-interaction-resolution.js";
+import { assertHumanToolReviewResolution } from "./issue-thread-interaction-resolution.js";
 import { emitConnectionInvoked } from "./connector-telemetry.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import {
@@ -31,8 +31,9 @@ export async function commitToolActionReview(
     actor: { agentId?: string | null; userId?: string | null };
   },
 ) {
-  if (input.actor.agentId)
-    throw forbidden("Only a human can resolve a tool review");
+  if (input.actor.agentId || !input.actor.userId)
+    throw forbidden("Only a human can resolve a tool review", { code: "human_review_required" });
+  const userId = input.actor.userId;
   const [source] = await db
     .select()
     .from(toolActionRequests)
@@ -130,10 +131,11 @@ export async function commitToolActionReview(
         payload.toolAction.invocationId !== current.invocationId
       )
         throw conflict("Tool review context does not match");
-      assertIssueThreadInteractionResolverAudience({
-        actor: { type: "user", userId: input.actor.userId ?? "board" },
+      if (!issue) throw conflict("Tool review context does not match");
+      assertHumanToolReviewResolution({
+        userId,
+        issue,
         interaction,
-        governedAction: true,
       });
       if (interaction.status !== "pending")
         throw conflict("This review has already been resolved");
@@ -143,8 +145,8 @@ export async function commitToolActionReview(
       .update(toolActionRequests)
       .set({
         status: input.decision,
-        resolvedByUserId: input.actor.userId ?? "board",
-        decidedByUserId: input.actor.userId ?? "board",
+        resolvedByUserId: userId,
+        decidedByUserId: userId,
         decidedAt: now,
         resolvedAt: now,
         updatedAt: now,
@@ -160,7 +162,7 @@ export async function commitToolActionReview(
         companyId: input.companyId,
         actionRequestId: current.id,
         body: { approvalThreshold: 1, priority: 40, argumentMode: "action" },
-        actor: { userId: input.actor.userId ?? "board" },
+        actor: { userId: userId },
       });
     }
     await tx
@@ -188,7 +190,7 @@ export async function commitToolActionReview(
         .update(issueThreadInteractions)
         .set({
           status: input.decision === "approved" ? "accepted" : "rejected",
-          resolvedByUserId: input.actor.userId ?? "board",
+          resolvedByUserId: userId,
           resolvedAt: now,
           updatedAt: now,
           result:
@@ -220,7 +222,7 @@ export async function commitToolActionReview(
         {
           companyId: input.companyId,
           actorType: "user",
-          actorId: input.actor.userId ?? "board",
+          actorId: userId,
           action:
             input.decision === "approved"
               ? "issue.thread_interaction_accepted"

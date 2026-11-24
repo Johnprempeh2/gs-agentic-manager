@@ -1354,7 +1354,8 @@ function StandardConnectionSetupFlow({
         // operator registers themselves. Keep the draft and ask for it in place
         // rather than sending them back to the start.
         if (result.auth.manualClientRequired) {
-          setLinkGuidance(genericConnectGuidance("oauth_manual_client_required", null));
+          const guidance = genericConnectGuidance("oauth_manual_client_required", null);
+          setLinkGuidance(result.auth.manualClientReason ? { ...guidance, body: result.auth.manualClientReason } : guidance);
           setLinkAuthMode("oauth");
           setLinkAdvancedOpen(true);
           setGenericOAuthPending(false);

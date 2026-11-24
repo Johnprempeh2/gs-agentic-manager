@@ -3,14 +3,14 @@ import { describeDraftEdit, diffDraftWords } from "./draft-diff.js";
 
 describe("diffDraftWords", () => {
   it("reports no changes for identical text", () => {
-    const diff = diffDraftWords("Hello Indago team", "Hello Indago team");
+    const diff = diffDraftWords("Hello Acme team", "Hello Acme team");
     expect(diff.changeCount).toBe(0);
-    expect(diff.segments).toEqual([{ type: "same", text: "Hello Indago team" }]);
+    expect(diff.segments).toEqual([{ type: "same", text: "Hello Acme team" }]);
     expect(describeDraftEdit(diff)).toBe("No changes.");
   });
 
   it("counts a replaced word as one change and keeps the rest", () => {
-    const diff = diffDraftWords("Dear Martyn, thanks for the call", "Hi Martyn, thanks for the call");
+    const diff = diffDraftWords("Dear Sam, thanks for the call", "Hi Sam, thanks for the call");
     expect(diff.changeCount).toBe(1);
     expect(diff.removedWords).toBe(1);
     expect(diff.addedWords).toBe(1);
@@ -19,8 +19,8 @@ describe("diffDraftWords", () => {
     // The rebuilt sides match the inputs exactly.
     const rebuild = (skip: "added" | "removed") =>
       diff.segments.filter((segment) => segment.type !== skip).map((segment) => segment.text).join("");
-    expect(rebuild("added")).toBe("Dear Martyn, thanks for the call");
-    expect(rebuild("removed")).toBe("Hi Martyn, thanks for the call");
+    expect(rebuild("added")).toBe("Dear Sam, thanks for the call");
+    expect(rebuild("removed")).toBe("Hi Sam, thanks for the call");
   });
 
   it("counts separate edits separately", () => {

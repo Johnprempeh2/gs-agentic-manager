@@ -6,7 +6,7 @@ const lookups = {
   statusLabel: (status: string) => (status === "in_progress" ? "In progress" : "Todo"),
   agentName: (id: string) => (id === "a1" ? "Everest" : null),
   userLabel: (id: string) => (id === "u1" ? "Ben" : null),
-  projectName: (id: string) => (id === "p1" ? "Indago" : null),
+  projectName: (id: string) => (id === "p1" ? "Acme" : null),
   taskUrl: (issue: Issue) => `https://gsam.test/GRE/issues/${issue.identifier}`,
 };
 
@@ -41,7 +41,7 @@ describe("issues CSV", () => {
     const lines = csv.slice(1).trim().split("\r\n");
     expect(lines).toHaveLength(3);
     expect(lines[1]).toBe(
-      "GRE-1,Send the proposal,In progress,High,Everest,Indago,2026-10-20,2026-10-01,2026-10-02,,https://gsam.test/GRE/issues/GRE-1",
+      "GRE-1,Send the proposal,In progress,High,Everest,Acme,2026-10-20,2026-10-01,2026-10-02,,https://gsam.test/GRE/issues/GRE-1",
     );
     expect(lines[2]).toContain('"Call Ben, then ""confirm"""');
     expect(lines[2]).toContain(",Ben,");

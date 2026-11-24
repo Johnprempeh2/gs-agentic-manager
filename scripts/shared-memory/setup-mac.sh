@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time setup of the shared memory on John's Mac (GRE-2668), in John's own terminal:
-#   scripts/shared-memory/setup-mac.sh --company-id <GSAM company id>
+#   scripts/shared-memory/setup-mac.sh --company-id <GSAM company id> --gsam-url https://<host>.<tailnet>.ts.net:3100
 # 1. Asks for the Claude Code token, then the Codex token (from GSAM: Memory > Claude and ChatGPT > Connect).
 #    Each is typed into the macOS Keychain prompt; it never reaches the screen, a file or shell history.
 # 2. Installs the 30-minute sync (install-mac.sh) and runs its check.

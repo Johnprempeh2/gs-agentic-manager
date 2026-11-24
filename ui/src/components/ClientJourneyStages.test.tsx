@@ -59,13 +59,13 @@ describe("NdaRow", () => {
   it("shows the reason, who and when while suspended", () => {
     act(() => root.render(
       <NdaRow
-        nda={{ ...required, status: "suspended", suspendedReason: "Omni was already under way", changedBy: "John", changedAt: "2026-10-13T10:00:00.000Z" }}
+        nda={{ ...required, status: "suspended", suspendedReason: "Northwind was already under way", changedBy: "John", changedAt: "2026-10-13T10:00:00.000Z" }}
         busy={false}
         onChange={vi.fn()}
       />,
     ));
     expect(radios().find((radio) => radio.getAttribute("aria-checked") === "true")?.textContent).toBe("Suspended");
-    expect(container.querySelector("[data-testid='journey-nda-reason']")?.textContent).toContain("Omni was already under way");
+    expect(container.querySelector("[data-testid='journey-nda-reason']")?.textContent).toContain("Northwind was already under way");
     expect(container.textContent).toContain("by John, not waived");
   });
 });

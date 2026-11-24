@@ -22,7 +22,7 @@ vi.mock("../api/clientPublications", () => ({ clientDeliverableApi: api }));
 
 const open: PublicClientDeliverable = {
   companyName: "Greatstone",
-  clientName: "Omni Group",
+  clientName: "Northwind Group",
   title: "North Star summary",
   version: 2,
   contentPath: "/api/client-deliverable/gsa_deliver_abc/content",
@@ -85,13 +85,13 @@ describe("ClientDeliverablePage", () => {
     api.accept.mockResolvedValue({ ...open, status: "accepted", acceptedAt: "2026-10-25T10:00:00.000Z", acceptedName: "Ada Mensah" });
     await render();
     expect(api.get).toHaveBeenCalledWith("gsa_deliver_abc");
-    expect(container.textContent).toContain("North Star summary for Omni Group");
+    expect(container.textContent).toContain("North Star summary for Northwind Group");
     expect(container.querySelector<HTMLAnchorElement>("a[href='/api/client-deliverable/gsa_deliver_abc/content']")).not.toBeNull();
 
     const submit = container.querySelector<HTMLButtonElement>("button[type='submit']")!;
     expect(submit.disabled).toBe(true);
     type(container.querySelector<HTMLInputElement>("#client-deliverable-name")!, "Ada Mensah");
-    type(container.querySelector<HTMLInputElement>("#client-deliverable-email")!, "ada@omni.com");
+    type(container.querySelector<HTMLInputElement>("#client-deliverable-email")!, "ada@northwind.example");
     expect(submit.disabled).toBe(true);
     act(() => container.querySelector<HTMLButtonElement>("#client-deliverable-agree")!.click());
     expect(submit.disabled).toBe(false);
@@ -101,7 +101,7 @@ describe("ClientDeliverablePage", () => {
       expect(container.querySelector("[data-testid='client-deliverable-done']")).not.toBeNull();
     });
 
-    expect(api.accept).toHaveBeenCalledWith("gsa_deliver_abc", { name: "Ada Mensah", role: null, email: "ada@omni.com", agree: true });
+    expect(api.accept).toHaveBeenCalledWith("gsa_deliver_abc", { name: "Ada Mensah", role: null, email: "ada@northwind.example", agree: true });
     expect(container.querySelector("[data-testid='client-deliverable-done']")!.textContent).toContain("Ada Mensah accepted North Star summary");
     expect(container.textContent).toContain("You will get a receipt by email");
   });

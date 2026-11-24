@@ -22,7 +22,7 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { StatusBadge } from "@/components/StatusBadge";
 
 // Deep Dive overview (GRE-2372): Screen 1 of the GRE-2327 plan, from the
-// Indago control centre and the website overview. Read only: everything here
+// first client's control centre and the website overview. Read only: everything here
 // comes from the other Deep Dive screens, and each line links to the screen
 // where the work is done.
 

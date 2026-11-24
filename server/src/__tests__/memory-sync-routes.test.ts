@@ -178,7 +178,7 @@ describeEmbeddedPostgres("one shared memory for Claude Code, Codex and GSAM (GRE
     const first = await request(links.codex.rest).post(`${base}/sync`).send({
       entries: [
         turn("codex:rollout-1:t1", "John: what identity for clients? Answer: Better Auth, one organisation_id per client."),
-        turn("memory:NOW.md", "Handoff: Indago kick-off first.", "2026-10-26T08:00:00.000Z", "memory_file"),
+        turn("memory:NOW.md", "Handoff: Acme kick-off first.", "2026-10-26T08:00:00.000Z", "memory_file"),
       ],
     });
     expect(first.status).toBe(200);
@@ -202,14 +202,14 @@ describeEmbeddedPostgres("one shared memory for Claude Code, Codex and GSAM (GRE
 
     // The same text again: nothing new reaches the engine.
     const again = await request(links.claude_code.rest).post(`${base}/sync`).send({
-      entries: [turn("memory:NOW.md", "Handoff: Indago kick-off first.", "2026-10-26T08:00:00.000Z", "memory_file")],
+      entries: [turn("memory:NOW.md", "Handoff: Acme kick-off first.", "2026-10-26T08:00:00.000Z", "memory_file")],
     });
     expect(again.body.entries[0].outcome).toBe("unchanged");
     expect(fake.docs).toHaveLength(2);
 
     // The file changed: one live entry, the old one superseded (history, not a duplicate).
     const changed = await request(links.claude_code.rest).post(`${base}/sync`).send({
-      entries: [turn("memory:NOW.md", "Handoff: Indago interview on 9 Nov.", "2026-10-26T09:00:00.000Z", "memory_file")],
+      entries: [turn("memory:NOW.md", "Handoff: Acme interview on 9 Nov.", "2026-10-26T09:00:00.000Z", "memory_file")],
     });
     expect(changed.body.entries[0].outcome).toBe("revised");
     const versions = (await ctx.db.select().from(memoryRecords)).filter((row) => row.sourceId === "memory:NOW.md");

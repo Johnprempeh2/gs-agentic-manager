@@ -132,6 +132,7 @@ import {
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import { commitToolActionReview } from "./tool-action-review.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";
+import { evaluateHumanToolReviewResolution } from "./issue-thread-interaction-resolution.js";
 import {
   createToolRuntimeSupervisor,
   ToolRuntimeSupervisorError,
@@ -1551,6 +1552,41 @@ export function createToolGatewayService(
       lastChangedByAgentId: latest.agentId,
       lastChangedByName,
     };
+  }
+
+  async function assertHumanMayActOnToolReview(
+    actionRequest: typeof toolActionRequests.$inferSelect,
+    userId: string | null | undefined,
+  ) {
+    if (!userId) {
+      throw new ToolGatewayHttpError(403, "Only a human can resolve a tool review", "human_review_required");
+    }
+    if (!actionRequest.issueId || !actionRequest.interactionId) {
+      if (actionRequest.status === "pending"
+        || [actionRequest.requestedByUserId, actionRequest.decidedByUserId, actionRequest.resolvedByUserId].includes(userId)) return;
+      throw new ToolGatewayHttpError(404, "Tool action request not found", "action_request_not_found");
+    }
+    const [interaction] = await db
+      .select()
+      .from(issueThreadInteractions)
+      .where(and(
+        eq(issueThreadInteractions.id, actionRequest.interactionId),
+        eq(issueThreadInteractions.companyId, actionRequest.companyId),
+        eq(issueThreadInteractions.issueId, actionRequest.issueId),
+      ))
+      .limit(1);
+    const [issue] = await db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.id, actionRequest.issueId), eq(issues.companyId, actionRequest.companyId)))
+      .limit(1);
+    if (!interaction || !issue) {
+      throw new ToolGatewayHttpError(404, "Tool action request not found", "action_request_not_found");
+    }
+    const decision = evaluateHumanToolReviewResolution({ userId, issue, interaction });
+    if (!decision.allowed) {
+      throw new ToolGatewayHttpError(decision.status, decision.message, decision.code);
+    }
   }
 
   async function resolveRunContext(input: {
@@ -9593,6 +9629,7 @@ export function createToolGatewayService(
               companyId: row.companyId,
               actionRequestId: row.id,
               actor: { userId: row.decidedByUserId ?? row.resolvedByUserId },
+              recoveringApprovedReview: true,
             }).catch((error) =>
               logger.warn(
                 { err: error, actionRequestId: row.id },
@@ -9649,6 +9686,7 @@ export function createToolGatewayService(
 
     async approveActionRequest(input: {
       companyId: string;
+      recoveringApprovedReview?: boolean;
       rememberAction?: boolean;
       issueId?: string;
       interactionId?: string;
@@ -9673,6 +9711,7 @@ export function createToolGatewayService(
           "action_request_not_found",
         );
       }
+      if (!input.recoveringApprovedReview) await assertHumanMayActOnToolReview(actionRequest, input.actor.userId);
       const [invocation] = await db
         .select()
         .from(toolInvocations)
@@ -9929,6 +9968,14 @@ export function createToolGatewayService(
       reason?: string;
       actor: { agentId?: string | null; userId?: string | null };
     }) {
+      if (!input.actor.agentId) {
+        const [actionRequest] = await db
+          .select()
+          .from(toolActionRequests)
+          .where(and(eq(toolActionRequests.id, input.actionRequestId), eq(toolActionRequests.companyId, input.companyId)))
+          .limit(1);
+        if (actionRequest) await assertHumanMayActOnToolReview(actionRequest, input.actor.userId);
+      }
       const updated = await commitToolActionReview(db, {
         ...input,
         decision: "rejected",

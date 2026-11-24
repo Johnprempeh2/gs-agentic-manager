@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DEEP_DIVE_PILLARS, type DeepDivePillar } from "./deep-dive-records.js";
 
 /**
- * Agent drafts in a Deep Dive (GRE-4430, copied from indago-portal PR #31's
+ * Agent drafts in a Deep Dive (GRE-4430, copied from the client portal prototype's
  * log_interview / propose_record). An agent logs an interview from a Notion
  * transcript, or proposes a register row, as a DRAFT. A person approves or
  * rejects it in the portal. Agents never approve, publish or delete.

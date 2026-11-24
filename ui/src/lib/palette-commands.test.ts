@@ -24,9 +24,9 @@ describe("parseWhen", () => {
 
 describe("parseCommand", () => {
   it("creates a task for an agent with a deadline", () => {
-    expect(parseCommand("create a task for Mason to draft the Indago pack by Friday", agents, now)).toMatchObject({
+    expect(parseCommand("create a task for Mason to draft the Acme pack by Friday", agents, now)).toMatchObject({
       kind: "create",
-      title: "Draft the Indago pack",
+      title: "Draft the Acme pack",
       agent: { id: "mason" },
       due: { label: "Friday 23 October" },
     });
@@ -43,9 +43,9 @@ describe("parseCommand", () => {
   });
 
   it("keeps 'for' in the title when it is not an agent", () => {
-    expect(parseCommand("add task for the Indago kick-off", agents, now)).toMatchObject({
+    expect(parseCommand("add task for the Acme kick-off", agents, now)).toMatchObject({
       kind: "create",
-      title: "For the Indago kick-off",
+      title: "For the Acme kick-off",
       agent: null,
     });
   });
@@ -71,7 +71,7 @@ describe("parseCommand", () => {
   });
 
   it("ignores ordinary searches", () => {
-    expect(parseCommand("indago", agents, now)).toBeNull();
-    expect(parseCommand("what is stuck on indago", agents, now)).toBeNull();
+    expect(parseCommand("acme", agents, now)).toBeNull();
+    expect(parseCommand("what is stuck on acme", agents, now)).toBeNull();
   });
 });

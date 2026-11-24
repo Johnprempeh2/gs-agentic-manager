@@ -1751,7 +1751,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       });
       await db.insert(issues).values([
         {
-          id: wait, companyId: seeded.companyId, identifier: "GRE-1825", issueNumber: 1825, title: "Indago: wait for Gordon's kick-off date",
+          id: wait, companyId: seeded.companyId, identifier: "GRE-1825", issueNumber: 1825, title: "Acme: wait for Gordon's kick-off date",
           status: "blocked", priority: "medium", assigneeAgentId: seeded.everestId, unblockDescriptor: descriptor(day(4)),
         },
         { id: kickoff, companyId: seeded.companyId, identifier: "GRE-1238", issueNumber: 1238, title: "North Star kick-off", status: "blocked", priority: "medium", assigneeAgentId: seeded.lintelId },

@@ -1,6 +1,6 @@
 /**
  * Plain-English commands typed into the search box, such as
- * "create a task for Mason to draft the Indago pack by Friday",
+ * "create a task for Mason to draft the Acme pack by Friday",
  * "assign GRE-12 to Ridge" or "remind me on Monday to call Ben".
  * Parsing only: the palette shows a preview and acts on confirmation.
  */
@@ -159,7 +159,7 @@ export function parseCommand(input: string, agents: readonly CommandAgent[], now
   if (body !== null) {
     let agent = agentName ? findAgent(agentName, agents) : null;
     if (agentName && !agent) {
-      // "create a task for the Indago pack": "for" was not an agent.
+      // "create a task for the Acme pack": "for" was not an agent.
       body = `for ${agentName} ${body}`;
       agent = null;
     }

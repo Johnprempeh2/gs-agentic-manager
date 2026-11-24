@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rehearses doc/AUTH-SWITCH-RUNBOOK.md on a throwaway sandbox (GRE-125):
+# Rehearses the auth switch (GRE-125) on a throwaway sandbox:
 # local_trusted -> authenticated + private -> close sign-up -> reset password
 # -> back to local_trusted, with a real server started by `pnpm dev:once`.
 #

@@ -22,7 +22,7 @@ vi.mock("../api/images", () => ({ imagesApi: imagesApiMock }));
 const studioLooksApiMock = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() }));
 vi.mock("../api/studioLooks", () => ({ studioLooksApi: studioLooksApiMock }));
 vi.mock("../api/organisations", () => ({
-  organisationsApi: { list: vi.fn(async () => [{ id: "org-1", name: "Ethical Quest" }]) },
+  organisationsApi: { list: vi.fn(async () => [{ id: "org-1", name: "Tailspin" }]) },
 }));
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, title, className }: { to: string; children: ReactNode; title?: string; className?: string }) =>
@@ -300,7 +300,7 @@ describe("Images page", () => {
           id: "linked",
           style: "social-post",
           issue: { id: "issue-1", identifier: "GRE-12", title: "Spring campaign" },
-          organisation: { id: "org-1", name: "Ethical Quest" },
+          organisation: { id: "org-1", name: "Tailspin" },
         }),
       ],
       total: 1,
@@ -310,7 +310,7 @@ describe("Images page", () => {
 
     const card = container.querySelector('[data-testid="generated-image-card"]')!;
     expect(card.textContent).toContain("Social post");
-    expect(card.textContent).toContain("Ethical Quest");
+    expect(card.textContent).toContain("Tailspin");
     expect(card.querySelector("a[href='/issues/GRE-12']")?.textContent).toContain("Spring campaign");
 
     imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });

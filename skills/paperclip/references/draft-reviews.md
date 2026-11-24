@@ -6,14 +6,14 @@ Use `request_draft_review` (MCP tool of the same name) when you have drafted som
 POST /api/issues/{issueId}/interactions
 {
   "kind": "request_draft_review",
-  "idempotencyKey": "draft:{issueId}:indago-email:v1",
-  "title": "Draft email to Indago",
+  "idempotencyKey": "draft:{issueId}:acme-email:v1",
+  "title": "Draft email to Acme",
   "payload": {
     "version": 1,
-    "purpose": "Email to Indago",
-    "body": "Hi Martyn,\n\nThanks for the call...",
+    "purpose": "Email to Acme",
+    "body": "Hi Sam,\n\nThanks for the call...",
     "subject": "Next steps",
-    "recipients": ["martyn@example.com"],
+    "recipients": ["sam@example.com"],
     "channel": "email"
   }
 }

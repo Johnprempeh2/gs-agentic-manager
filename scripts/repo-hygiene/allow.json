@@ -1,0 +1,4 @@
+{
+  "about": "Reviewed exceptions for scripts/check-repo-hygiene.mjs (GRE-6167). Each entry: path (exact, or ending in / or * for a prefix), rule (a secret rule id, \"name\" or \"*\") and the reason the real fixture must stay. A reviewer approves every addition.",
+  "entries": []
+}

@@ -152,7 +152,7 @@ describeEmbeddedPostgres("generated images routes", () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images styled");
     const other = await seedCompanyWithBoardAccess(ctx.db, "Images other");
     const [task] = await ctx.db.insert(issues).values({ companyId, title: "Spring campaign deck" }).returning();
-    const [client] = await ctx.db.insert(organisations).values({ companyId, name: "Ethical Quest" }).returning();
+    const [client] = await ctx.db.insert(organisations).values({ companyId, name: "Tailspin" }).returning();
     const [otherTask] = await ctx.db.insert(issues).values({ companyId: other.companyId, title: "Not yours" }).returning();
     const { storage } = memoryStorage();
     const seen: string[] = [];
@@ -171,7 +171,7 @@ describeEmbeddedPostgres("generated images routes", () => {
       prompt: "A mountain path at sunrise",
       style: "greatstone-brand",
       issue: { id: task!.id, title: "Spring campaign deck" },
-      organisation: { id: client!.id, name: "Ethical Quest" },
+      organisation: { id: client!.id, name: "Tailspin" },
     });
     await request(server).post(`/api/companies/${companyId}/generated-images`).send({ prompt: "Office plants by a window" });
     await waitForGeneratedImageJobs();
@@ -185,7 +185,7 @@ describeEmbeddedPostgres("generated images routes", () => {
     const byTask = await request(server).get(`/api/companies/${companyId}/generated-images?issueId=${task!.id}`);
     expect((byTask.body as GeneratedImagesResponse).total).toBe(1);
     const byClient = await request(server).get(`/api/companies/${companyId}/generated-images?organisationId=${client!.id}`);
-    expect((byClient.body as GeneratedImagesResponse).images[0]?.organisation?.name).toBe("Ethical Quest");
+    expect((byClient.body as GeneratedImagesResponse).images[0]?.organisation?.name).toBe("Tailspin");
     const wildcard = await request(server).get(`/api/companies/${companyId}/generated-images?q=%25`);
     expect((wildcard.body as GeneratedImagesResponse).total).toBe(0);
 

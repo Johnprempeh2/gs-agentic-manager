@@ -146,7 +146,7 @@ describeEmbeddedPostgres("client acceptance link", () => {
 
   async function readyClient() {
     const { company, agent } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Omni Group");
+    const caseId = await seedClientCase(company.id, "Northwind Group");
     const http = request(app());
     await http.put(`/api/cases/${caseId}/nda`).send({ status: "accepted" }).expect(200);
     return { company, agent, caseId, http };
@@ -154,7 +154,7 @@ describeEmbeddedPostgres("client acceptance link", () => {
 
   it("needs a cleared NDA and an uploaded pack before a link is made", async () => {
     const { company } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Omni Group");
+    const caseId = await seedClientCase(company.id, "Northwind Group");
     const http = request(app());
     const blocked = await http.post(`/api/cases/${caseId}/engagement/online-link`).expect(409);
     expect(blocked.body.details?.code ?? blocked.body.code).toBe("nda_required");
@@ -184,7 +184,7 @@ describeEmbeddedPostgres("client acceptance link", () => {
     const view = await client.get(`/api/client-acceptance/${token}`).expect(200);
     expect(view.body).toEqual({
       companyName: "Greatstone",
-      clientName: "Omni Group",
+      clientName: "Northwind Group",
       packTitle: "Engagement pack",
       packPath: `/api/client-acceptance/${token}/pack`,
       status: "open",
@@ -197,23 +197,23 @@ describeEmbeddedPostgres("client acceptance link", () => {
     expect(Buffer.from(file.body).toString()).toBe("%PDF-1.4 engagement pack");
 
     // The form must be complete and ticked.
-    await client.post(`/api/client-acceptance/${token}/accept`).send({ name: "Ada Mensah", email: "ada@omni.com" }).expect(400);
+    await client.post(`/api/client-acceptance/${token}/accept`).send({ name: "Ada Mensah", email: "ada@northwind.example" }).expect(400);
     await client.post(`/api/client-acceptance/${token}/accept`).send({ name: "Ada Mensah", email: "nope", agree: true }).expect(400);
 
     const accepted = await client
       .post(`/api/client-acceptance/${token}/accept`)
-      .send({ name: "Ada Mensah", role: "Chief Executive", email: "ada@omni.com", agree: true })
+      .send({ name: "Ada Mensah", role: "Chief Executive", email: "ada@northwind.example", agree: true })
       .expect(200);
     expect(accepted.body).toMatchObject({ status: "accepted", acceptedName: "Ada Mensah" });
     await client
       .post(`/api/client-acceptance/${token}/accept`)
-      .send({ name: "Someone Else", email: "x@omni.com", agree: true })
+      .send({ name: "Someone Else", email: "x@northwind.example", agree: true })
       .expect(409);
 
     journey = await http.get(`/api/cases/${caseId}/journey`).expect(200);
     expect(journey.body.engagement).toMatchObject({
       status: "accepted",
-      onlineLink: { acceptedName: "Ada Mensah", acceptedRole: "Chief Executive", acceptedEmail: "ada@omni.com" },
+      onlineLink: { acceptedName: "Ada Mensah", acceptedRole: "Chief Executive", acceptedEmail: "ada@northwind.example" },
     });
     expect(journey.body.engagement.sentAt).toBeTruthy();
     expect(journey.body.engagement.acceptedAt).toBeTruthy();

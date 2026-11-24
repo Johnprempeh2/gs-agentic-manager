@@ -101,7 +101,7 @@ describeEmbeddedPostgres("client portal confidentiality and NDA gate", () => {
       .expect(201);
     const created = await http
       .post(`/api/pipelines/${pipeline.body.id}/cases`)
-      .send({ caseKey: "ministry", title: "Ministry of Energy", stageKey: "discovery" })
+      .send({ caseKey: "ministry", title: "Fabrikam", stageKey: "discovery" })
       .expect(201);
     const caseId = (created.body.case ?? created.body).id as string;
     await http.post(`/api/cases/${caseId}/project-links`).send({ projectId: project!.id }).expect(201);

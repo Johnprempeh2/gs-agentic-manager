@@ -107,7 +107,7 @@ describe("AskEverestPanel", () => {
       count: 1,
       decisionCount: 1,
       assignedTaskCount: 0,
-      decisions: [{ id: "task:i1", title: "Approve the Indago fee", reason: "Fixed fee or day rate", task: { id: "i1", identifier: "GRE-9" } }],
+      decisions: [{ id: "task:i1", title: "Approve the Globex fee", reason: "Fixed fee or day rate", task: { id: "i1", identifier: "GRE-9" } }],
       assignedTasks: [],
       overdueWaits: [],
     });
@@ -130,7 +130,7 @@ describe("AskEverestPanel", () => {
     await waitFor(() => {
       // The headline number is the one needs-you count.
       expect(container.textContent).toContain("1 thing needs you.");
-      expect(container.textContent).toContain("Approve the Indago fee");
+      expect(container.textContent).toContain("Approve the Globex fee");
     });
     expect(mocks.needsMe).toHaveBeenCalledWith("company-1");
   });
@@ -196,7 +196,7 @@ describe("AskEverestPanel", () => {
     mocks.ensureChat.mockResolvedValue({ id: "chat-1" });
     mocks.addComment.mockResolvedValue({ id: "c1", createdAt: "2026-10-16T09:00:00Z" });
     mocks.listComments.mockResolvedValue([
-      { id: "c2", authorAgentId: "everest", body: "Two Indago tasks are waiting on your fee decision.", createdAt: "2026-10-16T09:01:00Z" },
+      { id: "c2", authorAgentId: "everest", body: "Two Globex tasks are waiting on your fee decision.", createdAt: "2026-10-16T09:01:00Z" },
     ]);
     act(() => openAskEverest("What do I need to decide?"));
     await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-live"]')).not.toBeNull());
@@ -204,7 +204,7 @@ describe("AskEverestPanel", () => {
       (container.querySelector('[data-testid="ask-everest-live"]') as HTMLButtonElement).click();
     });
     await waitFor(() => {
-      expect(container.textContent).toContain("Two Indago tasks are waiting on your fee decision.");
+      expect(container.textContent).toContain("Two Globex tasks are waiting on your fee decision.");
     });
     expect(mocks.ensureChat).toHaveBeenCalledWith("company-1", "everest");
     expect(mocks.addComment).toHaveBeenCalledWith("chat-1", "What do I need to decide?", true, undefined, undefined, expect.any(String));
@@ -252,7 +252,7 @@ describe("AskEverestPanel", () => {
 
   it("answers a follow-up from the last answer without restating it", async () => {
     mocks.issuesList.mockResolvedValue([
-      { id: "i1", identifier: "GRE-1", title: "Send the Indago contract", status: "blocked", assigneeAgentId: "mason", dueDate: "2020-01-02", updatedAt: "2026-10-15T09:00:00Z" },
+      { id: "i1", identifier: "GRE-1", title: "Send the Globex contract", status: "blocked", assigneeAgentId: "mason", dueDate: "2020-01-02", updatedAt: "2026-10-15T09:00:00Z" },
       { id: "i2", identifier: "GRE-2", title: "Book the venue", status: "blocked", assigneeAgentId: null, dueDate: null, updatedAt: "2026-10-15T09:00:00Z" },
     ]);
     act(() => openAskEverest("What is stuck?"));
@@ -266,7 +266,7 @@ describe("AskEverestPanel", () => {
     await waitFor(() => expect(container.textContent).toContain("1 of those 2 stuck tasks is overdue."));
     const turns = container.querySelectorAll('[data-testid="ask-everest-turn"]');
     expect(turns).toHaveLength(2);
-    expect(turns[1]!.textContent).toContain("Send the Indago contract");
+    expect(turns[1]!.textContent).toContain("Send the Globex contract");
     expect(turns[1]!.textContent).not.toContain("Book the venue");
     expect(mocks.issuesList).toHaveBeenCalledTimes(1);
 

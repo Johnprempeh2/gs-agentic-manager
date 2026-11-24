@@ -61,7 +61,7 @@ describe("MorningSummary", () => {
       finished: { count: 0, items: [] },
       stuck: { count: 0, items: [] },
       handoff: {
-        focus: { text: "Indago kick-off on 9 Nov.", by: "ChatGPT", at: "2026-10-26T09:00:00.000Z" },
+        focus: { text: "Globex kick-off on 9 Nov.", by: "ChatGPT", at: "2026-10-26T09:00:00.000Z" },
         threadCount: 1,
         threads: [{ key: "GRE-2668", refs: ["GRE-2668"], title: "Shared memory", state: "in review", next: "Flint", by: "ChatGPT" }],
         waiting: null,
@@ -71,7 +71,7 @@ describe("MorningSummary", () => {
     };
     await render("/morning");
     expect(container.textContent).toContain("Where you left off");
-    expect(container.textContent).toContain("Focus: Indago kick-off on 9 Nov.");
+    expect(container.textContent).toContain("Focus: Globex kick-off on 9 Nov.");
     expect(container.textContent).toContain("in review · next: Flint");
     expect(container.textContent).toContain("2 changes since yesterday");
     expect(container.textContent).toContain("Last: ChatGPT");
@@ -146,7 +146,7 @@ describe("MorningSummary", () => {
       finished: { count: 1, items: [{ id: "b", identifier: "GRE-5", title: "Write the one-pager" }] },
       stuck: { count: 0, items: [] },
       workingNow: { count: 1, items: [{ id: "w", identifier: "GRE-9", title: "Drafting the deck" }] },
-      deals: { won: 1, lost: 0, items: [{ id: "c1", pipelineId: "p1", title: "Indago rollout", outcome: "won" }] },
+      deals: { won: 1, lost: 0, items: [{ id: "c1", pipelineId: "p1", title: "Globex rollout", outcome: "won" }] },
       dealNextSteps: {
         count: 1,
         items: [{ id: "case-1", identifier: null, title: "Acme: Demo call", dueDate: "2020-01-03", href: "/pipelines/pipe-1/cases/case-1" }],
