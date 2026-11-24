@@ -37,9 +37,12 @@ export function serviceRenewUrl(env: NodeJS.ProcessEnv = process.env): string {
   return env.GSAM_RENEW_URL?.trim() || "https://greatstoneint.com";
 }
 
-/** What `/api/health` carries for the UI. Null when the service runs normally. */
-export function serviceHoldHealth(): { state: ServiceHold; renewUrl: string; validUntil: string | null } | null {
-  const state = currentServiceHold();
-  if (!state) return null;
-  return { state, renewUrl: serviceRenewUrl(), validUntil: getEntitlementRuntime()?.summary().document?.validUntil ?? null };
+/** What `/api/health` carries for the UI on a spoke (so it knows to watch for a hold). Null on any other instance. */
+export function serviceHoldHealth(): { state: ServiceHold | "active"; renewUrl: string; validUntil: string | null } | null {
+  if (!spoke) return null;
+  return {
+    state: currentServiceHold() ?? "active",
+    renewUrl: serviceRenewUrl(),
+    validUntil: getEntitlementRuntime()?.summary().document?.validUntil ?? null,
+  };
 }

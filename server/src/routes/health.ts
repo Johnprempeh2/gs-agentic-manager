@@ -346,9 +346,9 @@ export function healthRoutes(
     // Partner branding rides every response too, the redacted one included:
     // the sign-in page shows it before anyone is logged in. Omitted when unset.
     const branding = getPartnerBranding(runtimeEnv);
-    // GSAM for Mac (P2): paused, stopped or subscription ended. Rides every
-    // response (the redacted one too) so the full-page screen shows before
-    // sign-in. Omitted when the service runs normally.
+    // GSAM for Mac (P2): active, paused, stopped or subscription ended. Rides
+    // every response (the redacted one too) so the full-page screen shows
+    // before sign-in. Omitted on any instance that is not a Mac spoke.
     const service = serviceHoldHealth();
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller

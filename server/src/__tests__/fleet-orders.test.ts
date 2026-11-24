@@ -16,7 +16,8 @@ import { readHubSigningKey } from "../services/fleet-entitlements.js";
 import { fleetTailscaleAuthKey, signFleetOrder, verifyFleetOrder } from "../services/fleet-orders.js";
 import { fleetSpokePaths, readFleetSpokeConfig } from "../services/fleet-spoke-config.js";
 import { obeySpokeOrders, readSpokeOrders, sendSpokeCheckIn } from "../services/fleet-spoke.js";
-import { currentServiceHold, setServiceHoldSpoke } from "../services/service-hold.js";
+import { currentServiceHold, serviceHoldHealth, setServiceHoldSpoke } from "../services/service-hold.js";
+import { setEntitlementRuntime, type EntitlementRuntime } from "../services/entitlement-runtime.js";
 import { resolveHeartbeatSchedulingSuppression } from "../services/heartbeat.js";
 
 // GSAM for Mac P2: signed operator orders from the hub Fleet page, obeyed by
@@ -80,6 +81,23 @@ describe("service hold", () => {
     expect(resolveHeartbeatSchedulingSuppression({})).toEqual({ suppressed: true, reason: "service_hold" });
     setServiceHoldSpoke(true, null);
     expect(resolveHeartbeatSchedulingSuppression({}).suppressed).toBe(false);
+    expect(serviceHoldHealth()).toMatchObject({ state: "active" });
+  });
+
+  it("is ended when the paid period is over (the base floor applies), and a stop order still wins", () => {
+    const validUntil = "2026-11-01T23:59:59.000Z";
+    setEntitlementRuntime({ stop() {}, summary: () => ({ state: "floor", document: { validUntil } }) } as unknown as EntitlementRuntime);
+    try {
+      setServiceHoldSpoke(true, "paused");
+      expect(currentServiceHold()).toBe("ended");
+      expect(serviceHoldHealth()).toEqual({ state: "ended", renewUrl: "https://greatstoneint.com", validUntil });
+      setServiceHoldSpoke(true, "stopped");
+      expect(currentServiceHold()).toBe("stopped");
+      setServiceHoldSpoke(false, null);
+      expect(serviceHoldHealth()).toBeNull();
+    } finally {
+      setEntitlementRuntime(null);
+    }
   });
 });
 

@@ -8,11 +8,14 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useFleetInstances } from "@/hooks/useFleetInstances";
 import { formatBytes } from "@/lib/issue-output";
 import { formatCents, formatNumber, relativeTime } from "@/lib/utils";
+import { ManageInstanceButton, NewLicenceButton, formatDay } from "./FleetManage";
 
 /**
  * Fleet page (GRE-1083, F2 on GRE-1069 slide 26). Greatstone hub only: the
  * server answers 404 off the hub and 403 to anyone who is not an instance
- * admin. Read-only: no button here sends anything to an instance.
+ * admin. GSAM for Mac (P2) adds licence keys, signed documents, signed
+ * orders and remote access (FleetManage.tsx); nothing reaches an install
+ * except on its own check-in answer.
  *
  * Every value is what the instance's last check-in said (GRE-1082, v2 from
  * GRE-1366). The state comes from the server's `fleetInstanceState`; this file
@@ -28,6 +31,7 @@ const STATE_CHIP: Record<FleetInstanceState, { tone: ChipTone; label: string }> 
   waiting: { tone: "in_progress", label: "Waiting for check-in" },
   pending: { tone: "backlog", label: "Not registered" },
   paused: { tone: "backlog", label: "Paused" },
+  stopped: { tone: "blocked", label: "Stopped" },
   archived: { tone: "backlog", label: "Archived" },
   revoked: { tone: "blocked", label: "Revoked" },
 };
@@ -189,14 +193,43 @@ function LastReported({ instance }: { instance: FleetInstanceView }) {
 }
 
 function stateNote(instance: FleetInstanceView) {
-  if ((instance.state === "paused" || instance.state === "archived") && instance.lifecycleChangedAt) {
+  if ((instance.state === "paused" || instance.state === "stopped" || instance.state === "archived") && instance.lifecycleChangedAt) {
     return `since ${relativeTime(instance.lifecycleChangedAt)}`;
   }
   if (instance.state === "revoked" && instance.revokedAt) return `${relativeTime(instance.revokedAt)}`;
   return null;
 }
 
-const COLUMNS = ["Instance", "State and alerts", "Last check-in", "Health", "Version", "Usage", "Connections"];
+const COLUMNS = ["Instance", "State and alerts", "Last check-in", "Subscription", "Health", "Version", "Usage", "Connections"];
+
+/** GSAM for Mac: what the newest signed document grants. */
+function SubscriptionCell({ instance }: { instance: FleetInstanceView }) {
+  const entitlement = instance.entitlement;
+  if (!entitlement) return <Muted>No document</Muted>;
+  const ended = Date.parse(entitlement.validUntil) + entitlement.grace * 24 * 60 * 60 * 1000 <= Date.now();
+  const features = Object.entries(entitlement.features).filter(([, on]) => on).map(([key]) => key.replace(/^enable/, ""));
+  const limits = Object.entries(entitlement.limits).map(([key, value]) => `${key.replace(/^max/, "")} ${formatNumber(value)}`);
+  return (
+    <div className="space-y-0.5" data-testid={`fleet-subscription-${instance.code}`}>
+      <div className={ended ? "font-medium text-destructive" : undefined}>
+        {ended ? "Ended" : "Paid until"} {formatDay(entitlement.validUntil)}
+      </div>
+      <div className="text-xs text-muted-foreground">{features.length > 0 ? features.join(", ") : "No features"}</div>
+      {limits.length > 0 ? <div className="text-xs text-muted-foreground">{limits.join(", ")}</div> : null}
+      <div className="text-xs text-muted-foreground">Version {entitlement.version}</div>
+    </div>
+  );
+}
+
+/** Admin controls for a GSAM for Mac install (one with an operator log-in or a document from this hub). */
+function Manage({ instance }: { instance: FleetInstanceView }) {
+  if (!instance.entitlement && !instance.operatorEmail) return null;
+  return (
+    <div className="mt-2">
+      <ManageInstanceButton instance={instance} />
+    </div>
+  );
+}
 
 function Identity({ instance }: { instance: FleetInstanceView }) {
   const edition = instance.latestCheckIn?.checkIn.edition;
@@ -204,6 +237,7 @@ function Identity({ instance }: { instance: FleetInstanceView }) {
     <div>
       <div className="font-mono font-medium">{instance.code}</div>
       {edition ? <div className="text-xs text-muted-foreground">{EDITION_LABEL[edition] ?? edition}</div> : null}
+      <Manage instance={instance} />
     </div>
   );
 }
@@ -227,6 +261,7 @@ function LastCheckIn({ instance }: { instance: FleetInstanceView }) {
 /** Phone view: code, state, alerts and last check-in together, then the details beneath. */
 function FleetCard({ instance }: { instance: FleetInstanceView }) {
   const details: Array<[string, ReactNode]> = [
+    ["Subscription", <SubscriptionCell instance={instance} />],
     ["Health", <HealthCell instance={instance} />],
     ["Version", <VersionCell instance={instance} />],
     ["Usage", <UsageCell instance={instance} />],
@@ -292,16 +327,19 @@ export function Fleet() {
 
   return (
     <div className="space-y-4" data-testid="fleet-page">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Fleet</h1>
-        <p className="text-sm text-muted-foreground">
-          Each registered client instance and what its last check-in said. Read-only; this page sends nothing to an
-          instance.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Fleet</h1>
+          <p className="text-sm text-muted-foreground">
+            Each client install and what its last check-in said. Licences, documents and orders are signed with the hub
+            key and reach a Mac install at its next check-in, within 5 minutes.
+          </p>
+        </div>
+        <NewLicenceButton />
       </div>
 
       {instances.length === 0 ? (
-        <EmptyState icon={Server} title="No instances yet" message="An instance shows here once it is added to the hub." />
+        <EmptyState icon={Server} title="No instances yet" message="An install shows here once it has a licence or a registration code. Make one with New licence." />
       ) : (
         <>
           <ul className="divide-y divide-border rounded-lg border border-border md:hidden" data-testid="fleet-cards">
@@ -326,6 +364,7 @@ export function Fleet() {
                     <td className="px-3 py-2"><Identity instance={instance} /></td>
                     <td className="px-3 py-2"><StateBlock instance={instance} /></td>
                     <td className="px-3 py-2 whitespace-nowrap"><LastCheckIn instance={instance} /></td>
+                    <td className="px-3 py-2"><SubscriptionCell instance={instance} /></td>
                     <td className="px-3 py-2"><HealthCell instance={instance} /></td>
                     <td className="px-3 py-2"><VersionCell instance={instance} /></td>
                     <td className="px-3 py-2"><UsageCell instance={instance} /></td>
