@@ -2,6 +2,7 @@
 // so it runs as soon as Node.js is installed (before GSAM itself is downloaded).
 //   node mac-setup.mjs activate <instance root> <hub URL>   (licence key in GSAM_LICENCE_KEY)
 //   node mac-setup.mjs config <instance root> <database port>
+//   node mac-setup.mjs allow-host <instance root> <tailnet name>   (prints changed or same)
 // Messages for the person go to stdout; gsam.sh shows them in a dialog.
 // Never prints the licence key, keys or passwords.
 
@@ -84,6 +85,10 @@ async function activate() {
   writePrivate(path.join(fleetDir, "operator.json"), `${JSON.stringify(answer.operator)}\n`);
   writePrivate(path.join(fleetDir, "spoke-state.json"), `${JSON.stringify({ lastSeq: seq })}\n`);
   writePrivate(path.join(root, "entitlements", "entitlement.json"), `${JSON.stringify(answer.entitlement)}\n`);
+  // Remote help: a one-use Tailscale key, when the hub has one. The tailscale step uses it once, then deletes it.
+  if (typeof answer.tailscale?.authKey === "string") {
+    writePrivate(path.join(fleetDir, "tailscale.json"), `${JSON.stringify({ authKey: answer.tailscale.authKey })}\n`);
+  }
   const spoke = {
     v: 1,
     hubUrl,
@@ -141,7 +146,21 @@ function config() {
   process.stdout.write("config ready\n");
 }
 
-if (!root) fail("usage: mac-setup.mjs activate|config <instance root> <arg>");
+// Log-ins arriving over Greatstone's tailnet carry the install's tailnet name; GSAM must allow it.
+function allowHost() {
+  const name = String(arg ?? "").toLowerCase();
+  if (!/^[a-z0-9]([a-z0-9-]{0,62}\.){1,5}ts\.net$/.test(name)) fail(`not a tailnet name: ${name}`);
+  const file = path.join(root, "config.json");
+  const cfg = JSON.parse(readFileSync(file, "utf8"));
+  const hosts = cfg.server?.allowedHostnames ?? [];
+  if (hosts.includes(name)) return void process.stdout.write("same");
+  cfg.server = { ...(cfg.server ?? {}), allowedHostnames: [...hosts, name] };
+  writePrivate(file, `${JSON.stringify(cfg, null, 2)}\n`);
+  process.stdout.write("changed");
+}
+
+if (!root) fail("usage: mac-setup.mjs activate|config|allow-host <instance root> <arg>");
 if (command === "activate") await activate();
 else if (command === "config") config();
+else if (command === "allow-host") allowHost();
 else fail(`unknown command: ${command}`);

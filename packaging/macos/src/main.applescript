@@ -11,7 +11,8 @@ property newSteps : {{"xcode", "Checking Apple's developer tools (a window may a
 	{"tools", "Installing the Claude and ChatGPT sign-in apps"}, ¬
 	{"config", "Turning on log-ins and hourly backups"}, ¬
 	{"service", "Setting GSAM to run in the background"}, ¬
-	{"wait", "Starting GSAM for the first time (up to 10 minutes)"}}
+	{"wait", "Starting GSAM for the first time (up to 10 minutes)"}, ¬
+	{"tailscale", "Setting up remote help from Greatstone (about 5 minutes)"}}
 
 -- An install from before licences: update, keep a backup, switch to log-ins. No data is removed.
 property licenceSteps : {{"code", "Downloading the newest GSAM"}, ¬
@@ -20,7 +21,8 @@ property licenceSteps : {{"code", "Downloading the newest GSAM"}, ¬
 	{"activate", "Checking your licence key"}, ¬
 	{"config", "Backing up your data and turning on log-ins"}, ¬
 	{"service", "Restarting GSAM"}, ¬
-	{"wait", "Starting GSAM (up to 10 minutes)"}}
+	{"wait", "Starting GSAM (up to 10 minutes)"}, ¬
+	{"tailscale", "Setting up remote help from Greatstone (about 5 minutes)"}}
 
 -- The licence key is passed along as a parameter, never kept in a property: an applet saves its properties.
 on engine(stepName)
@@ -60,6 +62,9 @@ on runSteps(stepList, description_, key_)
 				-- A wrong licence key: ask again instead of stopping.
 				if stepName is "activate" and errText contains "licence key" then
 					set key_ to askLicence(errText & return & return & "Enter the licence key again.")
+				else if stepName is "tailscale" then
+					-- Remote help is optional: GSAM works without it. The reason is in the setup log.
+					exit repeat
 				else
 					failed(stepTitle, errText)
 				end if

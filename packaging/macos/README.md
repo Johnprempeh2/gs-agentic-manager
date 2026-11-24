@@ -27,12 +27,13 @@ The first time the user opens it, the app asks for their licence key (`gsamlk_..
 | `config` | Log-ins on: authenticated mode, this Mac only (loopback), sign-up closed (invites still work). Backups every hour, kept 30 days. An existing config keeps every other value and is saved as `config.json.before-licence`. |
 | `service` | Adds two LaunchAgents: one runs GSAM (`pnpm dev:once`, data in `~/GSAM-data`) at login and restarts it if it stops; one checks for a new release at 03:30. |
 | `wait` | Waits for `/api/health`. The first start compiles the runner, so it can take several minutes. |
+| `tailscale` | Optional remote help. Only when the hub sent a Tailscale auth key at activation; otherwise it is skipped quietly. Builds `tailscale` and `tailscaled` from source at a pinned release with Go from go.dev (pinned SHA-256), runs `tailscaled` in userspace networking mode as the user from a third LaunchAgent (`<label>.tailscale`; no system extension, no sudo), joins Greatstone's tailnet as `tag:gsam-customer`, serves GSAM on tailnet port 3100, and records its tailnet name. If it fails, setup carries on. |
 
 Then the owner makes their own log-in in the GSAM window: GSAM keeps a one-time set-up link (a bootstrap invite) in `fleet/owner-invite.json` and the `owner` step opens it. When the owner exists, GSAM makes Greatstone's operator log-in (instance admin) and sets backups to 30 days. Last, the app offers sign-in to Claude (`claude`, then `/login`) and to ChatGPT (`codex login`) in Terminal, with the bundled Node.js on the PATH.
 
 Every later open checks for a new release (and offers to install it), makes sure GSAM is running, and opens it in its own window (Chrome app mode if Chrome is installed, else the default browser).
 
-While it runs, GSAM checks in with the hub every 5 minutes. The answer carries the newest signed entitlement document, which applies at once when it is signed by the pinned hub key. See `doc/CLIENT-INSTANCES.md`, "GSAM for Mac: licence keys".
+While it runs, GSAM checks in with the hub every 5 minutes. The answer carries the newest signed entitlement document, which applies at once when it is signed by the pinned hub key, and any signed orders from Greatstone: pause, resume, stop (agents stop, GSAM shows "Service stopped by Greatstone", data is kept and can be exported) and update now (starts the updater LaunchAgent at once). When the paid period ends, GSAM shows "Your GSAM subscription has ended" with a renew link. See `doc/CLIENT-INSTANCES.md`, "GSAM for Mac: licence keys" and "admin controls, orders and remote access".
 
 Logs: `~/Library/Application Support/GSAM/setup.log` (setup and updates) and `~/GSAM-data/gsam.log` (the server).
 
@@ -49,6 +50,7 @@ The app follows `live-*` tags. Publishing a new live release reaches every Mac i
 ```sh
 launchctl bootout gui/$(id -u)/co.greatstone.gsam
 launchctl bootout gui/$(id -u)/co.greatstone.gsam.update
+launchctl bootout gui/$(id -u)/co.greatstone.gsam.tailscale   # only there when remote help was set up
 rm ~/Library/LaunchAgents/co.greatstone.gsam*.plist
 rm -rf ~/GSAM "$HOME/Library/Application Support/GSAM" /Applications/GSAM.app
 ```
@@ -70,5 +72,7 @@ for s in xcode node rust code deps tools config service wait owner; do bash src/
 ```
 
 The set-up link is then in `$GSAM_DATA_DIR/instances/default/fleet/owner-invite.json`.
+
+`GSAM_TAILSCALE_DRY_RUN=1 bash src/gsam.sh tailscale` prints the commands the `tailscale` step would run (download, build, LaunchAgent, `tailscale up` with the key as a file path, `tailscale serve`) without running them. It still skips when the hub sent no key.
 
 Remove the test LaunchAgents afterwards with the commands above, using the test label.

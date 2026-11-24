@@ -2,10 +2,19 @@
 # GSAM for Mac: the engine behind GSAM.app. Each subcommand is one setup step,
 # so the app can show progress between them. Every step is safe to run again.
 #   gsam.sh status | xcode | node | activate | rust | code | deps | tools | config | service | wait
-#           | owner | owner-done | open | newer | update | log
+#           | tailscale | owner | owner-done | open | newer | update | log
 set -euo pipefail
 
 NODE_VERSION="24.22.3"
+# Remote help (the tailscale step): tailscaled built from source at a pinned
+# release, with Go from go.dev checked against these pinned SHA-256 sums.
+# Go modules are checked against Go's checksum database (sum.golang.org).
+TS_VERSION="1.106.0"
+GO_VERSION="1.27.4"
+GO_SHA256_arm64="91a44a2b8a716600ad94a4f143e156116620db8828086a6e3602291be9bd0bb4"
+GO_SHA256_amd64="2b799377704ef12db39bd254995d5c348c9cc8d86562ca817724390e56c38f43"
+TS_TAG="tag:gsam-customer"
+TS_REMOTE_PORT=3100                  # the port the tailnet policy opens to Greatstone admins
 REPO="https://github.com/Johnprempeh2/gs-agentic-manager.git"
 APP_HOME="${GSAM_APP_HOME:-$HOME/Library/Application Support/GSAM}"
 RUNTIME="$APP_HOME/runtime"
@@ -15,6 +24,7 @@ PORT="${GSAM_PORT:-3100}"
 LABEL="${GSAM_LABEL:-co.greatstone.gsam}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 UPDATE_PLIST="$HOME/Library/LaunchAgents/$LABEL.update.plist"
+TS_PLIST="$HOME/Library/LaunchAgents/$LABEL.tailscale.plist"
 LOG="$APP_HOME/setup.log"
 INST="$DATA/instances/default"       # GSAM's own folder inside the data folder
 DB_PORT="${GSAM_DB_PORT:-54329}"     # used only when a new config is written
@@ -33,6 +43,12 @@ echo "=== $(date '+%Y-%m-%d %H:%M:%S') $*"
 healthy() { curl -fsS -m 3 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; }
 # A message the person sees in the app's error dialog.
 fail() { echo "$1"; echo "$1" >&4; exit 1; }
+# Tests: print a tailscale command instead of running it (GSAM_TAILSCALE_DRY_RUN=1). The auth key is only ever a file path.
+x() { if [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ]; then echo "would run: $*" >&3; else "$@"; fi; }
+TS="$RUNTIME/tailscale"
+# A unix socket path must stay under 104 bytes, so it lives in the per-user temp folder, not under Application Support.
+TS_SOCK="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp/)$LABEL.tailscaled.sock"
+ts() { "$TS/bin/tailscale" --socket="$TS_SOCK" "$@"; }
 latest_release() { git ls-remote --tags --refs "$REPO" 'live-*' | sed 's#.*refs/tags/##' | sort -V | tail -1; }
 current_release() { cat "$APP_HOME/version" 2>/dev/null || echo none; }
 checkout_release() {
@@ -136,6 +152,7 @@ case "${1:-}" in
     <key>RUSTUP_HOME</key><string>$RUSTUP_HOME</string>
     <key>PORT</key><string>$PORT</string>
     <key>GSAM_TELEMETRY_DISABLED</key><string>1</string>
+    <key>GSAM_LAUNCHD_LABEL</key><string>$LABEL</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -156,6 +173,7 @@ EOF
     <key>GSAM_APP_HOME</key><string>$APP_HOME</string><key>GSAM_CODE_DIR</key><string>$CODE</string>
     <key>GSAM_DATA_DIR</key><string>$DATA</string><key>GSAM_PORT</key><string>$PORT</string>
     <key>GSAM_LABEL</key><string>$LABEL</string>
+    $( [ -z "$CODE_SOURCE" ] || printf '\n    <key>GSAM_CODE_SOURCE</key><string>%s</string><key>GSAM_CODE_REF</key><string>%s</string>' "$CODE_SOURCE" "$CODE_REF")
   </dict>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
 </dict></plist>
@@ -172,6 +190,66 @@ EOF
     launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || launchctl bootstrap "gui/$(id -u)" "$PLIST"
     for _ in $(seq 1 120); do healthy && exit 0; sleep 5; done
     echo "GSAM did not answer on port $PORT"; exit 1 ;;
+
+  tailscale)
+    # Optional remote help: joins Greatstone's tailnet as $TS_TAG and serves GSAM to it.
+    # Runs as this Mac user in userspace networking mode: no system extension, no sudo.
+    keyfile="$INST/fleet/tailscale.json"
+    if [ ! -f "$keyfile" ] && [ ! -f "$TS_PLIST" ]; then
+      echo "tailscale: the hub sent no auth key, skipped"; printf skipped >&3; exit 0
+    fi
+    if [ "$(cat "$TS/version" 2>/dev/null)" != "$TS_VERSION" ]; then
+      arch=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)
+      sum_var="GO_SHA256_$arch"; file="go$GO_VERSION.darwin-$arch.tar.gz"
+      tmp=$(mktemp -d)
+      x curl -fsSL "https://go.dev/dl/$file" -o "$tmp/$file"
+      [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ] || echo "${!sum_var}  $tmp/$file" | shasum -a 256 -c -
+      x rm -rf "$RUNTIME/go"
+      x tar -xzf "$tmp/$file" -C "$RUNTIME"
+      x env GOTOOLCHAIN=local GOPATH="$RUNTIME/gopath" GOCACHE="$RUNTIME/gocache" GOBIN="$TS/bin" \
+        "$RUNTIME/go/bin/go" install -modcacherw "tailscale.com/cmd/tailscale@v$TS_VERSION" "tailscale.com/cmd/tailscaled@v$TS_VERSION"
+      x rm -rf "$tmp" "$RUNTIME/go" "$RUNTIME/gopath" "$RUNTIME/gocache"   # about 1 GB of build tools, not needed to run
+      [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ] || echo "$TS_VERSION" > "$TS/version"
+    fi
+    mkdir -p "$TS/state"
+    plist="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\"><dict>
+  <key>Label</key><string>$LABEL.tailscale</string>
+  <key>ProgramArguments</key><array>
+    <string>$TS/bin/tailscaled</string><string>--tun=userspace-networking</string>
+    <string>--statedir=$TS/state</string><string>--socket=$TS_SOCK</string><string>--port=0</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$TS/tailscaled.log</string>
+  <key>StandardErrorPath</key><string>$TS/tailscaled.log</string>
+</dict></plist>"
+    if [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ]; then echo "would write $TS_PLIST:" >&3; echo "$plist" >&3
+    else
+      printf '%s\n' "$plist" > "$TS_PLIST"
+      launchctl bootout "gui/$(id -u)/$LABEL.tailscale" 2>/dev/null || true
+      launchctl bootstrap "gui/$(id -u)" "$TS_PLIST"
+      for _ in $(seq 1 30); do ts status >/dev/null 2>&1 && break; ts status 2>&1 | grep -q "Logged out" && break; sleep 1; done
+    fi
+    code=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).code)' "$INST/fleet/spoke.json")
+    if [ -f "$keyfile" ]; then
+      # The key goes to tailscale as a file path (never on a command line other users can see), then is deleted.
+      authfile="$TS/authkey"; ( umask 077; node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).authKey)' "$keyfile" > "$authfile" )
+      x ts up --auth-key="file:$authfile" --hostname="gsam-$code" --advertise-tags="$TS_TAG" --accept-dns=false \
+        || { rm -f "$authfile"; fail "GSAM could not join Greatstone's network for remote help. Everything else works."; }
+      rm -f "$authfile" "$keyfile"
+    fi
+    x ts serve --bg --tcp="$TS_REMOTE_PORT" "tcp://127.0.0.1:$PORT"
+    [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ] && exit 0
+    name=$(ts status --json | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write((JSON.parse(d).Self?.DNSName??"").replace(/\.$/,"")))')
+    [ -n "$name" ] || fail "GSAM joined Greatstone's network but has no name there yet. Open GSAM again to retry."
+    node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ name: process.argv[2] }) + "\n")' "$INST/fleet/tailnet.json" "$name"
+    # Log-ins over the tailnet arrive with that name, so GSAM must allow it.
+    if [ "$(node "$HERE/mac-setup.mjs" allow-host "$INST" "$name")" = changed ]; then
+      launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    fi
+    printf joined >&3 ;;
 
   owner)
     # The owner's one-time set-up link, made by the server once it is licensed. Opens it in the GSAM window.
@@ -203,9 +281,16 @@ EOF
     [ -n "$latest" ] && [ "$latest" != "$(current_release)" ] && printf "%s" "$latest" >&3 || true ;;
 
   update)
-    latest=$(latest_release)
-    [ "$latest" = "$(current_release)" ] && exit 0
-    checkout_release "$latest"
+    # Nightly at 03:30, or at once when Greatstone sends an "update now" order (the server starts this job).
+    if [ -n "$CODE_SOURCE" ]; then
+      before=$(git -C "$CODE" rev-parse HEAD)
+      bash "$0" code
+      [ "$(git -C "$CODE" rev-parse HEAD)" = "$before" ] && { echo "update: already on the newest test commit"; exit 0; }
+    else
+      latest=$(latest_release)
+      [ "$latest" = "$(current_release)" ] && { echo "update: already on $latest"; exit 0; }
+      checkout_release "$latest"
+    fi
     (cd "$CODE" && corepack pnpm install --frozen-lockfile)
     launchctl kickstart -k "gui/$(id -u)/$LABEL" ;;
 
