@@ -1599,7 +1599,17 @@ registers a client on the fly and stores it on the connection:
   client.
 - Env-registered clients always win: when
   `GSAM_TOOL_OAUTH_<PROVIDER>_CLIENT_ID/_SECRET` are configured, the
-  broker uses them (`customer` ownership) and skips registration. List both
+  broker uses them (`customer` ownership) and skips registration. The broker
+  sends an env client only to the method's `defaults.tokenEndpoint`, or, when
+  the method has none, to a token endpoint on the exact host of its fixed
+  `serverUrl`, `discoveryUrl`, `metadataUrl` or `authorizationEndpoint`. Set
+  `defaults.tokenEndpoint` when the vendor's token endpoint is on another host.
+  The method must list `customer` ownership. Box, Notion, PostHog, Sentry,
+  Vercel and Xero rely on the same-host rule today: if their discovery returns
+  a token endpoint on another host, a deployment-wide client is refused until
+  the endpoint is pinned, and a client added to the connection always works.
+  `tool-access-instance-oauth-client.test.ts` fails when a new customer method
+  neither pins its token endpoint nor joins that named list. List both
   `customer` and `dcr` in the method's `ownershipModes` when the vendor
   supports both.
 
