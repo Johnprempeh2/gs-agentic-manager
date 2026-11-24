@@ -3,11 +3,26 @@
 # An agent run is given its branch and worktree in GSAM_WORKSPACE_BRANCH and
 # GSAM_WORKSPACE_WORKTREE_PATH. Refuse a commit made anywhere else, so one
 # run's work cannot land on another run's branch. People at a terminal do not
-# have GSAM_WORKSPACE_BRANCH set, so the hook does nothing for them.
+# have GSAM_WORKSPACE_BRANCH set, so the branch guard does nothing for them.
 # scripts/git-hooks/install.sh installs it; provision-worktree.sh runs that for
 # every new agent worktree.
+#
+# Optional (GRE-6167): `git config greatstone.hygieneCheck true` also refuses
+# staged secrets and client names (scripts/check-repo-hygiene.mjs). Off unless
+# set; CI runs the same check on every pull request.
+hygiene_check() {
+  [ "$(git config --type=bool --get greatstone.hygieneCheck 2>/dev/null || true)" = "true" ] || return 0
+  local script
+  script="$(git rev-parse --show-toplevel)/scripts/check-repo-hygiene.mjs"
+  [ -f "$script" ] || return 0
+  node "$script" --staged >/dev/null
+}
+
 expected_branch="${GSAM_WORKSPACE_BRANCH:-}"
-[ -n "$expected_branch" ] || exit 0
+if [ -z "$expected_branch" ]; then
+  hygiene_check || exit 1
+  exit 0
+fi
 
 current_branch="$(git symbolic-ref --short -q HEAD || true)"
 if [ "$current_branch" != "$expected_branch" ]; then
@@ -24,4 +39,5 @@ if [ -n "$expected_worktree" ]; then
     exit 1
   fi
 fi
+hygiene_check || exit 1
 exit 0
