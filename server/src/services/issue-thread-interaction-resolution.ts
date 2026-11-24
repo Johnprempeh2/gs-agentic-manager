@@ -18,6 +18,7 @@ export const ISSUE_THREAD_INTERACTION_RESOLUTION_DENIAL_CODES = [
   "interaction_issue_closed",
   "interaction_governed_action_denied",
   "review_policy_denied",
+  "interaction_conversation_owner_required",
 ] as const;
 
 export type IssueThreadInteractionResolutionDenialCode =
@@ -384,4 +385,50 @@ export function issueThreadInteractionAttentionAgentAllowed(input: {
     additionalRestriction: input.additionalRestriction,
     governedAction: input.governedAction,
   }).allowed;
+}
+
+export function conversationInteractionResponderAllowed(
+  issue: { conversationAgentId?: string | null; conversationUserId?: string | null },
+  userId: string | null | undefined,
+) {
+  return !issue.conversationAgentId || (Boolean(userId) && userId === issue.conversationUserId);
+}
+
+export type HumanToolReviewResolutionDecision =
+  | { allowed: true }
+  | {
+      allowed: false;
+      status: 403 | 404 | 422;
+      code: IssueThreadInteractionResolutionDenialCode;
+      message: string;
+      details?: Record<string, unknown>;
+    };
+
+export function evaluateHumanToolReviewResolution(input: {
+  userId: string;
+  issue: { conversationAgentId?: string | null; conversationUserId?: string | null };
+  interaction: IssueThreadInteractionResolverAudienceInput["interaction"];
+}): HumanToolReviewResolutionDecision {
+  if (!conversationInteractionResponderAllowed(input.issue, input.userId)) {
+    return {
+      allowed: false,
+      status: 403,
+      code: "interaction_conversation_owner_required",
+      message: "Only the conversation owner can respond to chat interactions",
+    };
+  }
+  const decision = evaluateIssueThreadInteractionResolverAudience({
+    actor: { type: "user", userId: input.userId },
+    interaction: input.interaction,
+    governedAction: true,
+  });
+  if (decision.allowed) return { allowed: true };
+  return { allowed: false, status: decision.status, code: decision.code, message: decision.message, details: decision.details };
+}
+
+export function assertHumanToolReviewResolution(input: Parameters<typeof evaluateHumanToolReviewResolution>[0]) {
+  const decision = evaluateHumanToolReviewResolution(input);
+  if (!decision.allowed) {
+    throw issueThreadInteractionResolutionError(decision.status, decision.code, decision.message, decision.details);
+  }
 }
