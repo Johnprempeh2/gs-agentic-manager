@@ -89,9 +89,9 @@ case "${1:-}" in
   code)
     if [ -n "$CODE_SOURCE" ]; then
       # Tests: a local checkout and branch, never the live release.
-      [ -d "$CODE/.git" ] || git clone "$CODE_SOURCE" "$CODE"
-      git -C "$CODE" fetch -q origin
-      git -C "$CODE" checkout -q --force "origin/${CODE_REF:-HEAD}"
+      [ -d "$CODE/.git" ] || git clone -q --depth 1 "file://$CODE_SOURCE" "$CODE"
+      git -C "$CODE" fetch -q --depth 1 origin "${CODE_REF:-HEAD}"
+      git -C "$CODE" checkout -q --force FETCH_HEAD
       echo "test:${CODE_REF:-HEAD}" > "$APP_HOME/version"
     else
       # Always the newest released version (live-* tag), never unreleased work on main.
@@ -110,7 +110,7 @@ case "${1:-}" in
   config)
     # Log-ins on (authenticated, this Mac only, sign-up closed), hourly backups kept 30 days.
     # An install from before licences is backed up first; nothing changes if that backup fails.
-    if [ -d "$INST/db" ] && ! grep -q '"deploymentMode": "authenticated"' "$INST/config.json" 2>/dev/null; then
+    if { [ -d "$INST/db" ] || [ -f "$INST/config.json" ]; } && ! grep -q '"deploymentMode": "authenticated"' "$INST/config.json" 2>/dev/null; then
       healthy || fail "GSAM is not running, so it cannot make a backup before switching to log-ins. Nothing was changed. Open GSAM again to retry."
       curl -fsS -m 600 -X POST -H "Origin: http://127.0.0.1:$PORT" -H "Content-Type: application/json" -d '{}' \
         "http://127.0.0.1:$PORT/api/instance/database-backups" || fail "GSAM could not make a backup before switching to log-ins, so nothing was changed. Try again, or send the log to Greatstone."
@@ -160,7 +160,7 @@ EOF
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
 </dict></plist>
 EOF
-    pkill -f "dev-runner.ts" 2>/dev/null || true   # a copy started by hand from Terminal
+    pkill -f "dev-runner.ts.*--data-dir $DATA\$" 2>/dev/null || true   # a copy of THIS install started by hand from Terminal, never any other GSAM
     for p in "$PLIST" "$UPDATE_PLIST"; do
       l=$(basename "$p" .plist)
       launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
