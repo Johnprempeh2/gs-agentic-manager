@@ -56,7 +56,9 @@ for (const [index, entry] of ordered.entries()) {
   if (bundled.length > 0) {
     const staged = path.join(scratch, `workspace-package-${index}`);
     run(process.execPath, [path.join(root, "scripts", "prepare-bundled-package.mjs"), dir, staged]);
-    run("npm", ["pack", staged, "--pack-destination", scratch]);
+    // The staged copy is already built and has no ../scripts, so its prepack
+    // hook cannot run there. scripts/release.sh packs it the same way.
+    run("npm", ["pack", staged, "--pack-destination", scratch, "--ignore-scripts"]);
   } else {
     run("pnpm", ["--dir", entry.dir, "pack", "--pack-destination", scratch], { env: { GSAM_RELEASE_REUSE_UI_DIST: "1" } });
   }
