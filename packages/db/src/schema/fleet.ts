@@ -33,6 +33,16 @@ export const fleetInstances = pgTable(
     lastAppHealth: text("last_app_health"),
     /** The support queue this instance's "Get help" tickets land in (GRE-1084). Null: the hub refuses its tickets. */
     supportQueueId: uuid("support_queue_id").references(() => supportQueues.id, { onDelete: "set null" }),
+    /**
+     * GSAM for Mac (P1): the newest signed entitlement document for this
+     * instance, as the envelope the instance reads. Sent with every check-in
+     * answer. Null for an instance with no document from the hub.
+     */
+    entitlementDocument: jsonb("entitlement_document").$type<{ v: 1; document: string; signature: string }>(),
+    entitlementVersion: integer("entitlement_version"),
+    /** The Greatstone operator log-in made at licence activation. The password is in `operatorSecret`, encrypted by the hub's secrets store. */
+    operatorEmail: text("operator_email"),
+    operatorSecret: jsonb("operator_secret").$type<Record<string, unknown>>(),
     registeredAt: timestamp("registered_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedBy: text("revoked_by"),

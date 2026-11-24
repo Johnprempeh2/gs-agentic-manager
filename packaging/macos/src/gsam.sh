@@ -1,7 +1,8 @@
 #!/bin/bash
 # GSAM for Mac: the engine behind GSAM.app. Each subcommand is one setup step,
 # so the app can show progress between them. Every step is safe to run again.
-#   gsam.sh status | xcode | node | rust | code | deps | tools | service | wait | open | update | log
+#   gsam.sh status | xcode | node | activate | rust | code | deps | tools | config | service | wait
+#           | owner | owner-done | open | newer | update | log
 set -euo pipefail
 
 NODE_VERSION="24.22.3"
@@ -15,13 +16,23 @@ LABEL="${GSAM_LABEL:-co.greatstone.gsam}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 UPDATE_PLIST="$HOME/Library/LaunchAgents/$LABEL.update.plist"
 LOG="$APP_HOME/setup.log"
+INST="$DATA/instances/default"       # GSAM's own folder inside the data folder
+DB_PORT="${GSAM_DB_PORT:-54329}"     # used only when a new config is written
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# Greatstone's hub: GSAM_HUB_URL, else the address build.sh put in the app.
+HUB_URL="${GSAM_HUB_URL:-$(cat "$HERE/hub-url" 2>/dev/null || true)}"
+# Tests only: clone from a local checkout and check out a branch instead of the newest live-* tag.
+CODE_SOURCE="${GSAM_CODE_SOURCE:-}"
+CODE_REF="${GSAM_CODE_REF:-}"
 export CARGO_HOME="$RUNTIME/cargo" RUSTUP_HOME="$RUNTIME/rustup"
 export PATH="$RUNTIME/node/bin:$CARGO_HOME/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 mkdir -p "$APP_HOME" "$RUNTIME" "$DATA"
-exec 3>&1 >>"$LOG" 2>&1   # step output goes to the log; fd 3 answers the app
+exec 3>&1 4>&2 >>"$LOG" 2>&1   # step output goes to the log; fd 3 answers the app, fd 4 carries errors to it
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') $*"
 
 healthy() { curl -fsS -m 3 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; }
+# A message the person sees in the app's error dialog.
+fail() { echo "$1"; echo "$1" >&4; exit 1; }
 latest_release() { git ls-remote --tags --refs "$REPO" 'live-*' | sed 's#.*refs/tags/##' | sort -V | tail -1; }
 current_release() { cat "$APP_HOME/version" 2>/dev/null || echo none; }
 checkout_release() {
@@ -32,8 +43,12 @@ checkout_release() {
 
 case "${1:-}" in
   status)
-    # installed = code, deps and the background service all present
-    if [ -d "$CODE/node_modules" ] && [ -f "$PLIST" ] && [ -x "$RUNTIME/node/bin/node" ]; then printf installed >&3; else printf new >&3; fi ;;
+    # new: nothing installed. unlicensed: installed before licences (local log-in free).
+    # setup: licensed, but the owner has not made their log-in yet. installed: ready.
+    if ! { [ -d "$CODE/node_modules" ] && [ -f "$PLIST" ] && [ -x "$RUNTIME/node/bin/node" ]; }; then printf new >&3
+    elif [ ! -f "$INST/fleet/spoke.json" ]; then printf unlicensed >&3
+    elif [ -f "$INST/fleet/operator.json" ]; then printf setup >&3
+    else printf installed >&3; fi ;;
 
   xcode)
     # Apple's command line tools give git and the compilers Rust needs.
@@ -57,6 +72,13 @@ case "${1:-}" in
     fi
     corepack enable ;;
 
+  activate)
+    # Licence key (GSAM_LICENCE_KEY) -> fleet registration, signed entitlement document, operator log-in.
+    [ -n "$HUB_URL" ] || fail "This copy of GSAM does not know where Greatstone's service is. Ask Greatstone for a new download."
+    mkdir -p "$INST"
+    out=$(GSAM_RELEASE_TAG="$(current_release)" node "$HERE/mac-setup.mjs" activate "$INST" "$HUB_URL") || fail "$out"
+    echo "$out" ;;
+
   rust)
     if ! [ -x "$CARGO_HOME/bin/cargo" ]; then
       curl -fsSL https://sh.rustup.rs -o "$RUNTIME/rustup-init.sh"
@@ -65,9 +87,17 @@ case "${1:-}" in
     fi ;;
 
   code)
-    # Always the newest released version (live-* tag), never unreleased work on main.
-    [ -d "$CODE/.git" ] || git clone --depth 1 "$REPO" "$CODE"
-    checkout_release "$(latest_release)" ;;
+    if [ -n "$CODE_SOURCE" ]; then
+      # Tests: a local checkout and branch, never the live release.
+      [ -d "$CODE/.git" ] || git clone "$CODE_SOURCE" "$CODE"
+      git -C "$CODE" fetch -q origin
+      git -C "$CODE" checkout -q --force "origin/${CODE_REF:-HEAD}"
+      echo "test:${CODE_REF:-HEAD}" > "$APP_HOME/version"
+    else
+      # Always the newest released version (live-* tag), never unreleased work on main.
+      [ -d "$CODE/.git" ] || git clone --depth 1 "$REPO" "$CODE"
+      checkout_release "$(latest_release)"
+    fi ;;
 
   deps)
     cd "$CODE" && corepack pnpm install --frozen-lockfile ;;
@@ -76,6 +106,17 @@ case "${1:-}" in
     # The Claude and ChatGPT command line apps; GSAM's agents sign in through them.
     command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code
     command -v codex  >/dev/null || npm install -g @openai/codex ;;
+
+  config)
+    # Log-ins on (authenticated, this Mac only, sign-up closed), hourly backups kept 30 days.
+    # An install from before licences is backed up first; nothing changes if that backup fails.
+    if [ -d "$INST/db" ] && ! grep -q '"deploymentMode": "authenticated"' "$INST/config.json" 2>/dev/null; then
+      healthy || fail "GSAM is not running, so it cannot make a backup before switching to log-ins. Nothing was changed. Open GSAM again to retry."
+      curl -fsS -m 600 -X POST -H "Origin: http://127.0.0.1:$PORT" -H "Content-Type: application/json" -d '{}' \
+        "http://127.0.0.1:$PORT/api/instance/database-backups" || fail "GSAM could not make a backup before switching to log-ins, so nothing was changed. Try again, or send the log to Greatstone."
+    fi
+    out=$(node "$HERE/mac-setup.mjs" config "$INST" "$DB_PORT") || fail "$out"
+    echo "$out" ;;
 
   service)
     mkdir -p "$HOME/Library/LaunchAgents"
@@ -104,7 +145,7 @@ case "${1:-}" in
 </dict></plist>
 EOF
     # Nightly updater: installs a new GSAM release at 03:30 (or on wake if the Mac was asleep).
-    ENGINE="$APP_HOME/gsam.sh"; cp "$0" "$ENGINE"; chmod +x "$ENGINE"
+    ENGINE="$APP_HOME/gsam.sh"; [ "$0" -ef "$ENGINE" ] || cp "$0" "$ENGINE"; chmod +x "$ENGINE"
     cat > "$UPDATE_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -132,8 +173,26 @@ EOF
     for _ in $(seq 1 120); do healthy && exit 0; sleep 5; done
     echo "GSAM did not answer on port $PORT"; exit 1 ;;
 
+  owner)
+    # The owner's one-time set-up link, made by the server once it is licensed. Opens it in the GSAM window.
+    for _ in $(seq 1 60); do
+      [ -f "$INST/fleet/operator.json" ] || { printf done >&3; exit 0; }
+      [ -f "$INST/fleet/owner-invite.json" ] && break
+      sleep 2
+    done
+    url=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).url)' "$INST/fleet/owner-invite.json") \
+      || fail "GSAM did not make the set-up link. Open GSAM again to retry."
+    bash "$0" open "$url"
+    printf opened >&3 ;;
+
+  owner-done)
+    # yes once the server has seen the owner's log-in and made Greatstone's operator log-in.
+    for _ in $(seq 1 15); do [ -f "$INST/fleet/operator.json" ] || { printf yes >&3; exit 0; }; sleep 2; done
+    printf no >&3 ;;
+
   open)
-    url="http://localhost:$PORT"
+    url="${2:-http://localhost:$PORT}"
+    [ -n "${GSAM_NO_WINDOW:-}" ] && { echo "open: no window (test run)"; exit 0; }
     if [ -d "/Applications/Google Chrome.app" ]; then
       open -na "Google Chrome" --args --app="$url" --user-data-dir="$APP_HOME/window"
     else open "$url"; fi ;;

@@ -3,9 +3,12 @@ import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import { fleetCheckIns, fleetInstances } from "@greatstone/db";
+import type { EntitlementEnvelope } from "@greatstone/shared";
 import {
   FLEET_AUDIENCE,
   FLEET_CHECK_IN_SCHEMA,
+  FLEET_LICENCE_KEY_PREFIX,
+  FLEET_LICENCE_TTL_DAYS,
   FLEET_JWS_TYPE,
   FLEET_MAX_CLOCK_SKEW_SECONDS,
   FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
@@ -13,13 +16,19 @@ import {
   FLEET_REGISTRATION_CODE_TTL_HOURS,
   fleetClaimsSchema,
   fleetInstanceState,
+  type FleetActivateRequest,
+  type FleetActivateResponse,
   type FleetAction,
+  type FleetCheckInResponse,
   type FleetClaims,
+  type FleetEntitlementInput,
   type FleetInstanceStatus,
   type FleetLifecycle,
   type FleetPublicKey,
   type FleetReceivedCheckIn,
 } from "@greatstone/shared/fleet";
+import { localEncryptedProvider } from "../secrets/local-encrypted-provider.js";
+import { signEntitlementDocument, type HubSigningKey } from "./fleet-entitlements.js";
 
 // Hub side of the fleet channel (GRE-1082). Same shape as the Cloud control
 // assertion (services/cloud-runtime-identity.ts): a compact EdDSA JWS, a
@@ -154,7 +163,35 @@ function view(row: FleetInstanceRow, now = new Date()) {
     registrationCodeExpiresAt: row.status === "pending" ? row.registrationCodeExpiresAt : null,
     /** GRE-1084: where this instance's "Get help" tickets land; null refuses them. */
     supportQueueId: row.supportQueueId,
+    /** GSAM for Mac: the version of the newest signed document the hub holds, and the operator log-in's email. Never the password. */
+    entitlementVersion: row.entitlementVersion,
+    operatorEmail: row.operatorEmail,
     createdAt: row.createdAt,
+  };
+}
+
+/** The Greatstone operator log-in of a licensed install. `.invalid` never receives mail. */
+export function fleetOperatorEmail(code: string): string {
+  return `operator+${code}@greatstone.invalid`;
+}
+
+function newLicenceKey(now: Date) {
+  const key = `${FLEET_LICENCE_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
+  return { key, hash: hashRegistrationCode(key), expiresAt: new Date(now.getTime() + FLEET_LICENCE_TTL_DAYS * 24 * 60 * 60 * 1000) };
+}
+
+function entitlementDocumentFor(code: string, version: number, input: FleetEntitlementInput, issuedBy: string, now: Date) {
+  return {
+    v: 1 as const,
+    client: code,
+    version,
+    issuedAt: now.toISOString(),
+    validUntil: new Date(input.validUntil).toISOString(),
+    issuedBy,
+    ...(input.reason ? { reason: input.reason } : {}),
+    features: input.features,
+    limits: input.limits,
+    grace: input.grace,
   };
 }
 
@@ -326,8 +363,104 @@ export function fleetService(db: Db) {
       return { instanceId: row.id, code: row.code };
     },
 
-    /** Spoke: one signed check-in. Stored as parsed by the closed schema, nothing else. */
-    async checkIn(compactJws: string, now = new Date()) {
+    /**
+     * GSAM for Mac: a new pending instance with a licence key and its first
+     * signed document. The key is returned once and stored only as a hash.
+     * Null when the code is taken.
+     */
+    async createLicence(input: FleetEntitlementInput & { code?: string }, issuedBy: { userId: string | null; label: string }, key: HubSigningKey, now = new Date()) {
+      const code = input.code ?? `mac-${randomBytes(4).toString("hex")}`;
+      const licence = newLicenceKey(now);
+      const envelope = signEntitlementDocument(entitlementDocumentFor(code, 1, input, issuedBy.label, now), key);
+      const [row] = await db
+        .insert(fleetInstances)
+        .values({
+          code,
+          status: "pending",
+          registrationCodeHash: licence.hash,
+          registrationCodeExpiresAt: licence.expiresAt,
+          createdByUserId: issuedBy.userId,
+          entitlementDocument: envelope,
+          entitlementVersion: 1,
+        })
+        .onConflictDoNothing({ target: fleetInstances.code })
+        .returning();
+      if (!row) return null;
+      return { instance: view(row, now), licenceKey: licence.key, licenceKeyExpiresAt: licence.expiresAt.toISOString() };
+    },
+
+    /** A newer signed document for the instance. It reaches the install with its next check-in answer. Null when not found. */
+    async issueEntitlement(id: string, input: FleetEntitlementInput, issuedBy: string, key: HubSigningKey, now = new Date()) {
+      if (!UUID_PATTERN.test(id)) return null;
+      const row = await db.select().from(fleetInstances).where(eq(fleetInstances.id, id)).then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const version = (row.entitlementVersion ?? 0) + 1;
+      const envelope = signEntitlementDocument(entitlementDocumentFor(row.code, version, input, issuedBy, now), key);
+      const [updated] = await db
+        .update(fleetInstances)
+        .set({ entitlementDocument: envelope, entitlementVersion: version, updatedAt: now })
+        .where(and(eq(fleetInstances.id, id), sql`${fleetInstances.entitlementVersion} is not distinct from ${row.entitlementVersion}`))
+        .returning();
+      if (!updated) return reject("fleet_replay", 409);
+      return view(updated, now);
+    },
+
+    /**
+     * Spoke (Mac app): trade a licence key and a signed proof for an active
+     * registration, the first signed document and the Greatstone operator
+     * log-in. One use: the key hash is cleared in the same update. A used,
+     * expired or unknown key gets the same refusal.
+     */
+    async activate(input: FleetActivateRequest, key: HubSigningKey, now = new Date()): Promise<FleetActivateResponse> {
+      const codeHash = hashRegistrationCode(input.licenceKey);
+      const claims = verifyMessage(input.proof, publicKeyFromX(input.publicKey.x), { act: "register", sub: codeHash }, now);
+      const password = randomBytes(24).toString("base64url");
+      const secret = await localEncryptedProvider.createSecret({ value: password });
+      const [row] = await db
+        .update(fleetInstances)
+        .set({
+          status: "active",
+          publicKeyX: input.publicKey.x,
+          lastSeq: claims.seq,
+          registeredAt: now,
+          revokedAt: null,
+          revokedBy: null,
+          registrationCodeHash: null,
+          registrationCodeExpiresAt: null,
+          operatorEmail: sql`'operator+' || ${fleetInstances.code} || '@greatstone.invalid'`,
+          operatorSecret: { provider: "local_encrypted", material: secret.material },
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(fleetInstances.registrationCodeHash, codeHash),
+            eq(fleetInstances.status, "pending"),
+            gt(fleetInstances.registrationCodeExpiresAt, now),
+            sql`${fleetInstances.entitlementDocument} is not null`,
+          ),
+        )
+        .returning();
+      if (!row) return reject("fleet_bad_registration_code");
+      return {
+        instanceId: row.id,
+        code: row.code,
+        entitlementPublicKey: key.publicKey,
+        entitlement: row.entitlementDocument!,
+        operator: { email: fleetOperatorEmail(row.code), password },
+      };
+    },
+
+    /** Hub admin: the operator log-in of a licensed install, for remote help. Null when there is none. */
+    async operatorLogin(id: string) {
+      if (!UUID_PATTERN.test(id)) return null;
+      const row = await db.select().from(fleetInstances).where(eq(fleetInstances.id, id)).then((rows) => rows[0] ?? null);
+      const secret = row?.operatorSecret as { provider?: string; material?: Record<string, unknown> } | null | undefined;
+      if (!row?.operatorEmail || secret?.provider !== "local_encrypted" || !secret.material) return null;
+      return { email: row.operatorEmail, password: await localEncryptedProvider.resolveVersion({ material: secret.material, externalRef: null }) };
+    },
+
+    /** Spoke: one signed check-in. Stored as parsed by the closed schema, nothing else. The answer carries the newest signed document. */
+    async checkIn(compactJws: string, now = new Date()): Promise<FleetCheckInResponse> {
       const { signer, claims } = await signedSenderFor(compactJws, "check-in", now);
       const checkIn = claims.checkIn!;
       // A v1 check-in says nothing about lifecycle, so the stored one stays.
@@ -343,7 +476,12 @@ export function fleetService(db: Db) {
         const cutoff = new Date(now.getTime() - CHECK_IN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
         await tx.delete(fleetCheckIns).where(and(eq(fleetCheckIns.fleetInstanceId, signer.id), lt(fleetCheckIns.receivedAt, cutoff)));
       });
-      return { receivedAt: now.toISOString() };
+      const entitlement = await db
+        .select({ document: fleetInstances.entitlementDocument })
+        .from(fleetInstances)
+        .where(eq(fleetInstances.id, signer.id))
+        .then((rows) => (rows[0]?.document as EntitlementEnvelope | null | undefined) ?? null);
+      return { receivedAt: now.toISOString(), entitlement };
     },
 
     /** Hub admin: remove the record and its check-ins (B9 delete, when the spoke cannot ask). Null when not found. */
