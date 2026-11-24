@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { queryKeys } from "@/lib/queryKeys";
-import { relativeTime } from "@/lib/utils";
+import { formatCalendarDay, relativeTime } from "@/lib/utils";
 
 /**
  * GSAM for Mac admin controls on the hub Fleet page (P2): new licence keys,
@@ -41,7 +41,7 @@ export function dateOnly(iso: string) {
 
 /** British date, for example 24 Dec 2026. */
 export function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return formatCalendarDay(iso.slice(0, 10), { includeYear: true });
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -203,7 +203,7 @@ export function NewLicenceButton() {
         <KeyRound />
         New licence
       </Button>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-(--sz-90vh) overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>New licence</DialogTitle>
           <DialogDescription>A licence key for one GSAM for Mac install. It works once and expires in 30 days if nobody uses it.</DialogDescription>
@@ -411,7 +411,7 @@ export function ManageInstanceButton({ instance }: { instance: FleetInstanceView
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)} data-testid={`fleet-manage-${instance.code}`}>
         Manage
       </Button>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-(--sz-90vh) overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-mono">{instance.code}</DialogTitle>
           <DialogDescription>

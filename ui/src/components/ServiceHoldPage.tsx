@@ -2,6 +2,7 @@ import { PauseCircle, PowerOff } from "lucide-react";
 import type { ServiceHoldStatus } from "@/api/health";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { formatCalendarDay } from "@/lib/utils";
 
 /**
  * GSAM for Mac (P2). A stopped service (signed order from Greatstone) or an
@@ -15,7 +16,7 @@ export function isServiceStopped(service: ServiceHoldStatus) {
 }
 
 function day(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) : null;
+  return iso ? formatCalendarDay(iso.slice(0, 10), { includeYear: true, longMonth: true }) : null;
 }
 
 export function ServiceHoldPage({ service, signedIn }: { service: ServiceHoldStatus; signedIn: boolean }) {
