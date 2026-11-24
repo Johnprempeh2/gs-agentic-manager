@@ -178,7 +178,7 @@ describe("managed install commands", () => {
       file === "corepack" ||
       (file === "npm" && args[0] === "pack") ||
       (file === process.execPath && args[0]?.endsWith("prepare-bundled-package.mjs")));
-    expect(buildCalls).toHaveLength(9);
+    expect(buildCalls).toHaveLength(10);
     for (const call of buildCalls) {
       const env = call[2]?.env;
       expect(env, `${call[0]} ${call[1].join(" ")} must run with an explicit env`).toBeDefined();
@@ -186,6 +186,76 @@ describe("managed install commands", () => {
     }
     const uiPackCall = buildCalls.find(([file, , options]) => file === "corepack" && options?.env?.GSAM_RELEASE_REUSE_UI_DIST === "1");
     expect(uiPackCall).toBeDefined();
+  });
+
+  it("packs a bundled server with its web UI, skills and real workspace versions, without its prepack hook", async () => {
+    const sha = "e".repeat(40);
+    const packages = [
+      { dir: "packages/plugin-sdk", name: "@greatstone/plugin-sdk", packageJson: { name: "@greatstone/plugin-sdk", version: "1.0.0" } },
+      { dir: "packages/adapters/claude-local", name: "@greatstone/adapter-claude-local", packageJson: { name: "@greatstone/adapter-claude-local", version: "0.3.1", files: ["dist", "skills"] } },
+      { dir: "server", name: "@greatstone/server", packageJson: { name: "@greatstone/server", version: "0.3.1", files: ["dist", "ui-dist", "skills"], dependencies: { "@greatstone/plugin-sdk": "workspace:*", "@greatstone/adapter-claude-local": "workspace:*", acpx: "0.13.1" }, bundleDependencies: ["acpx"] } },
+    ];
+    let checkout = "";
+    let uiDistPrepared = false;
+    let stagedServerAtPack: { manifest: Record<string, Record<string, string>>; args: string[] } | null = null;
+    const runCommand = vi.fn(async (file: string, args: string[], _options?: Parameters<CommandRunner>[2]) => {
+      if (file === "curl" && !args.includes("--output")) return { stdout: JSON.stringify({ sha }), stderr: "" };
+      if (file === "curl") { fs.writeFileSync(args[args.indexOf("--output") + 1], "archive"); return { stdout: "", stderr: "" }; }
+      if (file === "tar") {
+        checkout = args[args.indexOf("-C") + 1];
+        fs.mkdirSync(path.join(checkout, "cli"), { recursive: true });
+        fs.writeFileSync(path.join(checkout, "cli", "package.json"), JSON.stringify({ version: "0.3.1" }));
+        fs.mkdirSync(path.join(checkout, "scripts"), { recursive: true });
+        fs.writeFileSync(path.join(checkout, "scripts", "release-package-manifest.json"), JSON.stringify(packages.map(({ dir, name }) => ({ dir, name }))));
+        fs.mkdirSync(path.join(checkout, "skills", "gsam"), { recursive: true });
+        fs.writeFileSync(path.join(checkout, "skills", "gsam", "SKILL.md"), "# gsam\n");
+        for (const workspacePackage of packages) {
+          fs.mkdirSync(path.join(checkout, workspacePackage.dir), { recursive: true });
+          fs.writeFileSync(path.join(checkout, workspacePackage.dir, "package.json"), JSON.stringify(workspacePackage.packageJson));
+        }
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "bash" && args[0] === "scripts/prepare-server-ui-dist.sh") { uiDistPrepared = true; return { stdout: "", stderr: "" }; }
+      if (file === "bash") return { stdout: "", stderr: "" };
+      if (file === process.execPath && args[0]?.endsWith("prepare-bundled-package.mjs")) {
+        // The real script fails on a missing `files` entry and pins workspace deps to the package's own version.
+        expect(uiDistPrepared, "server/ui-dist must be prepared before the bundled server is staged").toBe(true);
+        expect(fs.existsSync(path.join(checkout, "server", "skills", "gsam", "SKILL.md")), "server/skills must be staged").toBe(true);
+        fs.mkdirSync(args[2], { recursive: true });
+        fs.writeFileSync(path.join(args[2], "package.json"), JSON.stringify({ name: "@greatstone/server", version: "0.3.1", dependencies: { "@greatstone/plugin-sdk": "0.3.1", "@greatstone/adapter-claude-local": "0.3.1", acpx: "0.13.1" } }));
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "corepack") {
+        if (args.includes("pack")) {
+          const packageDir = args[args.indexOf("--dir") + 1];
+          if (packageDir === "packages/adapters/claude-local") {
+            expect(fs.existsSync(path.join(checkout, packageDir, "skills", "gsam", "SKILL.md")), "claude-local skills must be staged").toBe(true);
+          }
+          fs.writeFileSync(path.join(args[args.indexOf("--pack-destination") + 1], `${path.basename(packageDir)}-pack.tgz`), "package");
+        }
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "npm" && args[0] === "pack") {
+        if (args[1]?.includes("workspace-package-")) {
+          stagedServerAtPack = { manifest: JSON.parse(fs.readFileSync(path.join(args[1], "package.json"), "utf8")), args };
+          fs.writeFileSync(path.join(args[args.indexOf("--pack-destination") + 1], "greatstone-server-0.3.1.tgz"), "package");
+        } else {
+          fs.writeFileSync(path.join(args[args.indexOf("--pack-destination") + 1], "gsam-0.3.1.tgz"), "package");
+        }
+        return { stdout: "", stderr: "" };
+      }
+      if (file === "npm" && args[0] === "install") { const packageRoot = path.join(args[args.indexOf("--prefix") + 1], "node_modules", "gsam"); fs.mkdirSync(path.join(packageRoot, "dist"), { recursive: true }); fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ version: "0.3.1" })); fs.writeFileSync(path.join(packageRoot, "dist", "index.js"), "#!/usr/bin/env node\n"); return { stdout: "", stderr: "" }; }
+      if (file === process.execPath) return { stdout: "0.3.1\n", stderr: "" };
+      throw new Error(`Unexpected command: ${file} ${args.join(" ")}`);
+    });
+
+    await expect(installGitPayload("Johnprempeh2/gs-agentic-manager", sha, runCommand, resolveInstallStorePaths())).resolves.toMatchObject({ version: "0.3.1", reused: false });
+
+    const uiDistCall = runCommand.mock.calls.find(([file, args]) => file === "bash" && args[0] === "scripts/prepare-server-ui-dist.sh");
+    expect(uiDistCall?.[2]?.env?.GSAM_RELEASE_REUSE_UI_DIST).toBe("1");
+    expect(stagedServerAtPack).not.toBeNull();
+    expect(stagedServerAtPack!.args).toContain("--ignore-scripts");
+    expect(stagedServerAtPack!.manifest.dependencies).toEqual({ "@greatstone/plugin-sdk": "1.0.0", "@greatstone/adapter-claude-local": "0.3.1", acpx: "0.13.1" });
   });
 
   it("resolves the complete server workspace dependency closure in dependency order", () => {

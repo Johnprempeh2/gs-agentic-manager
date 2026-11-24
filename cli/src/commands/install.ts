@@ -84,6 +84,45 @@ export function resolveGitInstallWorkspacePackages(checkoutPath: string): Releas
   return ordered;
 }
 
+// Same packages scripts/release.sh copies the repository skills into before packing.
+const GIT_INSTALL_SKILL_PACKAGE_DIRS = ["server", "packages/adapters/claude-local", "packages/adapters/codex-local"];
+
+// scripts/release.sh stages artifacts that package prepack hooks would make, because
+// the bundled (npm) pack path runs with --ignore-scripts: the web UI in server/ui-dist
+// and the repository skills in each skill-shipping package.
+export function stageGitInstallSkills(checkoutPath: string): void {
+  const skillsSource = path.join(checkoutPath, "skills");
+  if (!fs.existsSync(skillsSource)) return;
+  for (const packageDir of GIT_INSTALL_SKILL_PACKAGE_DIRS) {
+    const packagePath = path.join(checkoutPath, packageDir);
+    if (!fs.existsSync(path.join(packagePath, "package.json"))) continue;
+    const skillsTarget = path.join(packagePath, "skills");
+    fs.rmSync(skillsTarget, { recursive: true, force: true });
+    fs.cpSync(skillsSource, skillsTarget, { recursive: true });
+  }
+}
+
+// prepare-bundled-package.mjs pins each workspace dependency to the bundled package's
+// own version, which only holds after release.sh sets one version on every package.
+// A git checkout keeps its real versions (plugin-sdk differs from server), so pin each
+// workspace dependency to the version of the tarball this install packs for it.
+export function pinStagedWorkspaceDependencies(stagedPackagePath: string, checkoutPath: string, workspacePackages: ReleasePackageEntry[]): void {
+  const manifestPath = path.join(stagedPackagePath, "package.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+  const dirByName = new Map(workspacePackages.map((entry) => [entry.name, entry.dir]));
+  for (const section of ["dependencies", "optionalDependencies", "peerDependencies"] as const) {
+    const dependencies = manifest[section] as Record<string, string> | undefined;
+    if (!dependencies || typeof dependencies !== "object") continue;
+    for (const dependencyName of Object.keys(dependencies)) {
+      const dependencyDir = dirByName.get(dependencyName);
+      if (!dependencyDir) continue;
+      const dependencyPackageJson = JSON.parse(fs.readFileSync(path.join(checkoutPath, dependencyDir, "package.json"), "utf8")) as { version: string };
+      dependencies[dependencyName] = dependencyPackageJson.version;
+    }
+  }
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 export function assertSupportedNodeVersion(): void {
   if (!isSupportedNodeVersion(process.versions.node)) {
     throw new Error(`Installing or updating GS Agentic Manager requires Node.js ${MINIMUM_NODE_VERSION} or newer (found ${process.version} at ${process.execPath}). Put a supported Node bin directory first on PATH and run 'npx gsam@latest install --yes' to re-pin an existing managed install.`);
@@ -278,6 +317,8 @@ export async function installGitPayload(repo: string, sha: string, runCommand: C
     await runCommand("corepack", ["pnpm", "install", "--frozen-lockfile"], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 32 * 1024 * 1024 });
     await runCommand("bash", ["scripts/build-npm.sh", "--skip-checks", "--skip-typecheck"], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 32 * 1024 * 1024 });
     await runCommand("corepack", ["pnpm", "-r", "--filter", "@greatstone/server...", "--if-present", "run", "build"], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 32 * 1024 * 1024 });
+    await runCommand("bash", ["scripts/prepare-server-ui-dist.sh"], { cwd: checkoutPath, env: buildEnv({ GSAM_RELEASE_REUSE_UI_DIST: "1" }), maxBuffer: 32 * 1024 * 1024 });
+    stageGitInstallSkills(checkoutPath);
     const metadata = JSON.parse(fs.readFileSync(path.join(checkoutPath, "cli", "package.json"), "utf8")) as { version: string };
     const workspacePackages = resolveGitInstallWorkspacePackages(checkoutPath);
     for (const [index, workspacePackage] of workspacePackages.entries()) {
@@ -287,7 +328,10 @@ export async function installGitPayload(repo: string, sha: string, runCommand: C
       if (bundledDependencies.length > 0) {
         const stagedPackage = path.join(stagingRoot, `workspace-package-${index}`);
         await runCommand(process.execPath, [path.join(checkoutPath, "scripts", "prepare-bundled-package.mjs"), packageDir, stagedPackage], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 32 * 1024 * 1024 });
-        await runCommand("npm", ["pack", stagedPackage, "--pack-destination", stagingRoot], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 16 * 1024 * 1024 });
+        pinStagedWorkspaceDependencies(stagedPackage, checkoutPath, workspacePackages);
+        // The staged copy is already built and has no ../scripts, so its prepack hook
+        // cannot run there; scripts/release.sh packs it with --ignore-scripts too.
+        await runCommand("npm", ["pack", stagedPackage, "--pack-destination", stagingRoot, "--ignore-scripts"], { cwd: checkoutPath, env: buildEnv(), maxBuffer: 16 * 1024 * 1024 });
       } else {
         await runCommand("corepack", ["pnpm", "--dir", workspacePackage.dir, "pack", "--pack-destination", stagingRoot], { cwd: checkoutPath, env: buildEnv({ GSAM_RELEASE_REUSE_UI_DIST: "1" }), maxBuffer: 32 * 1024 * 1024 });
       }
