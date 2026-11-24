@@ -14,6 +14,11 @@ const mockFleetApi = vi.hoisted(() => ({
   issueEntitlement: vi.fn(),
   createOrder: vi.fn(),
   operatorLogin: vi.fn(),
+  listCatalogue: vi.fn(),
+  createCatalogueItem: vi.fn(),
+  updateCatalogueItem: vi.fn(),
+  archiveCatalogueItem: vi.fn(),
+  linkBilling: vi.fn(),
 }));
 const mockAccessApi = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
 vi.mock("@/api/fleet", () => ({ fleetApi: mockFleetApi }));
@@ -196,6 +201,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mockAccessApi.getCurrentBoardAccess.mockResolvedValue({ isInstanceAdmin: true, source: "session" });
+  mockFleetApi.listCatalogue.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -247,10 +253,30 @@ describe("Fleet page", () => {
     expect(card("c003")).toContain("Never");
   });
 
-  it("has no controls on a host-script instance: only the New licence button", async () => {
+  it("has no controls on a host-script instance: only the New licence and catalogue buttons", async () => {
     mockFleetApi.listInstances.mockResolvedValue([OK, DOWN, PENDING]);
     await render();
-    expect([...container.querySelectorAll("button, form, input, a")].map((el) => el.textContent?.trim())).toEqual(["New licence"]);
+    expect([...container.querySelectorAll("button, form, input, a")].map((el) => el.textContent?.trim())).toEqual(["New licence", "Add to catalogue"]);
+  });
+
+  it("lists the catalogue with prices, a deal's one customer, and what Stripe says about each install", async () => {
+    const base = { description: null, limits: {}, moduleIds: [], features: [], currency: "gbp", stripeCustomerId: null, archivedAt: null, updatedAt: NOW, stripeProductId: "prod_1" };
+    mockFleetApi.listCatalogue.mockResolvedValue([
+      { ...base, id: "m1", kind: "module", name: "CRM", features: ["enablePipelines"], limits: { maxUsers: 5 }, monthlyAmount: 4900, annualAmount: null, prices: [{ stripePriceId: "price_1", interval: "month", amount: 4900, currency: "gbp", active: true }] },
+      { ...base, id: "d1", kind: "deal", name: "Launch deal", moduleIds: ["m1"], stripeCustomerId: "cus_test1", monthlyAmount: 1000, annualAmount: 10000, stripeProductId: null, prices: [] },
+    ]);
+    mockFleetApi.listInstances.mockResolvedValue([{ ...MAC, billing: { stripeCustomerId: "cus_test1", stripeSubscriptionId: "sub_1", subscriptionStatus: "past_due", cancelAtPeriodEnd: false } }]);
+    await render();
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="catalogue-table"]')).toBeTruthy());
+    const crm = container.querySelector('[data-testid="catalogue-row-m1"]')!.textContent!;
+    expect(crm).toContain("GBP 49 a month");
+    expect(crm).toContain("Not annual");
+    expect(crm).toContain("In Stripe");
+    const deal = container.querySelector('[data-testid="catalogue-row-d1"]')!.textContent!;
+    expect(deal).toContain("CRM");
+    expect(deal).toContain("Only for cus_test1");
+    expect(deal).toContain("Not in Stripe yet");
+    expect(row("mac-1a2b3c4d")).toContain("Stripe: past due");
   });
 
   it("shows a Mac install's state, paid-until, features and limits, and an ended subscription", async () => {

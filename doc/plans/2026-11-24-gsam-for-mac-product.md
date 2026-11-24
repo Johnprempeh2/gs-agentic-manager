@@ -42,13 +42,14 @@ customer Mac: GSAM.app -> engine (gsam.sh) -> GSAM server in authenticated mode
 |---|---|
 | P1 Installer complete | A fresh Mac goes from DMG to a signed-in owner, with: authenticated mode, closed sign-up, operator log-in, hourly backups, Claude and ChatGPT sign-in, licence activation, fleet registration and check-ins every 5 minutes against a sandbox hub. |
 | P2 Admin and remote | From the hub Fleet page John sees every install, opens any of them remotely, and pauses, stops or updates it. Orders are signed and obeyed within 5 minutes. Built: `doc/CLIENT-INSTANCES.md`, "GSAM for Mac: admin controls, orders and remote access". |
-| P3 Payments and modules | The hub has modules, packages and deals mirrored to Stripe. Checkout, renewal, upgrade, cancel and failed payment each change the install's document correctly. The install stops at period end. |
+| P3 Payments and modules | The hub has modules, packages and deals mirrored to Stripe. Checkout, renewal, upgrade, cancel and failed payment each change the install's document correctly. The install stops at period end. Built: `doc/CLIENT-INSTANCES.md`, "GSAM for Mac: payments and modules". Live Stripe keys and real prices wait for John. |
 | P4 Website accounts | A customer signs up, pays, sees their licence key and download, picks modules and manages billing (Stripe customer portal) on the website. The website goes live only through John's Deploy button. |
 
 ## Needs John
 
 - Turning his live GSAM into the hub (`GSAM_FLEET_HUB=true`, a restart, Funnel for `/api/fleet/spoke/*`).
 - A Tailscale OAuth client (to mint tagged auth keys) and the tailnet policy change.
-- Stripe live keys (test mode until then).
+- Stripe live keys (test mode until then), and the hub settings `GSAM_STRIPE_SECRET_KEY` and `GSAM_BILLING_EVENTS_SECRET` (the website keeps the same billing secret).
+- Funnel for `/api/fleet/billing/events` as well as `/api/fleet/spoke/*`, so the website can reach the hub.
 - Prices for modules and packages.
 - The customer agreement wording on remote access.

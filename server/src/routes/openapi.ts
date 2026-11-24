@@ -554,7 +554,13 @@ import {
   clientSupportInboxSchema,
   fleetSupportAttachmentRequestSchema,
 } from "@greatstone/shared/fleet-support";
-import { fleetActivateRequestSchema, fleetEntitlementInputSchema, fleetLicenceCreateSchema, fleetOrderCreateSchema } from "@greatstone/shared/fleet";
+import {
+  fleetActivateRequestSchema,
+  fleetBillingLinkSchema,
+  fleetEntitlementInputSchema,
+  fleetLicenceCreateSchema,
+  fleetOrderCreateSchema,
+} from "@greatstone/shared/fleet";
 import {
   createCaseContactSchema,
   createProjectLinkSchema,
@@ -1569,6 +1575,8 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /api/fleet/spoke/delete",
   // GSAM for Mac licence activation: the one-use licence key is the authorization.
   "POST /api/fleet/spoke/activate",
+  // GSAM for Mac P3: Stripe events; the HMAC signature (GSAM_BILLING_EVENTS_SECRET) is the authorization.
+  "POST /api/fleet/billing/events",
   "GET /api/health",
   "GET /api/openapi.json",
   "GET /api/board-claim/{token}",
@@ -1959,6 +1967,11 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
   "PUT /api/fleet/instances/{id}/entitlement",
   "GET /api/fleet/instances/{id}/operator-login",
   "POST /api/fleet/instances/{id}/orders",
+  "GET /api/fleet/catalogue",
+  "POST /api/fleet/catalogue",
+  "PUT /api/fleet/catalogue/{id}",
+  "DELETE /api/fleet/catalogue/{id}",
+  "PUT /api/fleet/instances/{id}/billing",
   "POST /api/companies",
   "POST /api/plugins/install",
   "POST /api/instance/database-backups",
@@ -1975,6 +1988,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/fleet/licences",
   "POST /api/fleet/spoke/activate",
   "POST /api/fleet/instances/{id}/orders",
+  "POST /api/fleet/catalogue",
   "POST /api/adapters/install",
   "POST /api/chat-endpoints/{endpointId}/setup-secret",
   "POST /api/companies/{companyId}/agent-hires",
@@ -12722,6 +12736,85 @@ registry.registerPath({
   summary: "Spoke: activate a licence key (one use, rate limited per address)",
   request: { body: jsonBody(fleetActivateRequestSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict, 429: r.tooManyRequests, 503: { description: "The hub has no entitlement signing key" } },
+});
+
+// GSAM for Mac (P3): payments and modules.
+
+// Plain object (the shared schema has refinements); the route validates with fleetBillingItemInputSchema.
+const fleetBillingItemBody = z.object({
+  kind: z.enum(["module", "package", "deal"]),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  features: z.array(z.string()).optional().describe("Module only: governed feature keys"),
+  limits: z.record(z.string(), z.number().int()).optional(),
+  moduleIds: z.array(z.string().uuid()).optional().describe("Package or deal: its modules"),
+  monthlyAmount: z.number().int().nullable().optional().describe("Minor units; null: not sold monthly"),
+  annualAmount: z.number().int().nullable().optional().describe("Minor units; null: not sold annually"),
+  currency: z.string().optional(),
+  stripeCustomerId: z.string().nullable().optional().describe("Deal only: the one Stripe customer it is for"),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/fleet/catalogue",
+  tags: ["fleet"],
+  summary: "List modules, packages and deals, with their active Stripe prices",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/catalogue",
+  tags: ["fleet"],
+  summary: "Add a module, package or deal and mirror it to Stripe",
+  request: { body: jsonBody(fleetBillingItemBody) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 502: { description: "Saved on the hub; Stripe refused the mirror" } },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/fleet/catalogue/{id}",
+  tags: ["fleet"],
+  summary: "Change a catalogue item; a new price archives the old Stripe price and makes a new one",
+  request: { params: fleetIdParams, body: jsonBody(fleetBillingItemBody) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 502: { description: "Saved on the hub; Stripe refused the mirror" } },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/fleet/catalogue/{id}",
+  tags: ["fleet"],
+  summary: "Archive a catalogue item and its Stripe product and prices (subscriptions on it keep their features)",
+  request: { params: fleetIdParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 502: { description: "Stripe refused the archive" } },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/fleet/instances/{id}/billing",
+  tags: ["fleet"],
+  summary: "Link an install to its Stripe customer, so that customer's checkout and events drive it",
+  request: { params: fleetIdParams, body: jsonBody(fleetBillingLinkSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/billing/events",
+  tags: ["fleet"],
+  summary: "A Stripe event, signed with the shared billing secret (Stripe-Signature header: t=<unix seconds>,v1=<hex HMAC-SHA256 of t.body>); re-signs the install's document. Idempotent on the event id",
+  request: {
+    body: jsonBody(z.object({ id: z.string(), type: z.string(), created: z.number().int(), data: z.object({ object: z.record(z.string(), z.unknown()) }) })),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    409: r.conflict,
+    502: { description: "Stripe could not be read; send again" },
+    503: { description: "The hub has no billing secret, Stripe key or signing key" },
+  },
 });
 
 // ─── LLM text endpoints ───────────────────────────────────────────────────────

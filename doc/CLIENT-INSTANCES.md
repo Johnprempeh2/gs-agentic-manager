@@ -966,6 +966,91 @@ Tests:
 (cd ui && npx vitest run src/pages/Fleet.test.tsx src/components/CloudAccessGate.test.tsx)
 ```
 
+### GSAM for Mac: payments and modules (P3)
+
+Customers pay on the Greatstone website with Stripe, monthly or annually, for
+the modules they pick. Stripe then drives each install's signed document. The
+service stops at the end of the paid period: every document Stripe causes
+carries `grace: 0`, so the day after `validUntil` the install shows "Your
+GSAM subscription has ended" (P2). Data stays on the Mac and can be exported.
+
+**Hub settings** (the hub's environment file, never the repository):
+
+| Variable | Meaning |
+|---|---|
+| `GSAM_FLEET_HUB=true` | Turns on every fleet route, these included. |
+| `GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY` | Signs licences and documents (P1). Without it billing events answer 503. |
+| `GSAM_STRIPE_SECRET_KEY` | Stripe secret key (`sk_test_...` until John says live). Mirrors the catalogue and reads subscriptions. Unset: the catalogue is kept on the hub only ("Not in Stripe yet") and checkout and invoice events answer 503 so the sender tries again. |
+| `GSAM_BILLING_EVENTS_SECRET` | Shared secret for `POST /api/fleet/billing/events`. Unset: the route answers 503. Make one: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))'`. The website keeps the same value. |
+
+**The catalogue** (Settings, Fleet, Catalogue; hub instance admins):
+
+| Kind | What it holds |
+|---|---|
+| Module | A set of governed features (`ENTITLEMENT_FEATURE_KEYS`) and limits (`maxUsers`, `maxAgents`). |
+| Package | A set of modules at its own price. Its own limits replace the modules' limits. |
+| Deal | A package for one Stripe customer only (`cus_...`): an exclusive price or bundle. A deal bought by any other customer grants nothing. |
+
+Each item has a monthly and an annual price in minor units (pence), and a
+currency (default `gbp`). Every save mirrors it to Stripe: one Product
+(metadata `gsam_item_id`, `gsam_kind`, `gsam_customer`) and one recurring
+Price per interval. Stripe prices cannot change, so a new amount archives the
+old Stripe price and makes a new one. The hub keeps every old price, so a
+subscription still on it keeps mapping to its item. Archive (not delete) stops
+new sales; customers who bought the item keep its features. If Stripe refuses
+a save, the item is still saved on the hub (502); save again to retry.
+
+Routes: `GET`, `POST /api/fleet/catalogue`, `PUT`, `DELETE /api/fleet/catalogue/<id>`.
+The website (P4) lists what to sell from Stripe Products by their metadata,
+and offers a deal only to the customer in `gsam_customer`.
+
+**Stripe events.** The website receives Stripe's webhook, checks it with its
+own Stripe webhook secret, and forwards the event JSON unchanged,
+server to server, to `POST <hub>/api/fleet/billing/events` with the header
+`Stripe-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`
+keyed with `GSAM_BILLING_EVENTS_SECRET`. That is Stripe's own signature
+format, so a Stripe webhook endpoint can also point straight at the hub with
+its signing secret as `GSAM_BILLING_EVENTS_SECRET`; the website route is the
+one used, because only it can show the licence key to the customer. A bad
+signature, or one more than 5 minutes old or ahead, gets 401
+`fleet_billing_bad_signature`. Each event id is handled once: a repeat answers
+`{"outcome": "duplicate"}` and changes nothing.
+
+| Event | What the hub does |
+|---|---|
+| `checkout.session.completed` (paid), `checkout.session.async_payment_succeeded` | Reads the subscription from Stripe. A new customer gets a new install with a licence key, returned once in the answer as `licenceKey` (the website shows it; a repeat of the event does not return it again). A customer already linked to an install re-signs that install's document instead. Paid until the subscription's period end. |
+| `invoice.paid` (each renewal) | Re-signs with `validUntil` at the end of the period the invoice paid for. Paid-until only moves forward. |
+| `customer.subscription.updated` (module change, cancel at period end) | Re-signs with the features and limits of the subscription's prices. Paid-until does not move: only a paid invoice extends it. A change older than the last one applied is ignored. |
+| `customer.subscription.deleted` | Re-signs with the same paid-until: no renewal, the service stops at period end. |
+| `invoice.payment_failed` | Re-signs with the same paid-until and features: no extension. |
+| Anything else | Recorded and ignored. |
+
+Features add up across a subscription's prices; a limit takes the highest
+value. A price the hub does not know grants nothing (the document's reason
+says so). Each re-signed document reaches the install with its next
+check-in, within 5 minutes, and each processed event is in the hub activity
+log as `fleet.billing.event`. Stripe errors answer 502 and missing settings
+503, with nothing recorded, so the website (or Stripe) sends the event again.
+
+**One customer, one install, one subscription.** The hub links a Stripe
+customer to one install and follows one subscription: the one from the last
+checkout. Events for any other subscription of that customer change nothing.
+Module changes go through the Stripe customer portal (P4) as changes to that
+subscription, not as a second subscription.
+
+**Link by hand.** For a licence made before payments: Manage, Stripe customer,
+`cus_...` (`PUT /api/fleet/instances/<id>/billing`). That customer's next
+checkout then drives the existing install, with no new licence key. The Fleet
+page shows what Stripe last said in the Subscription column (for example
+"Stripe: past due", "cancels at period end").
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-billing.test.ts)
+(cd ui && npx vitest run src/pages/Fleet.test.tsx)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with

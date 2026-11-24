@@ -2,7 +2,7 @@ import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from
 import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
-import { fleetCheckIns, fleetInstances, fleetOrders } from "@greatstone/db";
+import { fleetBillingCustomers, fleetCheckIns, fleetInstances, fleetOrders } from "@greatstone/db";
 import type { EntitlementEnvelope } from "@greatstone/shared";
 import {
   FLEET_AUDIENCE,
@@ -324,11 +324,17 @@ export function fleetService(
         if (list.length < ORDERS_SHOWN) list.push(orderView(order, now));
         ordersById.set(order.fleetInstanceId, list);
       }
+      // P3: the Stripe customer and subscription driving each install.
+      const billingById = new Map((await db.select().from(fleetBillingCustomers)).map((link) => [link.fleetInstanceId, link]));
       return rows.map((row) => {
         const entry = latestById.get(row.id);
+        const link = billingById.get(row.id);
         return {
           ...view(row, now),
           orders: ordersById.get(row.id) ?? [],
+          billing: link
+            ? { stripeCustomerId: link.stripeCustomerId, stripeSubscriptionId: link.stripeSubscriptionId, subscriptionStatus: link.subscriptionStatus, cancelAtPeriodEnd: link.cancelAtPeriodEnd }
+            : null,
           latestCheckIn: entry ? { receivedAt: entry.receivedAt, checkIn: entry.checkIn as FleetReceivedCheckIn } : null,
         };
       });

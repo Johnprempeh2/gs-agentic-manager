@@ -404,6 +404,47 @@ function Subscription({ instance }: { instance: FleetInstanceView }) {
   );
 }
 
+/** P3: the Stripe customer whose checkout and events drive this install. Linked by hand for a licence made before payments. */
+function StripeCustomer({ instance }: { instance: FleetInstanceView }) {
+  const queryClient = useQueryClient();
+  const [customer, setCustomer] = useState("");
+  const link = useMutation({
+    mutationFn: () => fleetApi.linkBilling(instance.id, customer.trim()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.instance.fleetInstances }),
+  });
+  if (instance.billing) {
+    return (
+      <div className="space-y-1 text-sm" data-testid="fleet-stripe-customer">
+        <div className="font-mono">{instance.billing.stripeCustomerId}</div>
+        <div className="text-xs text-muted-foreground">
+          {instance.billing.stripeSubscriptionId
+            ? `Subscription ${instance.billing.stripeSubscriptionId}: ${instance.billing.subscriptionStatus ?? "unknown"}. Each payment re-signs the document.`
+            : "No subscription yet. The customer's next checkout drives this install."}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        link.mutate();
+      }}
+    >
+      <Label htmlFor={`stripe-customer-${instance.code}`}>Stripe customer (cus_...)</Label>
+      <div className="flex gap-2">
+        <Input id={`stripe-customer-${instance.code}`} required pattern="cus_[A-Za-z0-9]+" value={customer} onChange={(event) => setCustomer(event.target.value)} />
+        <Button type="submit" variant="outline" disabled={link.isPending}>
+          Link
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">Not linked. A checkout on the website links a new install by itself; link here only for a licence made by hand.</p>
+      <ErrorText error={link.error} />
+    </form>
+  );
+}
+
 export function ManageInstanceButton({ instance }: { instance: FleetInstanceView }) {
   const [open, setOpen] = useState(false);
   return (
@@ -426,6 +467,9 @@ export function ManageInstanceButton({ instance }: { instance: FleetInstanceView
           </Section>
           <Section title="Orders">
             <Orders instance={instance} />
+          </Section>
+          <Section title="Stripe customer">
+            <StripeCustomer instance={instance} />
           </Section>
           <Section title="Features, limits and paid until">
             <Subscription instance={instance} />
