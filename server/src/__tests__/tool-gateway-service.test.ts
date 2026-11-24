@@ -1810,6 +1810,47 @@ describeEmbeddedPostgres("tool gateway service", () => {
     await db.delete(companyMemberships).where(eq(companyMemberships.companyId, company.id));
   });
 
+  it("selects the managed GitHub identity of the person who opened the session", async () => {
+    const { company, agent, issue, run } = await createRunFixture(db);
+    const { connection } = await createRemoteMcpToolFixture(db, company.id);
+    await db.update(toolConnections).set({ authKind: "oauth", credentialSource: "paperclip_vault",
+      config: { ...connection.config, sourceTemplateKey: "github" },
+    }).where(eq(toolConnections.id, connection.id));
+    await db.insert(toolConnectionInstalls).values({ companyId: company.id,
+      connectionId: connection.id, targetType: "agent", targetId: agent.id });
+    await db.insert(companyMemberships).values(["A", "B", "C"].map(principalId => ({ companyId: company.id,
+      principalType: "user", principalId, status: "active", membershipRole: "member" })));
+    const grants = await db.insert(connectionGrants).values(["A", "B"].map(subjectUserId => ({
+      companyId: company.id, connectionId: connection.id, kind: "user" as const, subjectUserId,
+      status: "active" as const, credentialSecretRefs: [],
+    }))).returning();
+    await initializeRunIdentity(db, { companyId: company.id, runId: run.id, issueId: issue.id,
+      responsibleUserId: "A", cause: "instruction" });
+    await db.insert(toolPolicies).values({ companyId: company.id, name: "Allow reads",
+      policyType: "allow", selectors: { riskLevel: "read" } });
+    const resolvedGrants: string[] = [];
+    const gateway = createTestToolGatewayService(db, {
+      oauthGrantRefresher: async ({ grantId }) => {
+        resolvedGrants.push(grantId);
+        return db.select().from(connectionGrants).where(eq(connectionGrants.id, grantId)).then(rows => rows[0]!);
+      },
+      remoteHttpRequest: async (_url, init) => new Response(JSON.stringify({ jsonrpc: "2.0",
+        id: JSON.parse(String(init.body)).id, result: { content: [{ type: "text", text: "ok" }] },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    });
+    const callAs = async (createdByUserId: string) => {
+      const session = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id, createdByUserId });
+      const tool = (await gateway.listToolsForSession(session.token)).find(t => t.providerType === "mcp_remote_http")!;
+      return gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} });
+    };
+
+    expect((await callAs("B")).status).toBe("completed");
+    expect(resolvedGrants).toEqual([grants[1]!.id]);
+    await expect(callAs("C")).rejects.toMatchObject({ reasonCode: "github_identity_unavailable" });
+    expect(resolvedGrants).toEqual([grants[1]!.id]);
+    await db.delete(companyMemberships).where(eq(companyMemberships.companyId, company.id));
+  });
+
   it.each([false, true])("reselects a duplicate only before GitHub dispatch (upstream failure: %s)", async (upstreamFailure) => {
     const { company, agent, issue, run } = await createRunFixture(db);
     const first = await createRemoteMcpToolFixture(db, company.id);

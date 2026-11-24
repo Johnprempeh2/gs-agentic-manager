@@ -1568,6 +1568,7 @@ export interface ToolAccessDecisionInput {
     clientSubjectId?: string | null;
     clientName?: string | null;
     externalClient?: boolean | null;
+    sessionOpenedByUserId?: string | null;
   } | null;
   request: {
     applicationId?: string | null;
