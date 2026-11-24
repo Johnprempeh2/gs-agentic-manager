@@ -152,7 +152,7 @@ case "${1:-}" in
     <key>RUSTUP_HOME</key><string>$RUSTUP_HOME</string>
     <key>PORT</key><string>$PORT</string>
     <key>GSAM_TELEMETRY_DISABLED</key><string>1</string>
-    <key>GSAM_LAUNCHD_LABEL</key><string>$LABEL</string>
+    <key>GSAM_LAUNCHD_LABEL</key><string>$LABEL</string>$( [ -z "${GSAM_FLEET_CHECK_IN_SECONDS:-}" ] || printf '\n    <key>GSAM_FLEET_CHECK_IN_SECONDS</key><string>%s</string>' "$GSAM_FLEET_CHECK_IN_SECONDS")
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

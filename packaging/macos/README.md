@@ -67,6 +67,7 @@ export GSAM_DB_PORT=54379                      # the database port written into 
 export GSAM_HUB_URL=http://127.0.0.1:3491      # a sandbox hub (http only on loopback)
 export GSAM_CODE_SOURCE=$PWD/../.. GSAM_CODE_REF=<branch>   # a local checkout and branch instead of the live tag
 export GSAM_NO_WINDOW=1                        # do not open the GSAM window
+export GSAM_FLEET_CHECK_IN_SECONDS=20          # check in every 20 seconds instead of 5 minutes (written into the test LaunchAgent)
 GSAM_LICENCE_KEY=<key from the sandbox hub> bash src/gsam.sh activate
 for s in xcode node rust code deps tools config service wait owner; do bash src/gsam.sh $s || break; done
 ```
