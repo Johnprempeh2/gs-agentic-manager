@@ -53,7 +53,7 @@ describeEmbeddedPostgres("Getting started quest", () => {
   });
   afterAll(async () => { await tempDb?.cleanup(); });
 
-  async function seed() {
+  async function seed(leadName = "Everest") {
     const companyId = randomUUID();
     const leadId = randomUUID();
     const john = `john-${randomUUID()}`;
@@ -76,7 +76,7 @@ describeEmbeddedPostgres("Getting started quest", () => {
     await db.insert(agents).values({
       id: leadId,
       companyId,
-      name: "Everest",
+      name: leadName,
       role: "ceo",
       status: "active",
       adapterType: "codex_local",
@@ -108,6 +108,26 @@ describeEmbeddedPostgres("Getting started quest", () => {
   }
 
   const steps = (body: any) => Object.fromEntries(body.chapters.flatMap((c: any) => c.steps.map((s: any) => [s.key, s.doneAt])));
+  const step = (body: any, key: string) => body.chapters.flatMap((c: any) => c.steps).find((s: any) => s.key === key);
+
+  it("names the company's own lead agent in the Messages steps, and ticks when the person messages it", async () => {
+    // GRE-6121: a fresh install's only agent is the owner's CEO, not Everest.
+    const { companyId, leadId, ben } = await seed("Ada");
+    const benApp = app(ben, companyId);
+    const started = await request(benApp).post(`/api/companies/${companyId}/onboarding/me/start`).expect(200);
+    expect(step(started.body, "message-everest").title).toBe("Send Ada a message");
+    expect(step(started.body, "message-everest").body).toContain("Open Ada's chat");
+    expect(step(started.body, "open-messages").body).toContain("Ada's chat is always first");
+    expect(JSON.stringify(started.body.chapters)).not.toMatch(/Everest|\{lead\}/);
+
+    const chat = await issueService(db).create(companyId, {
+      title: "Chat", status: "todo", priority: "medium", assigneeAgentId: leadId,
+      conversationAgentId: leadId, conversationUserId: ben, conversationState: "active",
+    } as any);
+    await db.insert(issueComments).values({ companyId, issueId: chat.id, authorUserId: ben, body: "What is on my plate today?" });
+    const after = await request(benApp).get(`/api/companies/${companyId}/onboarding/me`).expect(200);
+    expect(steps(after.body)["message-everest"]).toBeTruthy();
+  });
 
   it("opens for a new member, ticks each step only from the real thing, and archives the practice task when finished", async () => {
     const { companyId, leadId, ben } = await seed();
@@ -127,6 +147,8 @@ describeEmbeddedPostgres("Getting started quest", () => {
     const again = await request(benApp).post(`/api/companies/${companyId}/onboarding/me/start`).expect(200);
     expect(again.body.practiceIssueId).toBe(practiceId);
     expect(Object.values(steps(started.body)).every((doneAt) => doneAt === null)).toBe(true);
+    // Greatstone's own lead is Everest, so its people still read "Everest".
+    expect(step(started.body, "message-everest").title).toBe("Send Everest a message");
     // Operators do not see the owner's chapter, nor the steps waiting on PR B.
     expect(started.body.chapters.map((c: any) => c.key)).toEqual(["find-your-way", "your-work", "what-you-control"]);
 

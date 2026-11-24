@@ -17,6 +17,7 @@ export type QuestFeature = (typeof QUEST_FEATURES)[number];
 
 export interface QuestStep {
   key: string;
+  /** `{lead}` here and in `body` is the company's lead agent, filled in by `questProgress`. */
   title: string;
   /** What to do, in plain words. */
   body: string;
@@ -62,7 +63,7 @@ export const QUEST_CHAPTERS: QuestChapter[] = [
       {
         key: "open-messages",
         title: "Open Messages",
-        body: "Messages holds every chat with an agent or a colleague. Everest, the lead agent, is always first.",
+        body: "Messages holds every chat with an agent or a colleague. {lead}'s chat is always first.",
         how: "visit",
         path: "/dashboard",
         target: ["team-chats", "global-ask"],
@@ -70,8 +71,8 @@ export const QUEST_CHAPTERS: QuestChapter[] = [
       },
       {
         key: "message-everest",
-        title: "Send Everest a message",
-        body: "Open Everest's chat and ask something real, such as \"What is on my plate today?\". Everest replies in the same thread.",
+        title: "Send {lead} a message",
+        body: "Open {lead}'s chat and ask something real, such as \"What is on my plate today?\". {lead} replies in the same thread.",
         how: "event",
         roles: PEOPLE_WHO_ACT,
         path: "/messages",
@@ -269,6 +270,16 @@ export interface QuestProgress {
   chapters: QuestChapterProgress[];
 }
 
+/**
+ * Fills `{lead}` with the company's lead agent (Everest at Greatstone, the
+ * owner's CEO agent elsewhere), or a neutral phrase when the company has none.
+ */
+export function questText(text: string, leadName: string | null): string {
+  const name = leadName?.trim();
+  if (name) return text.replaceAll("{lead}", name);
+  return text.replace(/\{lead\}/g, (_, at: number) => (at === 0 || /[.!?] $/.test(text.slice(0, at)) ? "Your lead agent" : "your lead agent"));
+}
+
 /** Progress from the visible chapters, the completion times and the skipped chapters. Skipped chapters leave the total. */
 export function questProgress(
   visible: QuestChapter[],
@@ -276,14 +287,15 @@ export function questProgress(
   skipped: ReadonlySet<string>,
   startedAt: Date | null,
   finishedAt: Date | null,
+  leadName: string | null = null,
 ): QuestProgress {
   let done = 0;
   let total = 0;
   const chapters = visible.map((chapter): QuestChapterProgress => {
     const steps = chapter.steps.map((step) => ({
       key: step.key,
-      title: step.title,
-      body: step.body,
+      title: questText(step.title, leadName),
+      body: questText(step.body, leadName),
       path: step.path,
       target: step.target,
       how: step.how,

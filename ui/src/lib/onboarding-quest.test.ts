@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { questChaptersFor, questProgress, type QuestFeatures } from "@greatstone/shared";
+import { questChaptersFor, questProgress, questText, type QuestFeatures } from "@greatstone/shared";
 import type { QuestState } from "@/api/onboarding";
 import { toCompanyRelativePath } from "./company-routes";
 import { pendingVisit, questChanges, showMeHref } from "./onboarding-quest";
@@ -14,6 +14,14 @@ function stateFor(role: QuestState["role"], done: Record<string, string> = {}, f
 const keys = (state: QuestState) => state.chapters.flatMap((c) => c.steps.map((s) => s.key));
 
 describe("Getting started in the app", () => {
+  it("names the lead agent, or says \"your lead agent\" when the company has none", () => {
+    expect(questText("Send {lead} a message", "Ada")).toBe("Send Ada a message");
+    expect(questText("Send {lead} a message", null)).toBe("Send your lead agent a message");
+    expect(questText("Open {lead}'s chat. {lead} replies.", " ")).toBe("Open your lead agent's chat. Your lead agent replies.");
+    expect(questText("{lead}'s chat is always first.", null)).toBe("Your lead agent's chat is always first.");
+    expect(JSON.stringify(stateFor("operator").chapters)).not.toContain("{lead}");
+  });
+
   it("shapes the quest by role and keeps PR B steps hidden until their feature is on", () => {
     expect(keys(stateFor("operator"))).not.toContain("open-members");
     expect(keys(stateFor("owner"))).toContain("open-members");

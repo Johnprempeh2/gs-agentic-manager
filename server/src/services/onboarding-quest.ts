@@ -167,12 +167,24 @@ export function onboardingQuestService(db: Db, opts: { features?: () => QuestFea
       .then((rows) => rows[0] ?? null);
   }
 
+  /** The company's lead agent: its chat is the one the Messages steps name and tick on. */
+  async function leadOf(companyId: string) {
+    const leadId = await getCompanyLeadAgentId(db, companyId);
+    if (!leadId) return null;
+    return db
+      .select({ id: agents.id, name: agents.name })
+      .from(agents)
+      .where(and(eq(agents.companyId, companyId), eq(agents.id, leadId)))
+      .then((rows) => rows[0] ?? null);
+  }
+
   /** Event steps, from the records the actions leave, counted from the quest start. */
   async function eventSteps(
     companyId: string,
     userId: string,
     startedAt: Date,
     practice: Awaited<ReturnType<typeof practiceOf>>,
+    leadId: string | null,
   ) {
     const done = new Map<string, Date>();
     const welcome = await db
@@ -182,7 +194,6 @@ export function onboardingQuestService(db: Db, opts: { features?: () => QuestFea
       .then((rows) => rows[0]?.at ?? null);
     if (welcome) done.set("welcome-tour", welcome);
 
-    const leadId = await getCompanyLeadAgentId(db, companyId);
     if (leadId) {
       const sent = await db
         .select({ at: min(issueComments.createdAt) })
@@ -304,21 +315,22 @@ export function onboardingQuestService(db: Db, opts: { features?: () => QuestFea
     let stored = await marks(userId);
     const startedAt = stored.get(START) ?? null;
     let practice = await practiceOf(companyId, userId, startedAt);
+    const lead = await leadOf(companyId);
     const doneAt = new Map<string, Date>();
     if (startedAt) {
       for (const [key, at] of stored) {
         if (key.startsWith("quest-v-")) doneAt.set(key.slice("quest-v-".length), at);
       }
-      for (const [key, at] of await eventSteps(companyId, userId, startedAt, practice)) doneAt.set(key, at);
+      for (const [key, at] of await eventSteps(companyId, userId, startedAt, practice, lead?.id ?? null)) doneAt.set(key, at);
     }
     const skipped = new Set([...stored.keys()].filter((key) => key.startsWith("quest-skip-")).map((key) => key.slice("quest-skip-".length)));
-    let progress = questProgress(visible, doneAt, skipped, startedAt, stored.get(DONE) ?? null);
+    let progress = questProgress(visible, doneAt, skipped, startedAt, stored.get(DONE) ?? null, lead?.name ?? null);
     if (startedAt && !progress.finishedAt && progress.done === progress.total) {
       await addMark(userId, DONE);
       await archivePractice(companyId, userId);
       practice = await practiceOf(companyId, userId, startedAt);
       stored = await marks(userId);
-      progress = questProgress(visible, doneAt, skipped, startedAt, stored.get(DONE) ?? null);
+      progress = questProgress(visible, doneAt, skipped, startedAt, stored.get(DONE) ?? null, lead?.name ?? null);
     }
     const ctx = { role: viewer.role, rights: viewer.rights, features: viewer.features, agentList: await agentListOf(companyId, userId, viewer.role) };
     return {
