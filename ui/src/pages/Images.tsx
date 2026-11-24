@@ -95,6 +95,7 @@ import { MotionStudio } from "../components/MotionStudio";
 import { ReferenceStudio } from "../components/ReferenceStudio";
 import { UseOnWebsiteDialog } from "../components/website/WebsiteStudioMedia";
 import { studioImageItems, type StudioMediaItem } from "../lib/website-studio-media";
+import { appSourceConnectHref } from "./apps/app-connect-policy";
 
 export { IMAGE_IDEA_STARTERS };
 
@@ -118,10 +119,16 @@ function NotSetUp({ provider }: { provider?: string | null }) {
     <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm" data-testid="images-not-set-up">
       <p className="font-medium text-foreground">Image making is not switched on yet</p>
       <p className="mt-1 text-muted-foreground">
-        Ask whoever runs GSAM to connect an image service. Once it is on, you and your agents can make images here.
+        Connect your Higgsfield account and sign in there. Once it is on, you and your agents can make images here with
+        your Higgsfield plan.
       </p>
+      <Button asChild size="sm" className="mt-3">
+        <Link to={appSourceConnectHref("higgsfield")} data-testid="images-connect-higgsfield">
+          Connect Higgsfield
+        </Link>
+      </Button>
       <details className="mt-3 text-muted-foreground">
-        <summary className="cursor-pointer text-xs font-medium">For whoever runs GSAM</summary>
+        <summary className="cursor-pointer text-xs font-medium">Running your own server? Use an API key instead</summary>
         <p className="mt-2 text-xs">
           Make an API key in the Higgsfield console (no higgsfield.ai plan needed; the API uses its own prepaid balance), then
           set <code>HIGGSFIELD_API_KEY_ID</code> and <code>HIGGSFIELD_API_KEY_SECRET</code> in the server environment and
