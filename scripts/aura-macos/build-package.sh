@@ -33,9 +33,13 @@ cd "$ROOT"
 echo "==> 1/7 CLI and server build"
 bash scripts/build-npm.sh --skip-checks --skip-typecheck
 pnpm -r --filter "@greatstone/server..." --if-present run build
+# The server is packed as a bundled package, so its prepack hook (which
+# copies the web UI into server/ui-dist) does not run. Do it here.
+bash scripts/prepare-server-ui-dist.sh
 
 echo "==> 2/7 app payload"
 node scripts/aura-macos/pack-payload.mjs "$STAGE/app/payload" "$WORK/pack"
+rm -rf server/ui-dist
 
 echo "==> 3/7 Node $NODE_VERSION ($NODE_ARCH)"
 NODE_TGZ="node-v${NODE_VERSION}-darwin-${NODE_ARCH}.tar.gz"
