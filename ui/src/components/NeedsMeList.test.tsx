@@ -25,7 +25,7 @@ function needsMe(overrides: Partial<NeedsMe> = {}): NeedsMe {
     {
       id: "issue-9",
       identifier: "GRE-9",
-      title: "Sign off the Indago statement of work",
+      title: "Sign off the Acme statement of work",
       status: "todo",
       priority: "high",
       updatedAt: "2026-10-02T05:00:00.000Z",
@@ -80,7 +80,7 @@ describe("NeedsMeList (GRE-358)", () => {
     const section = container.querySelector('section[aria-label="Assigned to you"]');
     expect(section).not.toBeNull();
     expect(section!.querySelectorAll("li")).toHaveLength(1);
-    expect(container.textContent).toContain("Sign off the Indago statement of work");
+    expect(container.textContent).toContain("Sign off the Acme statement of work");
     expect(container.textContent).not.toContain("Decision");
   });
 
@@ -121,7 +121,7 @@ describe("NeedsMeList (GRE-358)", () => {
           interactionId: "card-1",
           id: "issue-12",
           identifier: "GRE-12",
-          title: "Book the Indago interviews",
+          title: "Book the Acme interviews",
           question: "Which week suits you?",
           expiredAt: "2026-10-02T04:00:00.000Z",
         },
@@ -179,7 +179,7 @@ describe("NeedsMeList (GRE-358)", () => {
     const rows = [...container.querySelectorAll('[data-testid="needs-me-blocking-task"]')].map((row) => row.textContent);
     expect(rows).toEqual(["Blocks 2 tasksApprove the briefGRE-7", "Due 10 NovSend the invoiceGRE-8"]);
     expect(container.textContent).toContain("Waiting on you");
-    expect(container.textContent).not.toContain("Sign off the Indago statement of work");
+    expect(container.textContent).not.toContain("Sign off the Acme statement of work");
     expect(blockingLabel({ ...base, id: "x", title: "x", blocksCount: 1, dueDate: null })).toBe("Blocks 1 task");
   });
 });

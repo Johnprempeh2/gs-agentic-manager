@@ -51,6 +51,8 @@
     "check:module-boundaries": "node scripts/check-module-boundaries.mjs",
     "check:contact-identity": "node scripts/check-contact-identity.mjs",
     "test:check-no-git-push": "node --test scripts/check-no-git-push.test.mjs",
+    "check:repo-hygiene": "node scripts/check-repo-hygiene.mjs --staged",
+    "test:check-repo-hygiene": "node --test scripts/check-repo-hygiene.test.mjs",
     "test:shared-memory": "node --test scripts/shared-memory/shared-memory.test.mjs",
     "test:check-named-colors": "node --test scripts/check-named-colors.test.mjs",
     "test:check-locale-format": "node --test scripts/check-locale-format.test.mjs",

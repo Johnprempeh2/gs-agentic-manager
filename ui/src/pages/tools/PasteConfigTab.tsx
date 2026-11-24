@@ -174,7 +174,8 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
         if (result.auth.manualClientRequired) {
           setOAuthPhase("error");
           setOAuthError(
-            "This server requires OAuth client details from its provider settings. Continue in setup to add them.",
+            result.auth.manualClientReason
+              ?? "This server requires OAuth client details from its provider settings. Continue in setup to add them.",
           );
           return;
         }

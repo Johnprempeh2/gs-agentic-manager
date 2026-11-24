@@ -75,7 +75,7 @@ describe("SidebarFollowing", () => {
         issueId: "p1",
         followedAt: new Date(),
         issue: {
-          id: "p1", identifier: "GRE-1681", title: "Indago portal", status: "in_progress",
+          id: "p1", identifier: "GRE-1681", title: "Acme portal", status: "in_progress",
           priority: "high", originKind: "manual", updatedAt: new Date(),
         },
         counts: { total: 12, done: 8, inProgress: 2, waitingOnYou: 1, blocked: 1 },
@@ -86,7 +86,7 @@ describe("SidebarFollowing", () => {
 
     expect(container.textContent).toContain("Pinned");
     const link = container.querySelector('a[href="/issues/GRE-1681"]');
-    expect(link?.textContent).toContain("Indago portal");
+    expect(link?.textContent).toContain("Acme portal");
     expect(link?.querySelector("[data-sidebar-follow-progress]")?.textContent).toContain("8/12");
     expect(link?.textContent).toContain("8 of 12 done, 1 waiting on you");
   });

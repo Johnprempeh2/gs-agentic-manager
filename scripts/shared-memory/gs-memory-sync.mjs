@@ -35,7 +35,8 @@ const MEMORY_FILE_MAX_CHARS = 18_000;
 const IDLE_MS = 10 * 60 * 1000;
 
 export const DEFAULT_CONFIG = {
-  gsamUrl: "https://gsam.tail83d26c.ts.net:3100",
+  /** Set at install (`--gsam-url`); no default so a fresh config never points at someone else's host. */
+  gsamUrl: "",
   companyId: "",
   /** Keychain items (`security add-generic-password -s <service> -a gsam -w`). */
   tokens: { claude_code: "keychain:gs-memory-claude-code", codex: "keychain:gs-memory-codex" },

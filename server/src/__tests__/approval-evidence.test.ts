@@ -54,7 +54,7 @@ describe("asksToApproveVisualWork (GRE-451)", () => {
   // irreversible change went ahead with no card on record.
   const repoPublicCard = (detailLine: string) =>
     [
-      "Do you approve that Everest makes the repository Johnprempeh2/indago-portal public now?",
+      "Do you approve that Everest makes the repository Johnprempeh2/acme-portal public now?",
       "",
       "What goes public (all files and all 115 commits of history):",
       `- ${detailLine}`,
@@ -65,8 +65,8 @@ describe("asksToApproveVisualWork (GRE-451)", () => {
     ].join("\n");
 
   it.each([
-    repoPublicCard("Code, database migrations and docs that name Indago."),
-    repoPublicCard("Code and database migrations that name Indago."),
+    repoPublicCard("Code, database migrations and docs that name Acme."),
+    repoPublicCard("Code and database migrations that name Acme."),
   ])("does not ask for evidence when only the details below the ask name documents (GRE-3726)", (prompt) => {
     expect(asksToApproveVisualWork(card(prompt))).toBe(false);
   });

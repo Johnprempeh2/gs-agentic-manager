@@ -189,7 +189,7 @@ describeEmbeddedPostgres("client files", () => {
 
   it("files task attachments, documents and links as evidence and finds them by name", async () => {
     const { company, project, agent } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Stratafrique");
+    const caseId = await seedClientCase(company.id, "Contoso");
     const http = request(app());
     await http.post(`/api/cases/${caseId}/project-links`).send({ projectId: project.id }).expect(201);
 
@@ -220,7 +220,7 @@ describeEmbeddedPostgres("client files", () => {
     await http.post(`/api/cases/${caseId}/evidence`).send({ kind: "document", documentId: notes.id }).expect(201);
     await http
       .post(`/api/cases/${caseId}/evidence`)
-      .send({ kind: "link", url: "https://www.notion.so/stratafrique-brief", title: "Notion brief", sourceIssueId: projectIssue.id })
+      .send({ kind: "link", url: "https://www.notion.so/contoso-brief", title: "Notion brief", sourceIssueId: projectIssue.id })
       .expect(201);
     // The same file cannot be filed twice.
     await http.post(`/api/cases/${caseId}/evidence`).send({ kind: "attachment", attachmentId: outline.id }).expect(409);
@@ -239,7 +239,7 @@ describeEmbeddedPostgres("client files", () => {
       source: "agent_key",
     }));
     const files = await agentHttp.get(`/api/cases/${caseId}/files`).expect(200);
-    expect(files.body.clients).toEqual([expect.objectContaining({ id: caseId, title: "Stratafrique" })]);
+    expect(files.body.clients).toEqual([expect.objectContaining({ id: caseId, title: "Contoso" })]);
     expect(files.body.evidence.map((item: { title: string }) => item.title).sort()).toEqual(
       ["Meeting notes", "Notion brief", "ecaps-outline.pdf"],
     );
@@ -342,7 +342,7 @@ describeEmbeddedPostgres("client files", () => {
   });
   it("uploads a file straight onto a client, files it under a stage and serves it back", async () => {
     const { company, agent } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Indago");
+    const caseId = await seedClientCase(company.id, "Acme");
     const http = request(app());
     const [leadStage] = await db.select().from(pipelineStages).where(sql`${pipelineStages.key} = 'lead'`);
     const leadStageId = leadStage!.id;
@@ -426,11 +426,11 @@ describeEmbeddedPostgres("client files", () => {
 
   it("feeds a file added to a client into memory, waiting for review and linked back to the file", async () => {
     const { company } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Indago");
+    const caseId = await seedClientCase(company.id, "Acme");
     await db.insert(memorySettings).values({ companyId: company.id, enabled: true, retainMode: "chunks" });
     const http = request(app());
 
-    // No client memory named Indago yet: the entry goes to organisation memory, naming the client.
+    // No client memory named Acme yet: the entry goes to organisation memory, naming the client.
     const notes = await http
       .post(`/api/cases/${caseId}/evidence/upload`)
       .field("note", "From the kickoff")
@@ -440,10 +440,10 @@ describeEmbeddedPostgres("client files", () => {
     expect(orgEntry).toMatchObject({
       status: "unreviewed",
       sourceId: `${caseId}/${notes.body.id}`,
-      title: "Indago: Kickoff notes.txt",
+      title: "Acme: Kickoff notes.txt",
       contributorUserId: "board-user",
     });
-    expect(orgEntry!.content).toContain("Indago: Kickoff notes.txt was added to the client on");
+    expect(orgEntry!.content).toContain("Acme: Kickoff notes.txt was added to the client on");
     expect(orgEntry!.content).toContain("Note: From the kickoff");
     expect(orgEntry!.content).toContain("Budget is 40k. Decision by March.");
     const [orgScope] = await db.select().from(memoryScopes).where(sql`${memoryScopes.id} = ${orgEntry!.scopeId}`);
@@ -452,7 +452,7 @@ describeEmbeddedPostgres("client files", () => {
     // Once a client memory of the same name exists, the next file goes there; a PDF keeps no text.
     const clientScope = await memoryGatewayService(db).createScope(
       { companyId: company.id, actorType: "user", actorId: "board-user", agentId: null, userId: "board-user", runId: null, isBoardAdmin: true },
-      { kind: "client", name: "indago" },
+      { kind: "client", name: "acme" },
     );
     await http
       .post(`/api/cases/${caseId}/nda/signed`)
@@ -460,13 +460,13 @@ describeEmbeddedPostgres("client files", () => {
       .expect(201);
     const entries = await db.select().from(memoryRecords).where(sql`${memoryRecords.scopeId} = ${clientScope!.id}`);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.title).toBe("Indago: Signed NDA (NDA.pdf)");
+    expect(entries[0]!.title).toBe("Acme: Signed NDA (NDA.pdf)");
     expect(entries[0]!.content).not.toContain("%PDF");
   });
 
   it("still takes the file when memory is off", async () => {
     const { company } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Indago");
+    const caseId = await seedClientCase(company.id, "Acme");
     await request(app())
       .post(`/api/cases/${caseId}/evidence/upload`)
       .attach("file", Buffer.from("hello"), { filename: "a.txt", contentType: "text/plain" })
@@ -497,19 +497,19 @@ describeEmbeddedPostgres("client files", () => {
   });
   it("takes the signed NDA as an upload and marks the NDA accepted", async () => {
     const { company, agent } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Omni Group");
+    const caseId = await seedClientCase(company.id, "Northwind Group");
     const http = request(app());
     const signed = Buffer.from("%PDF-1.4 signed");
 
     const result = await http
       .post(`/api/cases/${caseId}/nda/signed`)
-      .attach("file", signed, { filename: "Omni NDA signed.pdf", contentType: "application/pdf" })
+      .attach("file", signed, { filename: "Northwind NDA signed.pdf", contentType: "application/pdf" })
       .expect(201);
     expect(result.body.nda).toMatchObject({
       status: "accepted",
       signedDocument: {
         evidenceId: result.body.evidence.id,
-        title: "Signed NDA (Omni NDA signed.pdf)",
+        title: "Signed NDA (Northwind NDA signed.pdf)",
         contentPath: `/api/cases/${caseId}/evidence/${result.body.evidence.id}/content`,
       },
     });
@@ -540,7 +540,7 @@ describeEmbeddedPostgres("client files", () => {
 
   it("keeps a checklist of documents to collect at a stage and ticks one off when its file arrives", async () => {
     const { company } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Indago");
+    const caseId = await seedClientCase(company.id, "Acme");
     const http = request(app());
     const [leadStage] = await db.select().from(pipelineStages).where(sql`${pipelineStages.key} = 'lead'`);
     const leadStageId = leadStage!.id;
@@ -623,7 +623,7 @@ describeEmbeddedPostgres("client files", () => {
 
   it("holds the engagement pack until the NDA clears, then tracks it sent and accepted", async () => {
     const { company, agent } = await seedCompany("Greatstone");
-    const caseId = await seedClientCase(company.id, "Omni Group");
+    const caseId = await seedClientCase(company.id, "Northwind Group");
     const http = request(app());
     const pack = Buffer.from("%PDF-1.4 engagement pack");
 

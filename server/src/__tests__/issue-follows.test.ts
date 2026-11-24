@@ -92,7 +92,7 @@ describeEmbeddedPostgres("issue follows and recently opened", () => {
 
   it("follows a task and rolls up its whole subtree", async () => {
     const companyId = await company("GRE");
-    const parent = await task(companyId, { title: "Indago portal", status: "in_progress" });
+    const parent = await task(companyId, { title: "Acme portal", status: "in_progress" });
     const done = await task(companyId, { parentId: parent, status: "done" });
     const mine = await task(companyId, { parentId: parent, status: "todo", assigneeUserId: "ben" });
     const asking = await task(companyId, { parentId: parent, status: "in_progress" });
@@ -120,7 +120,7 @@ describeEmbeddedPostgres("issue follows and recently opened", () => {
     const res = await request(app).get(`/api/companies/${companyId}/issue-follows`).expect(200);
     expect(res.body).toHaveLength(1);
     const [rollup] = res.body;
-    expect(rollup.issue).toMatchObject({ id: parent, title: "Indago portal" });
+    expect(rollup.issue).toMatchObject({ id: parent, title: "Acme portal" });
     expect(rollup.counts).toEqual({ total: 5, done: 1, inProgress: 2, waitingOnYou: 2, blocked: 1 });
     expect(rollup.latestUpdates.map((update: { kind: string; summary: string }) => [update.kind, update.summary])).toEqual([
       ["comment", "DNS is still pending at the registrar"],

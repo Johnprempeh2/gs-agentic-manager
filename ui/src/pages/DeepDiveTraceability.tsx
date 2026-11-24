@@ -26,7 +26,7 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { LinkList, RemoveButton, VisibilitySelect } from "./DeepDiveOpportunities";
 
 // Deep Dive traceability (GRE-2371): Screen 8 of the GRE-2327 plan, from
-// Indago, made stronger. Each opportunity's chain North Star → Source →
+// the first client's control centre, made stronger. Each opportunity's chain North Star → Source →
 // Finding → Opportunity → Design → Commercial → Roadmap → KPI, read from real
 // links, with the place it breaks marked; the server's broken-link check is
 // listed above. Commercial cases and roadmap items are added here; every

@@ -19,7 +19,7 @@ vi.mock("../api/issues", () => ({ issuesApi: issuesApiMocks }));
 const clipboardMock = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("../lib/clipboard", () => ({ copyTextToClipboard: clipboardMock }));
 
-const BODY = "Dear Martyn,\n\nThanks for the call.";
+const BODY = "Dear Sam,\n\nThanks for the call.";
 
 const draft: RequestDraftReviewInteraction = {
   id: "draft-1",
@@ -36,8 +36,8 @@ const draft: RequestDraftReviewInteraction = {
   legacyResolverPolicyAliases: { requested: null, effective: null },
   createdByAgentId: "agent-1",
   createdByUserId: null,
-  title: "Draft email to Indago",
-  payload: { version: 1, purpose: "Email to Indago", body: BODY, channel: "email" },
+  title: "Draft email to Acme",
+  payload: { version: 1, purpose: "Email to Acme", body: BODY, channel: "email" },
   createdAt: "2026-10-14T10:00:00.000Z",
   updatedAt: "2026-10-14T10:00:00.000Z",
 };
@@ -95,7 +95,7 @@ describe("DraftReviewCard", () => {
     expect(button(host, "Send edits").disabled).toBe(true);
     expect(button(host, "Approve as is").disabled).toBe(false);
 
-    typeInto(textarea, "Hi Martyn,\n\nThanks for the call.");
+    typeInto(textarea, "Hi Sam,\n\nThanks for the call.");
     expect(host.textContent).toContain("1 change");
     expect(host.textContent).toContain("Send your edits to");
     expect(button(host, "Send edits").disabled).toBe(false);
@@ -105,7 +105,7 @@ describe("DraftReviewCard", () => {
       button(host, "Send edits").click();
     });
     expect(issuesApiMocks.acceptInteraction).toHaveBeenCalledWith("issue-1", "draft-1", {
-      editedBody: "Hi Martyn,\n\nThanks for the call.",
+      editedBody: "Hi Sam,\n\nThanks for the call.",
       learnFromEdits: true,
     });
   });
@@ -142,13 +142,13 @@ describe("DraftReviewCard", () => {
         outcome: "accepted",
         draft: {
           originalBody: BODY,
-          finalBody: "Hi Martyn,\n\nThanks for the call.",
+          finalBody: "Hi Sam,\n\nThanks for the call.",
           edited: true,
           changeCount: 1,
           diff: [
             { type: "removed", text: "Dear" },
             { type: "added", text: "Hi" },
-            { type: "same", text: " Martyn,\n\nThanks for the call." },
+            { type: "same", text: " Sam,\n\nThanks for the call." },
           ],
           editSummary: "1 change, 1 words removed, 1 words added.",
           learnFromEdits: true,

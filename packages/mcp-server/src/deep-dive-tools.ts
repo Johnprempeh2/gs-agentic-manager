@@ -8,7 +8,7 @@ import {
 import type { PaperclipApiClient } from "./client.js";
 import { makeTool, type ToolDefinition } from "./tools.js";
 
-// Deep Dive draft tools (GRE-4430), the GSAM home of indago-portal PR #31's
+// Deep Dive draft tools (GRE-4430), the GSAM home of the client portal prototype's
 // log_interview and propose_record. Every call names one client's Deep Dive;
 // the API refuses a Deep Dive outside the agent's company. Agents write drafts
 // only: there is no approve, publish or delete tool. Named like the studio

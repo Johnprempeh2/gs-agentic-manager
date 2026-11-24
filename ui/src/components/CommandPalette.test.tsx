@@ -537,11 +537,11 @@ describe("CommandPalette", () => {
   it("opens from the global open event with the query already typed", async () => {
     const { root } = renderWithQueryClient(<CommandPalette />, container);
     act(() => {
-      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago" } }));
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "acme" } }));
     });
     await waitForAssertion(() => {
       const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement | null;
-      expect(input?.value).toBe("indago");
+      expect(input?.value).toBe("acme");
     });
     act(() => {
       root.unmount();
@@ -551,7 +551,7 @@ describe("CommandPalette", () => {
   const openTask = {
     id: "issue-1",
     identifier: "GRE-7",
-    title: "Send the Indago proposal",
+    title: "Send the Acme proposal",
     status: "in_progress",
     assigneeAgentId: null,
     assigneeUserId: null,
@@ -622,7 +622,7 @@ describe("CommandPalette", () => {
       issue: { id, identifier, title, status: "in_progress", priority: "medium", originKind: "manual", updatedAt: new Date() },
     });
     mockIssuesApi.listRecentlyOpened.mockResolvedValue([
-      summary("i-1", "GRE-1681", "Indago portal"),
+      summary("i-1", "GRE-1681", "Acme portal"),
       summary("i-2", "GRE-1700", "Board pack"),
     ]);
     const { root } = renderWithQueryClient(<CommandPalette />, container);
@@ -645,7 +645,7 @@ describe("CommandPalette", () => {
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Command search"]')!;
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(input, "indago");
+      setter.call(input, "acme");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => {
@@ -654,7 +654,7 @@ describe("CommandPalette", () => {
     await waitForAssertion(() => {
       const recents = container.querySelectorAll('[data-testid="command-recent-task"]');
       expect(recents).toHaveLength(1);
-      expect(recents[0]?.textContent).toContain("Indago portal");
+      expect(recents[0]?.textContent).toContain("Acme portal");
     });
     act(() => {
       container.querySelector('[data-testid="command-recent-task"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -666,7 +666,7 @@ describe("CommandPalette", () => {
   });
 
   it("offers recent searches and questions for the lead agent before anything is typed", async () => {
-    window.localStorage.setItem("paperclip:recent-searches:company-1", JSON.stringify(["indago fee"]));
+    window.localStorage.setItem("paperclip:recent-searches:company-1", JSON.stringify(["acme fee"]));
     const agents = [{ id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null }];
     const asked = vi.fn();
     window.addEventListener("gsam:open-ask-everest", asked);
@@ -677,7 +677,7 @@ describe("CommandPalette", () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
     });
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("indago fee");
+      expect(container.textContent).toContain("acme fee");
       expect(container.querySelector('[data-testid="global-search-ask-suggestion"]')).not.toBeNull();
     }, 80);
     act(() => {
@@ -719,10 +719,10 @@ describe("CommandPalette", () => {
   }
 
   it("previews a plain-English task before creating it", async () => {
-    mockIssuesApi.create.mockResolvedValue({ id: "new-1", identifier: "GRE-30", title: "Draft the Indago pack" });
-    const { root } = await typeCommand("create a task for Mason to draft the Indago pack tomorrow");
+    mockIssuesApi.create.mockResolvedValue({ id: "new-1", identifier: "GRE-30", title: "Draft the Acme pack" });
+    const { root } = await typeCommand("create a task for Mason to draft the Acme pack tomorrow");
     expect(container.textContent).toContain("Nothing happens until you confirm.");
-    expect(container.textContent).toContain("Draft the Indago pack");
+    expect(container.textContent).toContain("Draft the Acme pack");
     expect(container.textContent).toContain("Mason");
     expect(mockIssuesApi.create).not.toHaveBeenCalled();
     act(() => {
@@ -731,7 +731,7 @@ describe("CommandPalette", () => {
     });
     await waitForAssertion(() => {
       expect(mockIssuesApi.create).toHaveBeenCalledWith("company-1", expect.objectContaining({
-        title: "Draft the Indago pack",
+        title: "Draft the Acme pack",
         status: "todo",
         assigneeAgentId: "agent-1",
         description: expect.stringMatching(/^Due by /),
@@ -744,14 +744,14 @@ describe("CommandPalette", () => {
   });
 
   it("goes back to the typed words without creating anything", async () => {
-    const { root } = await typeCommand("create a task to chase the Indago invoice");
+    const { root } = await typeCommand("create a task to chase the Acme invoice");
     act(() => {
       container.querySelector('[data-testid="command-cancel"]')!
         .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await waitForAssertion(() => {
       const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
-      expect(input.value).toBe("create a task to chase the Indago invoice");
+      expect(input.value).toBe("create a task to chase the Acme invoice");
     });
     expect(mockIssuesApi.create).not.toHaveBeenCalled();
     act(() => {
@@ -787,7 +787,7 @@ describe("CommandPalette", () => {
       queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
     });
     act(() => {
-      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago fee" } }));
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "acme fee" } }));
     });
     await waitForAssertion(() => {
       expect(container.querySelector('[data-testid="command-save-search"]')).not.toBeNull();
@@ -811,7 +811,7 @@ describe("CommandPalette", () => {
     await waitForAssertion(() => {
       const saved = [...container.querySelectorAll('[data-testid="global-search-saved"]')].map((node) => node.textContent);
       expect(saved).toHaveLength(2);
-      expect(saved[1]).toContain("indago fee");
+      expect(saved[1]).toContain("acme fee");
     });
     act(() => {
       container.querySelectorAll('[data-testid="global-search-saved"]')[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

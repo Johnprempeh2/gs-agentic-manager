@@ -37,6 +37,7 @@ import {
 import { TaskChatSystemNotice } from "./TaskChatSystemNotice";
 import type { TaskChatMessageItem } from "./task-chat-model";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
+import { safeNavigableUrl } from "@/lib/safe-url";
 import { AttachmentThumbnail } from "../AttachmentThumbnail";
 
 interface TaskChatBubbleProps {
@@ -362,7 +363,7 @@ function TaskChatBubbleContent({
                     onClick={video ? () => openImage(ref.url) : undefined}
                     render={video ? <button type="button" /> :
                       <a
-                        href={ref.openPath ?? ref.url}
+                        href={safeNavigableUrl(ref.openPath ?? ref.url) ?? undefined}
                         target="_blank"
                         rel="noreferrer"
                         onClick={openAttachmentPreview ? (event) => {

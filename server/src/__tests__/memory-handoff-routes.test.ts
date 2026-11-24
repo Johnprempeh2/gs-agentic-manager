@@ -126,7 +126,7 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     const { links } = await setup("ByChatGPT");
     const fromClaude = await tool<HandoffWriteResult>(links.claude_code.tools, "handoff_update", {
       doing: "starting the handoff work",
-      focus: "Ship the shared memory before Indago.",
+      focus: "Ship the shared memory before Acme.",
       threads: [{ ref: "GRE-2668", title: "Hindsight shared memory", state: "building", next: "add the handoff" }],
     });
     expect(fromClaude.isError).toBeFalsy();
@@ -143,7 +143,7 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     const handoff = read.structuredContent.handoff;
     expect(handoff.threads).toEqual([expect.objectContaining({ key: "GRE-2668", state: "changes requested", title: "Hindsight shared memory", by: { tool: "chatgpt", label: "ChatGPT" } })]);
     // Claude's own line is still Claude's: two tools never overwrite each other's parts.
-    expect(handoff.focus).toMatchObject({ text: "Ship the shared memory before Indago.", by: { label: "Claude" } });
+    expect(handoff.focus).toMatchObject({ text: "Ship the shared memory before Acme.", by: { label: "Claude" } });
     expect(handoff.lastTool).toMatchObject({ by: { label: "ChatGPT" }, doing: "answering Keystone's review" });
     expect(read.structuredContent.markdown).toContain("<!-- by ChatGPT · ");
     expect(read.structuredContent.markdown).toContain("- GRE-2668 Hindsight shared memory | state: changes requested | next: add handoff_read and handoff_update");
@@ -179,12 +179,12 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
   it("keeps working while Hindsight is down, and sends only the newest version once it is back", async () => {
     const hindsight = { up: false };
     const { links, fake } = await setup("HindsightDown", hindsight);
-    const first = await tool<HandoffWriteResult>(links.codex.tools, "handoff_update", { doing: "working offline", focus: "Indago call first." });
+    const first = await tool<HandoffWriteResult>(links.codex.tools, "handoff_update", { doing: "working offline", focus: "Acme call first." });
     expect(first.isError).toBeFalsy();
     const second = await tool<HandoffWriteResult>(links.codex.tools, "handoff_update", { doing: "still offline", threads: [{ ref: "GRE-2668", title: "Shared memory", state: "in review" }] });
     expect(second.isError).toBeFalsy();
     const read = await tool<HandoffReadResult>(links.claude_code.tools, "handoff_read", {});
-    expect(read.structuredContent).toMatchObject({ revision: 2, handoff: { focus: { text: "Indago call first.", by: { label: "ChatGPT" } } } });
+    expect(read.structuredContent).toMatchObject({ revision: 2, handoff: { focus: { text: "Acme call first.", by: { label: "ChatGPT" } } } });
     expect(fake.retained).toHaveLength(0);
 
     // One retain is waiting, held a few minutes; the older version's will never be sent.
@@ -215,7 +215,7 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     await tool(links.claude_code.tools, "handoff_update", { doing: "online", focus: "Release tonight." });
     // Offline, Codex edited NOW.md at 11:00: the focus (with its by line) and the GRE-571 thread.
     const offlineEdit = fileAtV1
-      .replace(/<!-- by Claude · [^>]+ -->\nRelease prep\./, `<!-- by ChatGPT · ${new Date(Date.now() + 30_000).toISOString()} -->\nIndago call first.`)
+      .replace(/<!-- by Claude · [^>]+ -->\nRelease prep\./, `<!-- by ChatGPT · ${new Date(Date.now() + 30_000).toISOString()} -->\nAcme call first.`)
       .replace("state: waiting | next: sign-off", "state: discovery booked | next: send the brief");
     const res = await request(links.claude_code.rest)
       .post(`${base}/handoff/file`)
@@ -223,7 +223,7 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     expect(res.status).toBe(200);
     const merged = res.body as HandoffWriteResult;
     expect(merged.revision).toBe(3);
-    expect(merged.handoff.focus).toMatchObject({ text: "Indago call first.", by: { label: "ChatGPT" } });
+    expect(merged.handoff.focus).toMatchObject({ text: "Acme call first.", by: { label: "ChatGPT" } });
     expect(merged.handoff.threads.find((thread) => thread.key === "GRE-571")).toMatchObject({ state: "discovery booked", next: "send the brief", by: { tool: "now_md" } });
     // GSAM's untouched thread is as it was.
     expect(merged.handoff.threads.find((thread) => thread.key === "GRE-2668")).toMatchObject({ state: "in review", by: { label: "Claude" } });
@@ -247,20 +247,20 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     const { links, base } = await setup("FirstSync");
     const res = await request(links.claude_code.rest)
       .post(`${base}/handoff/file`)
-      .send({ text: "# NOW\n\nIndago kick-off first.\n\n## Next session\n- call Ben\n", fileChangedAt: new Date().toISOString(), baseRevision: 0 });
+      .send({ text: "# NOW\n\nAcme kick-off first.\n\n## Next session\n- call Ben\n", fileChangedAt: new Date().toISOString(), baseRevision: 0 });
     expect(res.status).toBe(200);
-    expect(res.body.handoff.notes.text).toBe("Indago kick-off first.\n\n### Next session\n- call Ben");
+    expect(res.body.handoff.notes.text).toBe("Acme kick-off first.\n\n### Next session\n- call Ben");
     expect(res.body.markdown).toContain("## Notes");
   });
 
   it("lets GSAM agents read John's handoff and update threads and the waiting list, never the focus", async () => {
     const { links, companyId, tools, base, rest } = await setup("Agents");
-    await tool(links.claude_code.tools, "handoff_update", { doing: "planning", focus: "Indago before shared memory." });
+    await tool(links.claude_code.tools, "handoff_update", { doing: "planning", focus: "Acme before shared memory." });
     const everest = await everestRun(companyId, tools);
 
     const read = await tool<HandoffReadResult>(everest.app, "handoff_read", {});
     expect(read.isError).toBeFalsy();
-    expect(read.structuredContent).toMatchObject({ bankName: "greatstone-john", handoff: { focus: { text: "Indago before shared memory." } } });
+    expect(read.structuredContent).toMatchObject({ bankName: "greatstone-john", handoff: { focus: { text: "Acme before shared memory." } } });
     const byName = await tool<HandoffReadResult>(everest.app, "handoff_read", { person: "greatstone-john" });
     expect(byName.structuredContent.revision).toBe(1);
 
@@ -303,14 +303,14 @@ describeEmbeddedPostgres("the live handoff in the shared bank (GRE-2668)", () =>
     const before = new Date(Date.now() - 1_000);
     await tool(links.codex.tools, "handoff_update", {
       doing: "wrapping up",
-      focus: "Indago kick-off on 9 Nov.",
+      focus: "Acme kick-off on 9 Nov.",
       threads: [{ ref: "GRE-2668", title: "Shared memory", state: "in review", next: "Flint" }],
       waiting: ["Approve the release card"],
     });
-    expect(await readOwnerFocus(ctx.db, companyId)).toMatchObject({ personName: "John", text: "Indago kick-off on 9 Nov.", by: "ChatGPT" });
+    expect(await readOwnerFocus(ctx.db, companyId)).toMatchObject({ personName: "John", text: "Acme kick-off on 9 Nov.", by: "ChatGPT" });
     const digest = await personHandoffSummary(ctx.db, companyId, userId, before);
     expect(digest).toMatchObject({
-      focus: { text: "Indago kick-off on 9 Nov.", by: "ChatGPT" },
+      focus: { text: "Acme kick-off on 9 Nov.", by: "ChatGPT" },
       threadCount: 1,
       threads: [expect.objectContaining({ refs: ["GRE-2668"], state: "in review", by: "ChatGPT" })],
       waiting: "- Approve the release card",

@@ -101,3 +101,24 @@ test("installer is idempotent and leaves a foreign pre-commit hook alone", () =>
   assert.match(foreign.stderr, /not the Greatstone guard/);
   assert.equal(fs.readFileSync(hook, "utf8"), "#!/bin/sh\nexit 0\n");
 });
+
+test("hygiene check runs only when greatstone.hygieneCheck is set", () => {
+  const { main } = makeRepo();
+  const scripts = new URL("../", import.meta.url).pathname;
+  fs.mkdirSync(path.join(main, "scripts", "repo-hygiene"), { recursive: true });
+  for (const file of ["check-repo-hygiene.mjs", "repo-hygiene/blocklist.sha256", "repo-hygiene/allow.json"]) {
+    fs.copyFileSync(path.join(scripts, file), path.join(main, "scripts", file));
+  }
+  // Built at run time so this file holds no token itself.
+  fs.writeFileSync(path.join(main, "config.ts"), `const t = "${"gh" + "p_" + "Zq8rT2vLm4Xk9Wn3Bc7Hy5Jd1Fs6Gp0Qa2Re"}";\n`);
+  assert.equal(git(main, ["add", "."]).status, 0);
+
+  assert.equal(git(main, ["config", "greatstone.hygieneCheck", "true"]).status, 0);
+  const refused = git(main, ["commit", "-q", "-m", "work"], cleanEnv());
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /config\.ts:1: a possible secret \(github-token\)/);
+
+  assert.equal(git(main, ["config", "--unset", "greatstone.hygieneCheck"]).status, 0);
+  const allowed = git(main, ["commit", "-q", "-m", "work"], cleanEnv());
+  assert.equal(allowed.status, 0, allowed.stderr);
+});

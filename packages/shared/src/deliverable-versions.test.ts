@@ -3,16 +3,16 @@ import { groupDeliverableDocuments, normaliseDeliverableTitle } from "./delivera
 
 describe("normaliseDeliverableTitle", () => {
   it.each([
-    ["Ghana Airport Taxi discovery prep brief", "ghana airport taxi discovery prep brief"],
-    ["Ghana Airport Taxi Discovery Prep Brief v2", "ghana airport taxi discovery prep brief"],
-    ["Ghana airport taxi: discovery prep brief (draft)", "ghana airport taxi discovery prep brief"],
+    ["City Shuttle discovery prep brief", "city shuttle discovery prep brief"],
+    ["City Shuttle Discovery Prep Brief v2", "city shuttle discovery prep brief"],
+    ["City shuttle: discovery prep brief (draft)", "city shuttle discovery prep brief"],
     ["The Greatstone Method Toolkit v5.3", "the greatstone method toolkit"],
     ["The Greatstone Method Toolkit, version 3", "the greatstone method toolkit"],
     ["The Greatstone Method Toolkit rev 2 (final)", "the greatstone method toolkit"],
-    ["Indago North Star kick-off pack 13 Oct 2026", "indago north star kick off pack"],
-    ["Indago North Star kick-off pack 2026-10-13", "indago north star kick off pack"],
-    ["Indago North Star kick-off pack, October 13, 2026", "indago north star kick off pack"],
-    ["Omni executive discovery meeting deck [v4] - updated", "omni executive discovery meeting deck"],
+    ["Acme North Star kick-off pack 13 Oct 2026", "acme north star kick off pack"],
+    ["Acme North Star kick-off pack 2026-10-13", "acme north star kick off pack"],
+    ["Acme North Star kick-off pack, October 13, 2026", "acme north star kick off pack"],
+    ["Northwind executive discovery meeting deck [v4] - updated", "northwind executive discovery meeting deck"],
   ])("%s", (title, expected) => {
     expect(normaliseDeliverableTitle(title)).toBe(expected);
   });
@@ -27,7 +27,7 @@ describe("normaliseDeliverableTitle", () => {
   });
 });
 
-function item(id: string, title: string, createdAt: string, projectId: string | null = "indago", version = 1) {
+function item(id: string, title: string, createdAt: string, projectId: string | null = "acme", version = 1) {
   return { id, title, createdAt, version, project: projectId ? { id: projectId } : null };
 }
 
@@ -55,8 +55,8 @@ describe("groupDeliverableDocuments", () => {
 
   it("never merges across projects, and no-project entries only with each other", () => {
     const groups = groupDeliverableDocuments([
-      item("a", "Brief", "2026-10-01T00:00:00Z", "indago"),
-      item("b", "Brief", "2026-10-02T00:00:00Z", "omni"),
+      item("a", "Brief", "2026-10-01T00:00:00Z", "acme"),
+      item("b", "Brief", "2026-10-02T00:00:00Z", "northwind"),
       item("c", "Brief", "2026-10-03T00:00:00Z", null),
       item("d", "Brief v2", "2026-10-04T00:00:00Z", null),
     ]);

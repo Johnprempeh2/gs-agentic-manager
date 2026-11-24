@@ -53,7 +53,7 @@ describe("classifyQuestion", () => {
   });
 
   it("spots stuck questions and keeps the subject", () => {
-    expect(classifyQuestion("What is stuck on the Indago work?", agents)).toEqual({ kind: "stuck", subject: "Indago" });
+    expect(classifyQuestion("What is stuck on the Globex work?", agents)).toEqual({ kind: "stuck", subject: "Globex" });
     expect(classifyQuestion("Anything blocked?", agents)).toEqual({ kind: "stuck", subject: null });
   });
 
@@ -75,7 +75,7 @@ describe("classifyQuestion", () => {
   it("spots questions about past conversations with a client", () => {
     expect(classifyQuestion("When did we last speak to Acme?", agents)).toEqual({ kind: "history", subject: "Acme" });
     expect(classifyQuestion("What did we last discuss with Acme Ltd?", agents)).toEqual({ kind: "history", subject: "Acme Ltd" });
-    expect(classifyQuestion("Any notes from the Indago call?", agents)).toEqual({ kind: "history", subject: "Indago" });
+    expect(classifyQuestion("Any notes from the Globex call?", agents)).toEqual({ kind: "history", subject: "Globex" });
     expect(classifyQuestion("What did we discuss?", agents)).toEqual({ kind: "history", subject: null });
     expect(classifyQuestion("What did Mason do today?", agents)).toMatchObject({ kind: "agent" });
   });
@@ -98,7 +98,7 @@ describe("classifyQuestion", () => {
 
   it("spots requests for a brief on an organisation", () => {
     expect(classifyQuestion("Tell me about Grebe", agents)).toEqual({ kind: "brief", subject: "Grebe" });
-    expect(classifyQuestion("What do we know about Indago Mining?", agents)).toEqual({ kind: "brief", subject: "Indago Mining" });
+    expect(classifyQuestion("What do we know about Globex Mining?", agents)).toEqual({ kind: "brief", subject: "Globex Mining" });
     expect(classifyQuestion("Tell me about Mason", agents)).toMatchObject({ kind: "agent" });
     expect(intentWithContext({ kind: "brief", subject: null }, { label: "Acme Ltd", summary: "", subject: "Acme Ltd" })).toEqual({ kind: "brief", subject: "Acme Ltd" });
     expect(intentWithContext({ kind: "brief", subject: null }, null)).toEqual({ kind: "overview" });
@@ -106,9 +106,9 @@ describe("classifyQuestion", () => {
 
   it("spots questions about who we know at a client", () => {
     expect(classifyQuestion("Who is our contact at Acme?", agents)).toEqual({ kind: "people", subject: "Acme" });
-    expect(classifyQuestion("Who do we know at Indago Mining?", agents)).toEqual({ kind: "people", subject: "Indago Mining" });
+    expect(classifyQuestion("Who do we know at Globex Mining?", agents)).toEqual({ kind: "people", subject: "Globex Mining" });
     expect(classifyQuestion("Email address for the Acme decision maker", agents)).toEqual({ kind: "people", subject: "Acme" });
-    expect(classifyQuestion("Who is working on the Indago work?", agents)).toEqual({ kind: "subject", subject: "Indago" });
+    expect(classifyQuestion("Who is working on the Globex work?", agents)).toEqual({ kind: "subject", subject: "Globex" });
   });
 
   it("strips question words from the subject", () => {
@@ -310,26 +310,26 @@ describe("answers", () => {
       count: 2,
       decisionCount: 1,
       assignedTaskCount: 1,
-      decisions: [{ id: "task:i1", title: "Approve the Indago fee", reason: "Fixed fee or day rate", task: { id: "i1", identifier: "GRE-9" } }],
+      decisions: [{ id: "task:i1", title: "Approve the Globex fee", reason: "Fixed fee or day rate", task: { id: "i1", identifier: "GRE-9" } }],
       assignedTasks: [{ id: "i2", identifier: "GRE-10", title: "Review the deck", status: "in_review", priority: "high", updatedAt: "" }],
       overdueWaits: [],
     } as unknown as NeedsMe;
     const answer = answerDecide(needsMe);
     // The headline number is the one needs-you count; assigned tasks are said apart.
     expect(answer.headline).toBe("1 thing needs you. 1 task is assigned to you.");
-    expect(answer.lines[0]).toEqual({ text: "Approve the Indago fee", detail: "Fixed fee or day rate", href: "/issues/GRE-9" });
+    expect(answer.lines[0]).toEqual({ text: "Approve the Globex fee", detail: "Fixed fee or day rate", href: "/issues/GRE-9" });
     expect(answer.lines[1]?.detail).toBe("Assigned to you, waiting for review");
   });
 
   it("names the blocker and owner of stuck tasks", () => {
     const stuck = issue({
       status: "blocked",
-      title: "Indago kick-off pack",
+      title: "Globex kick-off pack",
       assigneeAgentId: "mason",
       blockedBy: [{ id: "i9", identifier: "GRE-9", title: "Approve the fee", status: "todo" }] as Issue["blockedBy"],
     });
-    const answer = answerStuck([stuck], "indago", (id) => (id === "mason" ? "Mason" : null));
-    expect(answer.headline).toBe("1 task is stuck on indago.");
+    const answer = answerStuck([stuck], "globex", (id) => (id === "mason" ? "Mason" : null));
+    expect(answer.headline).toBe("1 task is stuck on globex.");
     expect(answer.lines[0]?.detail).toBe("Waiting on GRE-9: Approve the fee. With Mason.");
   });
 
@@ -355,27 +355,27 @@ describe("answers", () => {
   });
 
   it("puts stuck tasks first when answering about a subject", () => {
-    const answer = answerSubject("indago", [
+    const answer = answerSubject("globex", [
       issue({ id: "a", title: "Draft proposal", status: "in_progress" }),
       issue({ id: "b", title: "Kick-off pack", status: "blocked" }),
       issue({ id: "c", title: "Intro call", status: "done" }),
     ]);
-    expect(answer.headline).toBe("3 tasks about indago: 2 open, 1 stuck, 1 done.");
+    expect(answer.headline).toBe("3 tasks about globex: 2 open, 1 stuck, 1 done.");
     expect(answer.lines[0]?.text).toBe("Kick-off pack");
   });
 
   it("puts matching clients and people first, and answers with them when there are no tasks", () => {
     const records = [
-      { id: "organisation:o1", type: "record", title: "Indago Ltd", href: "/PAP/organisations/o1", record: { kind: "organisation", subtitle: "Finance, UK" } },
-      { id: "person:p1", type: "record", title: "Ada Indago", href: "/PAP/organisations/o1", record: { kind: "person", subtitle: "CFO at Indago Ltd" } },
+      { id: "organisation:o1", type: "record", title: "Globex Ltd", href: "/PAP/organisations/o1", record: { kind: "organisation", subtitle: "Finance, UK" } },
+      { id: "person:p1", type: "record", title: "Ada Globex", href: "/PAP/organisations/o1", record: { kind: "person", subtitle: "CFO at Globex Ltd" } },
       { id: "issue:x", type: "issue", title: "Not a record", href: "/PAP/issues/X-1" },
     ] as unknown as Parameters<typeof answerSubject>[2];
-    const withTasks = answerSubject("indago", [issue({ id: "a", title: "Draft proposal", status: "in_progress" })], records);
-    expect(withTasks.lines.map((line) => line.text)).toEqual(["Indago Ltd", "Ada Indago", "Draft proposal"]);
-    expect(withTasks.lines[0]).toEqual({ text: "Indago Ltd", detail: "Organisation: Finance, UK", href: "/PAP/organisations/o1" });
-    const noTasks = answerSubject("indago", [], records);
-    expect(noTasks.headline).toBe("I found Indago Ltd and 1 more record, but no tasks about indago yet.");
-    expect(noTasks.lines[1]?.detail).toBe("Person: CFO at Indago Ltd");
+    const withTasks = answerSubject("globex", [issue({ id: "a", title: "Draft proposal", status: "in_progress" })], records);
+    expect(withTasks.lines.map((line) => line.text)).toEqual(["Globex Ltd", "Ada Globex", "Draft proposal"]);
+    expect(withTasks.lines[0]).toEqual({ text: "Globex Ltd", detail: "Organisation: Finance, UK", href: "/PAP/organisations/o1" });
+    const noTasks = answerSubject("globex", [], records);
+    expect(noTasks.headline).toBe("I found Globex Ltd and 1 more record, but no tasks about globex yet.");
+    expect(noTasks.lines[1]?.detail).toBe("Person: CFO at Globex Ltd");
   });
 });
 
@@ -398,7 +398,7 @@ describe("since you were away", () => {
       agentName: "Mason",
       counts: { tasksFinished: 2, tasksStarted: 0, decisionsRaised: 0, failures: 1 },
       items: [
-        { kind: "task_finished", label: "Finished GRE-4: Indago pack", at: "2026-10-16T05:00:00Z", issueId: "i4", issueIdentifier: "GRE-4", runId: null },
+        { kind: "task_finished", label: "Finished GRE-4: Globex pack", at: "2026-10-16T05:00:00Z", issueId: "i4", issueIdentifier: "GRE-4", runId: null },
         { kind: "run_failed", label: "Run failed", at: "2026-10-16T04:00:00Z", issueId: null, issueIdentifier: null, runId: "r1" },
       ],
     }],
@@ -415,7 +415,7 @@ describe("since you were away", () => {
     } as unknown as NeedsMe;
     const answer = answerAway(digest, blocked, needsMe);
     expect(answer.headline).toBe("In the last 24 hours: 2 tasks finished, 1 got stuck, 1 thing needs you, 1 run failed.");
-    expect(answer.lines.map((line) => line.text)).toEqual(["Approve the fee", "Chase fee", "Finished GRE-4: Indago pack"]);
+    expect(answer.lines.map((line) => line.text)).toEqual(["Approve the fee", "Chase fee", "Finished GRE-4: Globex pack"]);
     expect(answer.more?.href).toBe("/since-last-visit");
   });
 
@@ -492,7 +492,7 @@ describe("asking about a page", () => {
     expect(intentWithContext({ kind: "decide" }, context)).toEqual({ kind: "decide" });
     expect(intentWithContext({ kind: "overview" }, null)).toEqual({ kind: "overview" });
     expect(intentWithContext({ kind: "history", subject: null }, context)).toEqual({ kind: "history", subject: "Acme Ltd" });
-    expect(intentWithContext({ kind: "history", subject: "Indago" }, context)).toEqual({ kind: "history", subject: "Indago" });
+    expect(intentWithContext({ kind: "history", subject: "Globex" }, context)).toEqual({ kind: "history", subject: "Globex" });
   });
 
   it("sends Everest the page and the question it follows", () => {

@@ -28,7 +28,7 @@ describe("parseAssistantExport", () => {
         current_node: "b",
         mapping: {
           root: { parent: null, message: null },
-          a: { parent: "root", message: { author: { role: "user" }, content: { parts: ["Price the Indago workshop"] } } },
+          a: { parent: "root", message: { author: { role: "user" }, content: { parts: ["Price the Acme workshop"] } } },
           x: { parent: "a", message: { author: { role: "assistant" }, content: { parts: ["Abandoned branch"] } } },
           b: { parent: "a", message: { author: { role: "assistant" }, content: { parts: ["Two days at the standard rate"] } } },
         },
@@ -46,7 +46,7 @@ describe("parseAssistantExport", () => {
     if (!result.ok) return;
     expect(result.candidates.map((c) => c.sourceId)).toEqual(["conversation:c-new", "conversation:c-old"]);
     const old = result.candidates[1];
-    expect(old.content).toBe("Me: Price the Indago workshop\n\nChatGPT: Two days at the standard rate");
+    expect(old.content).toBe("Me: Price the Acme workshop\n\nChatGPT: Two days at the standard rate");
     expect(old.messageCount).toBe(2);
     expect(old.occurredAt).toBe(new Date(1_700_000_000_000).toISOString());
   });

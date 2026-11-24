@@ -53,7 +53,7 @@ gateway's `memory_operations` table. Fixture names map to UUIDs both ways, and
 every UUID in a response is renamed to its fixture name, so a leaked id shows
 up as a leaked name.
 
-1. Sandbox engine: follow "Sandbox test" in `doc/GS-MEMORY-ENGINE.md` (own
+1. Sandbox engine: follow "Sandbox test" in `scripts/gs-memory/README.md` (own
    folder, ports 25432/28888, `link-gateway` into the scratch folder).
 2. Sandbox GSAM in `local_trusted` mode with its own config (port, embedded
    database port, telemetry off) and

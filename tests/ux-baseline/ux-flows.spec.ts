@@ -215,7 +215,7 @@ async function seed(request: APIRequestContext): Promise<Seed> {
   }
 
   // Flow 3: Ridge asks John for a sign-off and hands the task to him.
-  const needsMeTitle = "Sign off the Indago statement of work";
+  const needsMeTitle = "Sign off the Acme statement of work";
   const needsMe = await json(await request.post(`/api/companies/${companyId}/issues`, {
     data: {
       title: needsMeTitle,

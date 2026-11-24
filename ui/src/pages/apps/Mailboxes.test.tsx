@@ -163,9 +163,9 @@ describe("Mailboxes page", () => {
   });
 
   it("fills Gmail settings, submits the mailbox, and clears the password", async () => {
-    connectMock.mockResolvedValue({ ...mailbox, id: "mb-2", address: "john@gmail.com" });
+    connectMock.mockResolvedValue({ ...mailbox, id: "mb-2", address: "someone@gmail.com" });
     await act(() => button("Add mailbox")!.click());
-    await type("mailbox-address", "john@gmail.com");
+    await type("mailbox-address", "someone@gmail.com");
     expect((document.getElementById("mailbox-host") as HTMLInputElement).value).toBe("imap.gmail.com");
     expect(container.textContent).toContain("app password");
     await type("mailbox-password", "abcd efgh ijkl mnop");
@@ -176,19 +176,19 @@ describe("Mailboxes page", () => {
     expect(connectMock).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
-        address: "john@gmail.com",
-        label: "john@gmail.com",
+        address: "someone@gmail.com",
+        label: "someone@gmail.com",
         host: "imap.gmail.com",
         port: 993,
         secure: true,
-        username: "john@gmail.com",
+        username: "someone@gmail.com",
         password: "abcd efgh ijkl mnop",
         allAgents: false,
         agentIds: [],
       }),
     );
     expect(document.getElementById("mailbox-password")).toBeNull();
-    expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "john@gmail.com is connected" }));
+    expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "someone@gmail.com is connected" }));
   });
 
   it("keeps agent drafts off until a person turns them on", async () => {

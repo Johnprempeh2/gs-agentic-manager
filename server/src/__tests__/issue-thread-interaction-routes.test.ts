@@ -1701,19 +1701,19 @@ describe.sequential("issue thread interaction routes", () => {
         idempotencyKey: null,
         sourceCommentId: null,
         sourceRunId: RUN_1,
-        payload: { version: 1, purpose: "Email to Indago", body: "Dear Martyn, thanks" },
+        payload: { version: 1, purpose: "Email to Acme", body: "Dear Sam, thanks" },
         result: {
           version: 1,
           outcome: "accepted",
           draft: {
-            originalBody: "Dear Martyn, thanks",
-            finalBody: "Hi Martyn, thanks",
+            originalBody: "Dear Sam, thanks",
+            finalBody: "Hi Sam, thanks",
             edited: true,
             changeCount: 1,
             diff: [
               { type: "removed", text: "Dear" },
               { type: "added", text: "Hi" },
-              { type: "same", text: " Martyn, thanks" },
+              { type: "same", text: " Sam, thanks" },
             ],
             editSummary: "1 change, 1 words removed, 1 words added.",
             learnFromEdits: true,
@@ -1727,13 +1727,13 @@ describe.sequential("issue thread interaction routes", () => {
     });
     const res = await request(await createApp())
       .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/interaction-draft/accept")
-      .send({ editedBody: "Hi Martyn, thanks", learnFromEdits: true });
+      .send({ editedBody: "Hi Sam, thanks", learnFromEdits: true });
 
     expect(res.status).toBe(200);
     expect(mockInteractionService.acceptInteraction).toHaveBeenCalledWith(
       expect.objectContaining({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
       "interaction-draft",
-      { editedBody: "Hi Martyn, thanks", learnFromEdits: true },
+      { editedBody: "Hi Sam, thanks", learnFromEdits: true },
       expect.objectContaining({ userId: "local-board" }),
     );
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
@@ -1743,7 +1743,7 @@ describe.sequential("issue thread interaction routes", () => {
           interactionKind: "request_draft_review",
           paperclipAgentMessage: expect.objectContaining({
             source: "draft_review",
-            text: expect.stringMatching(/Hi Martyn, thanks[\s\S]*removed "Dear", added "Hi"[\s\S]*memory_contribute/),
+            text: expect.stringMatching(/Hi Sam, thanks[\s\S]*removed "Dear", added "Hi"[\s\S]*memory_contribute/),
           }),
         }),
       }),

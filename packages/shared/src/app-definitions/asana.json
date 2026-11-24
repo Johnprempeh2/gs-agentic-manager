@@ -25,7 +25,8 @@
       ],
       "whenToUse": "Register an OAuth app with Asana, then enter its client ID and secret.",
       "defaults": {
-        "serverUrl": "https://mcp.asana.com/v2/mcp"
+        "serverUrl": "https://mcp.asana.com/v2/mcp",
+        "tokenEndpoint": "https://app.asana.com/-/oauth_token"
       },
       "guidanceMd": "Connect Asana in the browser. Create an Asana MCP OAuth app and register Greatstone's callback URI; DCR is not supported.",
       "riskTier": "S3",

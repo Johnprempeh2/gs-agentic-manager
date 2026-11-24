@@ -16,7 +16,7 @@ Create a private JSON file outside the repository. Replace every placeholder wit
 {
   "schema": "gsam.r1-source-contract/v1",
   "route": "direct-live-read-only",
-  "companyId": "34dad57e-b5ad-4a72-9400-9eba645c99f6",
+  "companyId": "<company-id>",
   "sourceRef": "<approved GRE-3269 source reference>",
   "instanceId": "default",
   "dataDirectory": "<absolute source directory John verified>",
@@ -57,8 +57,8 @@ This is a **proposed read-only source inventory**, not permission to run the R1 
    set -e
    read -r -p 'Full approved 40-character commit ID: ' R1_APPROVED_COMMIT
    [[ "$R1_APPROVED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-   R1_OPERATOR_CHECKOUT=/Users/johnprempeh/Desktop/Code/gs-clip-r1-operator
-   git clone --local --no-checkout /Users/johnprempeh/Desktop/Code/gs-clip "$R1_OPERATOR_CHECKOUT"
+   R1_OPERATOR_CHECKOUT=<dev-checkout>-r1-operator
+   git clone --local --no-checkout <dev-checkout> "$R1_OPERATOR_CHECKOUT"
    git -C "$R1_OPERATOR_CHECKOUT" cat-file -e "$R1_APPROVED_COMMIT^{commit}"
    git -C "$R1_OPERATOR_CHECKOUT" checkout --detach "$R1_APPROVED_COMMIT"
    test "$(git -C "$R1_OPERATOR_CHECKOUT" rev-parse HEAD)" = "$R1_APPROVED_COMMIT"

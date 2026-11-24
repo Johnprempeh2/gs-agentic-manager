@@ -376,13 +376,13 @@ describe("paperclip MCP tools", () => {
     const tool = getTool("request_draft_review");
     await tool.execute({
       issueId: "PAP-1135",
-      title: "Draft email to Indago",
+      title: "Draft email to Globex",
       payload: {
         version: 1,
-        purpose: "Email to Indago",
-        body: "Hi Martyn,\n\nThanks for the call.",
+        purpose: "Email to Globex",
+        body: "Hi Sam,\n\nThanks for the call.",
         subject: "Next steps",
-        recipients: ["martyn@example.com"],
+        recipients: ["sam@example.com"],
         channel: "email",
       },
     });
@@ -392,13 +392,13 @@ describe("paperclip MCP tools", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       kind: "request_draft_review",
       continuationPolicy: "wake_assignee",
-      title: "Draft email to Indago",
+      title: "Draft email to Globex",
       payload: {
         version: 1,
-        purpose: "Email to Indago",
-        body: "Hi Martyn,\n\nThanks for the call.",
+        purpose: "Email to Globex",
+        body: "Hi Sam,\n\nThanks for the call.",
         subject: "Next steps",
-        recipients: ["martyn@example.com"],
+        recipients: ["sam@example.com"],
         channel: "email",
       },
     });

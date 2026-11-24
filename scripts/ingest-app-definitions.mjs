@@ -232,6 +232,7 @@ const apps = [
         serverUrl: "https://mcp.railway.com",
         scopesHint: ["openid", "offline_access", "workspace:member"],
         oauthAuthorizationParams: { prompt: "consent" },
+        tokenEndpoint: "https://backboard.railway.com/oauth/token",
       },
       "S4",
       "Sign in to Railway and select the workspaces your agents may use. GS Agentic Manager adds direct service, deployment, and bounded log tools when Railway accepts the connection for API access. Container commands require the separate SSH setup on the connection. Project tokens are not supported by Railway's hosted connection.",
@@ -1013,8 +1014,21 @@ const oauthMethodFor = (
       ...extra,
     },
   );
+// Token endpoints on another host than the MCP server. A deployment OAuth
+// client is sent only to a pinned endpoint or to the server's own host.
+const customerOAuthTokenEndpoints = {
+  asana: "https://app.asana.com/-/oauth_token",
+};
 const customerOAuthMethodFor = (entry) =>
   oauthMethodFor(entry, "mcp-own-oauth", entry.serverUrl, {
+    ...(customerOAuthTokenEndpoints[entry.slug]
+      ? {
+          defaults: {
+            serverUrl: entry.serverUrl,
+            tokenEndpoint: customerOAuthTokenEndpoints[entry.slug],
+          },
+        }
+      : {}),
     label: "Use your own OAuth app",
     ownershipModes: ["customer"],
     whenToUse: `Register an OAuth app with ${entry.name}, then enter its client ID and secret.`,
