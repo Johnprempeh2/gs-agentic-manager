@@ -554,6 +554,7 @@ import {
   clientSupportInboxSchema,
   fleetSupportAttachmentRequestSchema,
 } from "@greatstone/shared/fleet-support";
+import { fleetActivateRequestSchema, fleetEntitlementInputSchema, fleetLicenceCreateSchema } from "@greatstone/shared/fleet";
 import {
   createCaseContactSchema,
   createProjectLinkSchema,
@@ -1566,6 +1567,8 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /api/fleet/spoke/check-in",
   "POST /api/fleet/spoke/revoke",
   "POST /api/fleet/spoke/delete",
+  // GSAM for Mac licence activation: the one-use licence key is the authorization.
+  "POST /api/fleet/spoke/activate",
   "GET /api/health",
   "GET /api/openapi.json",
   "GET /api/board-claim/{token}",
@@ -1952,6 +1955,9 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
   "POST /api/fleet/instances/{id}/revoke",
   "DELETE /api/fleet/instances/{id}",
   "GET /api/fleet/instances/{id}/check-ins",
+  "POST /api/fleet/licences",
+  "PUT /api/fleet/instances/{id}/entitlement",
+  "GET /api/fleet/instances/{id}/operator-login",
   "POST /api/companies",
   "POST /api/plugins/install",
   "POST /api/instance/database-backups",
@@ -1965,6 +1971,8 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/fleet/instances",
   "POST /api/fleet/instances/{id}/registration-code",
   "POST /api/fleet/spoke/register",
+  "POST /api/fleet/licences",
+  "POST /api/fleet/spoke/activate",
   "POST /api/adapters/install",
   "POST /api/chat-endpoints/{endpointId}/setup-secret",
   "POST /api/companies/{companyId}/agent-hires",
@@ -12667,6 +12675,42 @@ registry.registerPath({
   summary: "Spoke: upload one file for one of its own support tickets",
   request: { body: jsonBody(fleetSupportAttachmentRequestSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/licences",
+  tags: ["fleet"],
+  summary: "Make a licence key (shown once) for a new pending instance with its first signed entitlement document",
+  request: { body: jsonBody(fleetLicenceCreateSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/fleet/instances/{id}/entitlement",
+  tags: ["fleet"],
+  summary: "Issue a newer signed entitlement document; the install gets it with its next check-in answer",
+  request: { params: fleetIdParams, body: jsonBody(fleetEntitlementInputSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/fleet/instances/{id}/operator-login",
+  tags: ["fleet"],
+  summary: "The Greatstone operator log-in of a licensed install, for remote help",
+  request: { params: fleetIdParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/activate",
+  tags: ["fleet"],
+  summary: "Spoke: activate a licence key (one use, rate limited per address)",
+  request: { body: jsonBody(fleetActivateRequestSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict, 429: r.tooManyRequests, 503: { description: "The hub has no entitlement signing key" } },
 });
 
 // ─── LLM text endpoints ───────────────────────────────────────────────────────
