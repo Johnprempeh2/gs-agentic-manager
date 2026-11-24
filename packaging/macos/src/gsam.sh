@@ -44,7 +44,7 @@ healthy() { curl -fsS -m 3 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; 
 # A message the person sees in the app's error dialog.
 fail() { echo "$1"; echo "$1" >&4; exit 1; }
 # Tests: print a tailscale command instead of running it (GSAM_TAILSCALE_DRY_RUN=1). The auth key is only ever a file path.
-x() { if [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ]; then echo "would run: $*" >&3; else "$@"; fi; }
+x() { if [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ]; then local c="$*"; echo "would run: ${c/#ts /tailscale --socket=$TS_SOCK }" >&3; else "$@"; fi; }
 TS="$RUNTIME/tailscale"
 # A unix socket path must stay under 104 bytes, so it lives in the per-user temp folder, not under Application Support.
 TS_SOCK="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo /tmp/)$LABEL.tailscaled.sock"
@@ -238,7 +238,7 @@ EOF
       authfile="$TS/authkey"; ( umask 077; node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).authKey)' "$keyfile" > "$authfile" )
       x ts up --auth-key="file:$authfile" --hostname="gsam-$code" --advertise-tags="$TS_TAG" --accept-dns=false \
         || { rm -f "$authfile"; fail "GSAM could not join Greatstone's network for remote help. Everything else works."; }
-      rm -f "$authfile" "$keyfile"
+      rm -f "$authfile"; x rm -f "$keyfile"
     fi
     x ts serve --bg --tcp="$TS_REMOTE_PORT" "tcp://127.0.0.1:$PORT"
     [ -n "${GSAM_TAILSCALE_DRY_RUN:-}" ] && exit 0

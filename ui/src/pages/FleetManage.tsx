@@ -31,7 +31,8 @@ const LIMIT_FIELDS: Array<{ key: string; label: string }> = [
 const REMOTE_PORT = 3100;
 
 function featureTitle(key: string) {
-  return (INSTANCE_FEATURE_CATALOG as Record<string, { title: string } | undefined>)[key]?.title ?? key;
+  // "(compatibility)" in a catalogue title is a note for operators, not part of what is sold.
+  return ((INSTANCE_FEATURE_CATALOG as Record<string, { title: string } | undefined>)[key]?.title ?? key).replace(/ \(compatibility\)$/, "");
 }
 
 export function dateOnly(iso: string) {
