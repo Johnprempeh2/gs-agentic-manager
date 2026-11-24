@@ -5,7 +5,7 @@ import type { DeepDiveBuildState } from "./deep-dive-opportunities.js";
 
 /**
  * Deep Dive traceability (GRE-2371): Screen 8 of the GRE-2327 plan, from
- * Indago, made stronger. The chain
+ * the first client's control centre, made stronger. The chain
  *   North Star → Source → Finding → Opportunity → Design → Commercial → Roadmap → KPI
  * is held as real links, never text ids:
  * - North Star: the north-star document of the Deep Dive record (one per Deep Dive).

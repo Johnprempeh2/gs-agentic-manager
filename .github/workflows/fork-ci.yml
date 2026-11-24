@@ -108,6 +108,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The pull request's merge commit and its base (HEAD^1), for the hygiene diff.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -141,6 +143,12 @@ jobs:
 
       - name: Only fork-owned workflows
         run: node scripts/check-fork-workflows.mjs
+
+      # GRE-6167: the repository is public. Only the lines this pull request adds
+      # are checked for secrets and blocklisted client names (a second or two).
+      - name: No secrets or client names in added lines
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-repo-hygiene.mjs --base HEAD^1 && node --test scripts/check-repo-hygiene.test.mjs
 
   typecheck:
     name: Typecheck

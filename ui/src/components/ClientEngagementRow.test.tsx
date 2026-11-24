@@ -169,9 +169,9 @@ describe("ClientEngagementRow", () => {
       acceptedAt: "2026-10-17T09:00:00.000Z",
       acceptedName: "Ada Mensah",
       acceptedRole: "Chief Executive",
-      acceptedEmail: "ada@omni.com",
+      acceptedEmail: "ada@northwind.example",
     };
-    expect(onlineLinkSummary(link)).toMatch(/^Accepted online by Ada Mensah, Chief Executive \(ada@omni\.com\) on /);
+    expect(onlineLinkSummary(link)).toMatch(/^Accepted online by Ada Mensah, Chief Executive \(ada@northwind\.example\) on /);
     render({ ...sentWithPack, status: "accepted", acceptedAt: link.acceptedAt, onlineLink: link }, true);
     expect(container.querySelector("[data-testid='journey-engagement-online']")!.textContent).toContain("Ada Mensah");
     expect(onlineLinkSummary({ ...link, acceptedAt: null, expired: true })).toContain("expired");

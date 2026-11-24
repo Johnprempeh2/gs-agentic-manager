@@ -9,14 +9,14 @@ describe("createDeliverableSchema", () => {
   it("takes a file or a link", () => {
     expect(createDeliverableSchema.safeParse({ attachmentId, title: "Q3 pack" }).success).toBe(true);
     const link = createDeliverableSchema.parse({
-      url: "https://greatstone-moengt-deck.netlify.app",
-      title: "MoEnGT deck",
+      url: "https://example-fabrikam-deck.netlify.app",
+      title: "Fabrikam deck",
       kind: "deck",
-      summary: "Ministry of Energy deck",
+      summary: "Fabrikam deck",
       confidentiality: "client",
       status: "final",
     });
-    expect(link).toMatchObject({ url: "https://greatstone-moengt-deck.netlify.app", confidentiality: "client" });
+    expect(link).toMatchObject({ url: "https://example-fabrikam-deck.netlify.app", confidentiality: "client" });
   });
 
   it("needs exactly one of attachmentId or url", () => {

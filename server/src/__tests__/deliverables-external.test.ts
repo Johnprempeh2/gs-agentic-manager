@@ -109,7 +109,7 @@ describeEmbeddedPostgres("external deliverables", () => {
       pipelineId: pipeline!.id, key: "active", name: "Active", kind: "working", position: 0,
     }).returning();
     const [clientCase] = await db.insert(pipelineCases).values({
-      companyId, pipelineId: pipeline!.id, stageId: stage!.id, caseKey: "moen", title: "Ministry of Energy",
+      companyId, pipelineId: pipeline!.id, stageId: stage!.id, caseKey: "moen", title: "Fabrikam",
     }).returning();
     await db.insert(pipelineCaseIssueLinks).values({ companyId, caseId: clientCase!.id, issueId, role: "work" });
   }
@@ -139,10 +139,10 @@ describeEmbeddedPostgres("external deliverables", () => {
 
   async function createSite(body: Record<string, unknown> = {}) {
     const res = await request(board()).post(`/api/issues/${issueId}/deliverables`).send({
-      url: "https://greatstone-moengt-deck.netlify.app",
-      title: "MoEnGT deck",
+      url: "https://example-fabrikam-deck.netlify.app",
+      title: "Fabrikam deck",
       kind: "deck",
-      summary: "Ministry of Energy deck",
+      summary: "Fabrikam deck",
       confidentiality: "client",
       status: "final",
       ...body,
@@ -155,17 +155,17 @@ describeEmbeddedPostgres("external deliverables", () => {
     await seed();
     const created = await createSite();
     expect(created).toMatchObject({
-      key: "moengt-deck",
+      key: "fabrikam-deck",
       version: 1,
       external: true,
-      url: "https://greatstone-moengt-deck.netlify.app",
+      url: "https://example-fabrikam-deck.netlify.app",
       attachmentId: null,
       contentType: "text/uri-list",
-      openPath: "https://greatstone-moengt-deck.netlify.app",
+      openPath: "https://example-fabrikam-deck.netlify.app",
       confidentiality: "client",
       restricted: false,
       linkCheck: null,
-      clientCase: { name: "Ministry of Energy" },
+      clientCase: { name: "Fabrikam" },
       appUrl: `${BASE}/GRE/deliverables?open=${created.id}`,
     });
 
@@ -174,7 +174,7 @@ describeEmbeddedPostgres("external deliverables", () => {
     expect(refreshed.status).toBe(200);
     expect(refreshed.body.captured).toBe(true);
     expect(refreshed.body.deliverable.screenshotPath).toMatch(/^\/api\/attachments\/[0-9a-f-]{36}\/content$/);
-    expect(screenshot).toHaveBeenCalledWith("https://greatstone-moengt-deck.netlify.app");
+    expect(screenshot).toHaveBeenCalledWith("https://example-fabrikam-deck.netlify.app");
 
     // No browser on the server: the card keeps its placeholder.
     screenshot.mockResolvedValueOnce(null);
@@ -183,13 +183,13 @@ describeEmbeddedPostgres("external deliverables", () => {
 
     // The same key makes v2 and keeps the label.
     const v2 = await request(board()).post(`/api/issues/${issueId}/deliverables`).send({
-      url: "https://greatstone-moengt-deck.netlify.app/v2",
-      title: "MoEnGT deck",
+      url: "https://example-fabrikam-deck.netlify.app/v2",
+      title: "Fabrikam deck",
     });
-    expect(v2.body).toMatchObject({ version: 2, versionCount: 2, confidentiality: "client", url: "https://greatstone-moengt-deck.netlify.app/v2" });
+    expect(v2.body).toMatchObject({ version: 2, versionCount: 2, confidentiality: "client", url: "https://example-fabrikam-deck.netlify.app/v2" });
     expect(v2.body.versions.map((version: { contentPath: string }) => version.contentPath)).toEqual([
-      "https://greatstone-moengt-deck.netlify.app/v2",
-      "https://greatstone-moengt-deck.netlify.app",
+      "https://example-fabrikam-deck.netlify.app/v2",
+      "https://example-fabrikam-deck.netlify.app",
     ]);
 
     // Exactly one of attachmentId or url, https only.
@@ -204,13 +204,13 @@ describeEmbeddedPostgres("external deliverables", () => {
   it("lets agents search by project or client and get direct links", async () => {
     await seed();
     const created = await createSite();
-    for (const q of ["moengt", "Energy sector", "Ministry of Energy", "netlify.app"]) {
+    for (const q of ["fabrikam", "Energy sector", "Fabrikam", "netlify.app"]) {
       const res = await request(agent()).get(`/api/companies/${companyId}/deliverables`).query({ q });
       expect(res.status).toBe(200);
       expect(res.body.deliverables).toEqual([
         expect.objectContaining({
           id: created.id,
-          url: "https://greatstone-moengt-deck.netlify.app",
+          url: "https://example-fabrikam-deck.netlify.app",
           appUrl: `${BASE}/GRE/deliverables?open=${created.id}`,
         }),
       ]);
@@ -218,7 +218,7 @@ describeEmbeddedPostgres("external deliverables", () => {
     const miss = await request(agent()).get(`/api/companies/${companyId}/deliverables`).query({ q: "Kumasi" });
     expect(miss.body.deliverables).toEqual([]);
     // Another company's agent cannot search this company.
-    const outsider = await request(agent(otherAgentId, otherCompanyId)).get(`/api/companies/${companyId}/deliverables`).query({ q: "moengt" });
+    const outsider = await request(agent(otherAgentId, otherCompanyId)).get(`/api/companies/${companyId}/deliverables`).query({ q: "fabrikam" });
     expect(outsider.status).toBe(403);
   });
 

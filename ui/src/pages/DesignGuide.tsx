@@ -2706,7 +2706,7 @@ export function DesignGuide() {
         </SubSection>
         <SubSection title="Site thumbnail (placeholder while no screenshot is stored)">
           <div className="aspect-video w-full max-w-xs overflow-hidden rounded-lg border border-border">
-            <SiteThumbnail source={{ url: "https://greatstone-moengt-deck.netlify.app", title: "MoEnGT deck", screenshotPath: null }} />
+            <SiteThumbnail source={{ url: "https://example-fabrikam-deck.netlify.app", title: "Fabrikam deck", screenshotPath: null }} />
           </div>
         </SubSection>
         <SubSection title="Expected deliverables for a stage">
@@ -2816,7 +2816,7 @@ function FollowTaskShowcase() {
       </SubSection>
       <SubSection title="Pin icon (task rows: shows on hover or focus until pinned)">
         <div className="group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-accent/50">
-          <span className="flex-1 text-sm">Indago portal</span>
+          <span className="flex-1 text-sm">Acme portal</span>
           <FollowTaskButton variant="icon" taskName="GRE-1681" following={following} onToggle={setFollowing} />
           <FollowTaskButton variant="icon" taskName="GRE-1700" following onToggle={() => {}} />
         </div>

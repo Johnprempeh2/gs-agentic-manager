@@ -361,7 +361,7 @@ function AskEverestBody({
               ? (dictation.interim || "Listening…")
               : lastTurn
                 ? (lastTurn && taskSets[lastTurn.id] ? "Ask a follow-up, like: which of those are overdue?" : "Ask something else")
-                : context ? `Ask about ${context.label}` : "What is stuck on the Indago work?"}
+                : context ? `Ask about ${context.label}` : "What is stuck on the Acme work?"}
             aria-label={`Ask ${leadName} a question`}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
           />

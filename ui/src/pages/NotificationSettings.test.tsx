@@ -75,12 +75,12 @@ describe("NotificationSettings", () => {
   });
 
   it("lists what reached the phone lately, each opening what it opened", async () => {
-    server.recent = [{ id: "n1", title: "Deal won", body: "Indago rollout", url: "/GRE/pipelines/p1/cases/c1", sentAt: new Date(Date.now() - 5 * 60_000).toISOString() }];
+    server.recent = [{ id: "n1", title: "Deal won", body: "Acme rollout", url: "/GRE/pipelines/p1/cases/c1", sentAt: new Date(Date.now() - 5 * 60_000).toISOString() }];
     await render();
     await flush();
     const list = container.querySelector('[data-testid="recent-notifications"]')!;
     expect(list.textContent).toContain("Deal won");
-    expect(list.textContent).toContain("Indago rollout");
+    expect(list.textContent).toContain("Acme rollout");
     expect(list.querySelector("a")!.getAttribute("href")).toBe("/GRE/pipelines/p1/cases/c1");
   });
 

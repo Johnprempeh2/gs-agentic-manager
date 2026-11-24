@@ -119,16 +119,16 @@ describe("stuck days, the ball and the email drafts", () => {
   });
 
   it("drafts a reminder listing what the client owes, and a status update", () => {
-    const context = { clientName: "Omni Bank", contactName: "Kofi Mensah", to: ["kofi@omni.example"] };
+    const context = { clientName: "Northwind Bank", contactName: "Kofi Mensah", to: ["kofi@northwind.example"] };
     const reminder = reminderEmail(overview, context);
-    expect(reminder.subject).toBe("Omni Bank: a quick reminder");
-    expect(reminder.to).toEqual(["kofi@omni.example"]);
+    expect(reminder.subject).toBe("Northwind Bank: a quick reminder");
+    expect(reminder.to).toEqual(["kofi@northwind.example"]);
     expect(reminder.text).toContain("Hello Kofi,");
     expect(reminder.text).toContain("- Accept the engagement pack\n- Send Org chart");
     expect(reminder.text).not.toContain("Deliver");
 
     const status = statusEmail(overview, { ...context, nextAction: "Playback workshop on 20 Oct." });
-    expect(status.subject).toBe("Omni Bank: where things stand");
+    expect(status.subject).toBe("Northwind Bank: where things stand");
     expect(status.text).toContain("Current stage: Deep Dive.");
     expect(status.text).toContain("Completed: Executive Discovery.");
     expect(status.text).toContain("Documents received at this stage: IT strategy, Site photos.zip.");
@@ -147,7 +147,7 @@ describe("ClientJourneyOverview", () => {
     root = createRoot(container);
     api.getCaseJourney.mockResolvedValue(journey);
     api.getCaseFiles.mockResolvedValue({ evidence, deliverables: [] });
-    api.listCaseContacts.mockResolvedValue([{ id: "c1", name: "Kofi Mensah", email: "kofi@omni.example" }]);
+    api.listCaseContacts.mockResolvedValue([{ id: "c1", name: "Kofi Mensah", email: "kofi@northwind.example" }]);
     mailboxes.list.mockResolvedValue([
       { id: "mb-off", label: "Shared", address: "team@greatstone.example", allowDrafts: false },
       { id: "mb-1", label: "John", address: "john@greatstone.example", allowDrafts: true },
@@ -175,7 +175,7 @@ describe("ClientJourneyOverview", () => {
       root.render(
         <QueryClientProvider client={client}>
           <MemoryRouter>
-            <ClientJourneyOverview caseId="case-1" companyId="company-1" clientName="Omni Bank" stageEnteredAt={entered} />
+            <ClientJourneyOverview caseId="case-1" companyId="company-1" clientName="Northwind Bank" stageEnteredAt={entered} />
           </MemoryRouter>
         </QueryClientProvider>,
       );
@@ -188,14 +188,14 @@ describe("ClientJourneyOverview", () => {
     await act(async () => remind.click());
     await settle();
     expect(document.body.textContent).toContain("Saving in John.");
-    expect(document.querySelector<HTMLInputElement>("#email-draft-to")?.value).toBe("kofi@omni.example");
+    expect(document.querySelector<HTMLInputElement>("#email-draft-to")?.value).toBe("kofi@northwind.example");
     const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Save as draft")!;
     await act(async () => save.click());
     await settle();
     expect(mailboxes.saveDraft).toHaveBeenCalledWith("company-1", "mb-1", expect.objectContaining({
-      to: ["kofi@omni.example"],
+      to: ["kofi@northwind.example"],
       cc: [],
-      subject: "Omni Bank: a quick reminder",
+      subject: "Northwind Bank: a quick reminder",
     }));
     expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Draft saved" }));
   });

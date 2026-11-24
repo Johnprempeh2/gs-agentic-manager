@@ -69,7 +69,7 @@ export function siteDomain(url: string | null) {
   }
 }
 
-/** Up to two letters from the site's first label, for the placeholder card ("greatstone-moengt-deck" gives "GM"). */
+/** Up to two letters from the site's first label, for the placeholder card ("example-fabrikam-deck" gives "EF"). */
 export function siteInitials(url: string | null) {
   const label = siteDomain(url).split(".")[0] ?? "";
   const words = label.split(/[^a-z0-9]+/i).filter(Boolean);

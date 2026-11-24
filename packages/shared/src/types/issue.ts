@@ -1560,7 +1560,7 @@ export interface RequestItemVerdictsPayload {
  */
 export interface RequestDraftReviewPayload {
   version: 1;
-  /** What the draft is for, e.g. "Email to Indago". */
+  /** What the draft is for, e.g. "Email to Acme". */
   purpose: string;
   body: string;
   subject?: string | null;

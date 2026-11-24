@@ -10,7 +10,7 @@
 // run $HOME is a sandbox, so set GSAM_HOME to the live data directory, or the
 // connection fails with a password error (GRE-1181):
 //
-//   GSAM_HOME=/Users/johnprempeh/GSAM/data pnpm metrics:john-time --company ID --now ISO --json
+//   GSAM_HOME=~/GSAM/data pnpm metrics:john-time --company ID --now ISO --json
 //
 // John's user ids default to every signed-in user plus the `local-board`
 // sentinel (this is a one-person board); pass --john-user-ids to narrow it.
