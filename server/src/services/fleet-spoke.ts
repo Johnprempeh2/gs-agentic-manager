@@ -415,6 +415,8 @@ export function startFleetSpoke(opts: { db: Db; instanceRoot: string; port: numb
   process.env.GSAM_TWO_STEP_EXEMPT_EMAILS = exempt ? `${exempt},${config.operatorEmail}` : config.operatorEmail;
   const baseUrl = `http://localhost:${opts.port}`;
   const tag = releaseTag();
+  // Sandbox tests may check in more often (GSAM_FLEET_CHECK_IN_SECONDS, 15 or more); installs use 5 minutes.
+  const checkInSeconds = Math.max(15, Number.parseInt(process.env.GSAM_FLEET_CHECK_IN_SECONDS ?? "", 10) || FLEET_CHECK_IN_INTERVAL_SECONDS);
   let stopped = false;
   const timers = new Map<() => void, NodeJS.Timeout>();
   const later = (fn: () => void, ms: number) => {
@@ -445,7 +447,7 @@ export function startFleetSpoke(opts: { db: Db; instanceRoot: string; port: numb
     })();
     sendSpokeCheckIn(opts.db, { config, paths, backupDir: opts.backupDir, appVersion: opts.appVersion, releaseTag: tag, entitlementFile })
       .then((outcome) => (outcome.ok ? logger.info(outcome, "fleet spoke: check-in") : logger.warn(outcome, "fleet spoke: check-in")))
-      .finally(() => later(checkIn, FLEET_CHECK_IN_INTERVAL_SECONDS * 1000));
+      .finally(() => later(checkIn, checkInSeconds * 1000));
   };
   setup();
   later(checkIn, 15_000);
