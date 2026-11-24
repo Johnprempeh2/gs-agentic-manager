@@ -538,7 +538,7 @@ describe("Desk sections", () => {
     follows = [{
       issueId: "p1",
       followedAt: new Date("2026-10-20T00:00:00.000Z"),
-      issue: summary("p1", { title: "Indago portal" }),
+      issue: summary("p1", { title: "Acme portal" }),
       counts: { total: 5, done: 2, inProgress: 1, waitingOnYou: 1, blocked: 1 },
       latestUpdates: [{
         kind: "comment",
@@ -556,7 +556,7 @@ describe("Desk sections", () => {
     expect(headings).toEqual(["Pinned", "Decisions", "Your tasks", "Recently opened"]);
     expect(section("desk-tasks")?.querySelector('[data-row="1"]')).not.toBeNull();
     const pinned = section("desk-pinned");
-    expect(pinned?.textContent).toContain("Indago portal");
+    expect(pinned?.textContent).toContain("Acme portal");
     expect(pinned?.textContent).toContain("2 of 5 done");
     expect(pinned?.textContent).toContain("1 waiting on you");
     expect(pinned?.textContent).toContain("1 blocked");

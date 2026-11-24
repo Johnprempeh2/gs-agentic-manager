@@ -21,7 +21,7 @@ export const SEARCH_ASK_TOUR: TourDefinition = {
     },
     {
       title: "Type what you want done",
-      body: "Write it as a sentence, such as \"create a task for Mason to draft the Indago pack by Friday\" or \"remind me on Monday to call Ben\". You see a preview, and nothing happens until you confirm.",
+      body: "Write it as a sentence, such as \"create a task for Mason to draft the Acme pack by Friday\" or \"remind me on Monday to call Ben\". You see a preview, and nothing happens until you confirm.",
     },
     {
       title: "Save and pin",

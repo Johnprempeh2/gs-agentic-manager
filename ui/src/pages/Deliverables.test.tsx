@@ -224,12 +224,12 @@ describe("Deliverables page", () => {
   it("shows a live site as a placeholder or stored screenshot with Open site, never a frame", async () => {
     const site = (id: string, screenshotPath: string | null) => sample({
       id,
-      title: `MoEnGT deck ${id === "s-1" ? "site" : "mirror"}`,
+      title: `Fabrikam deck ${id === "s-1" ? "site" : "mirror"}`,
       external: true,
-      url: "https://greatstone-moengt-deck.netlify.app",
+      url: "https://example-fabrikam-deck.netlify.app",
       attachmentId: null,
       contentType: "text/uri-list",
-      openPath: "https://greatstone-moengt-deck.netlify.app",
+      openPath: "https://example-fabrikam-deck.netlify.app",
       screenshotPath,
       confidentiality: "client",
       linkCheck: { lastCheckedAt: "2026-10-13T09:00:00.000Z", httpStatus: 404, ok: false },
@@ -239,11 +239,11 @@ describe("Deliverables page", () => {
     await flush();
 
     expect(container.querySelector("[data-testid='deliverable-thumbnail-frame']")).toBeNull();
-    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("GM");
-    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("greatstone-moengt-deck.netlify.app");
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("EF");
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("example-fabrikam-deck.netlify.app");
     expect(container.querySelector("[data-testid='deliverable-site-screenshot']")?.getAttribute("src")).toBe("/api/attachments/shot/content");
     const open = container.querySelector<HTMLAnchorElement>("a[aria-label='Open site']");
-    expect(open?.getAttribute("href")).toBe("https://greatstone-moengt-deck.netlify.app");
+    expect(open?.getAttribute("href")).toBe("https://example-fabrikam-deck.netlify.app");
     expect(open?.getAttribute("rel")).toBe("noopener noreferrer");
     expect(container.querySelector("a[aria-label='Download']")).toBeNull();
     expect(container.querySelector("[data-testid='deliverable-link-broken']")?.textContent).toContain("Link broken");
@@ -459,17 +459,17 @@ describe("Deliverables page", () => {
   // Ben, 13 Oct: the same document showed as three cards.
   it("shows one card per document, with its versions one click away", async () => {
     deliverablesApiMock.list.mockResolvedValue(response([
-      sample({ id: "brief-3", key: "brief-v3", title: "Ghana Airport Taxi discovery prep brief v3", createdAt: "2026-10-12T10:00:00.000Z" }),
+      sample({ id: "brief-3", key: "brief-v3", title: "City Shuttle discovery prep brief v3", createdAt: "2026-10-12T10:00:00.000Z" }),
       sample({ id: "toolkit", key: "toolkit", title: "The Greatstone Method Toolkit", createdAt: "2026-10-11T10:00:00.000Z" }),
-      sample({ id: "brief-2", key: "brief-draft", title: "Ghana airport taxi discovery prep brief (draft)", createdAt: "2026-10-10T10:00:00.000Z", issue: { id: "issue-2", identifier: "GRE-2", title: "Prep" } }),
-      sample({ id: "brief-1", key: "brief", title: "Ghana Airport Taxi discovery prep brief", createdAt: "2026-10-01T10:00:00.000Z", versionCount: 2, version: 2 }),
+      sample({ id: "brief-2", key: "brief-draft", title: "City shuttle discovery prep brief (draft)", createdAt: "2026-10-10T10:00:00.000Z", issue: { id: "issue-2", identifier: "GRE-2", title: "Prep" } }),
+      sample({ id: "brief-1", key: "brief", title: "City Shuttle discovery prep brief", createdAt: "2026-10-01T10:00:00.000Z", versionCount: 2, version: 2 }),
     ]));
     render();
     await flush();
 
     const cards = [...container.querySelectorAll("[data-testid='deliverable-card']")];
     expect(cards.map((card) => card.querySelector("h3")?.textContent)).toEqual([
-      "Ghana Airport Taxi discovery prep brief v3",
+      "City Shuttle discovery prep brief v3",
       "The Greatstone Method Toolkit",
     ]);
     const versions = cards[0]!.querySelector<HTMLButtonElement>("[data-testid='deliverable-versions']");

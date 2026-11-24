@@ -84,7 +84,7 @@ async function tap(click: ClickListener, action: string, data: unknown) {
 describe("sw.js pause for an hour", () => {
   it("offers the button only when the push names a company", async () => {
     const { push, showNotification } = loadServiceWorker([]);
-    await deliver(push, { title: "Deal won", body: "Indago", url: "/PSH/today", tag: "deal:c1", companyId: "co-1" });
+    await deliver(push, { title: "Deal won", body: "Acme", url: "/PSH/today", tag: "deal:c1", companyId: "co-1" });
     await deliver(push, { title: "Test", body: "Hi", url: "/PSH/today", tag: "push-test" });
     expect(showNotification).toHaveBeenNthCalledWith(1, "Deal won", expect.objectContaining({
       data: { url: "/PSH/today", companyId: "co-1" },

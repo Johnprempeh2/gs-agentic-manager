@@ -27,7 +27,7 @@ describe("CopyMarkdownButton", () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<CopyMarkdownButton markdown={"Hi Martyn,\n\n1. One\n2. **Two**"} />);
+      root.render(<CopyMarkdownButton markdown={"Hi Sam,\n\n1. One\n2. **Two**"} />);
     });
     const button = container.querySelector("button")!;
     await act(async () => {
@@ -41,7 +41,7 @@ describe("CopyMarkdownButton", () => {
     expect(html).toContain("<ol>");
     expect(html).toContain("<strong>Two</strong>");
     expect(html).not.toMatch(/style=|class=/);
-    expect(text).toBe("Hi Martyn,\n\n1. One\n2. Two");
+    expect(text).toBe("Hi Sam,\n\n1. One\n2. Two");
     expect(button.textContent).toBe("Copied");
 
     await act(async () => root.unmount());

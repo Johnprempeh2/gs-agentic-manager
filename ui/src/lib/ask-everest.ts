@@ -148,7 +148,7 @@ function words(text: string): string[] {
 /** What the question is about once question words are removed, or null. */
 export function questionSubject(question: string, ignore: readonly string[] = []): string | null {
   const skip = new Set(ignore.map((word) => word.toLowerCase()));
-  // Keep the person's own capitals ("Indago"), compare in lower case.
+  // Keep the person's own capitals ("Globex"), compare in lower case.
   const kept = question
     .replace(/[^A-Za-z0-9'\s-]/g, " ")
     .split(/\s+/)
@@ -766,7 +766,7 @@ export type AskRefinement =
 
 /** The tasks behind an answer, kept so the next question can narrow them. */
 export interface AskTaskSet {
-  /** How the set reads in a sentence: "stuck tasks", "tasks about Indago". */
+  /** How the set reads in a sentence: "stuck tasks", "tasks about Globex". */
   about: string;
   issues: Issue[];
 }

@@ -142,11 +142,11 @@ describe("what a session keeps", () => {
   it("Codex (older format): bare message items", () => {
     const text = [
       line({ id: "old-1", timestamp: "2026-09-01T10:00:00Z", instructions: "" }),
-      line({ type: "message", role: "user", content: [{ type: "input_text", text: "Summarise the Indago brief." }] }),
-      line({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Indago wants a 5-slide pre-read before 9 Nov." }] }),
+      line({ type: "message", role: "user", content: [{ type: "input_text", text: "Summarise the Acme brief." }] }),
+      line({ type: "message", role: "assistant", content: [{ type: "output_text", text: "Acme wants a 5-slide pre-read before 9 Nov." }] }),
     ].join("\n");
     const turns = codexTurns(text, { idle: true });
-    assert.deepEqual(turns.map((turn) => [turn.user, turn.answer]), [["Summarise the Indago brief.", "Indago wants a 5-slide pre-read before 9 Nov."]]);
+    assert.deepEqual(turns.map((turn) => [turn.user, turn.answer]), [["Summarise the Acme brief.", "Acme wants a 5-slide pre-read before 9 Nov."]]);
   });
 
   it("skips trivial turns but keeps a short go-ahead with a real answer", () => {
@@ -217,7 +217,7 @@ describe("the Mac sync run", () => {
       const session = path.join(dirs.claude, "proj", "s1.jsonl");
       fs.writeFileSync(session, `${claudeTurn(1, "2026-10-25T10:00:00Z")}\n${claudeTurn(2, "2026-10-25T10:05:00Z")}\n`);
       fs.utimesSync(session, new Date(now - 3_600_000), new Date(now - 3_600_000));
-      fs.writeFileSync(path.join(dirs.memory, "project_indago.md"), "---\ndescription: Indago\n---\nIndago first. token: abcdefghijk");
+      fs.writeFileSync(path.join(dirs.memory, "project_acme.md"), "---\ndescription: Acme\n---\nAcme first. token: abcdefghijk");
       fs.writeFileSync(path.join(dirs.memory, "pilot01.create-output.txt"), "admin password");
       const codexDir = path.join(dirs.codex, "2026", "10", "26");
       fs.mkdirSync(codexDir, { recursive: true });
@@ -259,11 +259,11 @@ describe("the Mac sync run", () => {
       assert.doesNotMatch(JSON.stringify(server.calls), /Question 1:/);
 
       // A changed memory file is sent again under the same source id.
-      fs.writeFileSync(path.join(dirs.memory, "project_indago.md"), "Indago interview on 9 Nov.");
+      fs.writeFileSync(path.join(dirs.memory, "project_acme.md"), "Acme interview on 9 Nov.");
       server.calls.length = 0;
       const changed = await run({ env, now: now + 86_400_000 + 60_000, send, log: () => {} });
       assert.equal(changed.revised, 1);
-      assert.equal(server.calls[0].body.entries[0].sourceId, "memory:project_indago.md");
+      assert.equal(server.calls[0].body.entries[0].sourceId, "memory:project_acme.md");
     } finally {
       cleanup();
     }
@@ -285,21 +285,21 @@ describe("the Mac sync run", () => {
       assert.ok(!server.calls.some((call) => JSON.stringify(call.body).includes("Shared memory first")));
 
       // GSAM (or the PC) is down. Claude edits NOW.md by hand; the run leaves it alone.
-      const edited = server.handoff.markdown.replace("Shared memory first.", "Indago call first. key sk-ant-api03-" + mixed(40));
+      const edited = server.handoff.markdown.replace("Shared memory first.", "Acme call first. key sk-ant-api03-" + mixed(40));
       fs.writeFileSync(nowFile, edited);
       const offline = await run({ env, send: down, log: () => {} });
       assert.equal(offline.handoff.offline, true);
       assert.equal(fs.readFileSync(nowFile, "utf8"), edited, "the fallback file keeps the offline edit");
 
       // GSAM is back: the edit goes back with the revision this Mac last wrote, redacted, and GSAM's answer is written.
-      server.handoff = { revision: 3, markdown: "# NOW: where we left off\n\n## Focus\n<!-- by NOW.md edit · 2026-10-26T10:00:00.000Z -->\nIndago call first. key [redacted]\n" };
+      server.handoff = { revision: 3, markdown: "# NOW: where we left off\n\n## Focus\n<!-- by NOW.md edit · 2026-10-26T10:00:00.000Z -->\nAcme call first. key [redacted]\n" };
       server.handoffCalls.length = 0;
       const back = await run({ env, send, log: () => {} });
       assert.equal(server.handoffCalls.length, 1);
       const call = server.handoffCalls[0];
       assert.equal(call.route, "/handoff/file");
       assert.equal(call.body.baseRevision, 2);
-      assert.match(call.body.text, /Indago call first/);
+      assert.match(call.body.text, /Acme call first/);
       assert.ok(!call.body.text.includes("sk-ant-api03"), "secrets never leave the Mac");
       assert.ok(call.body.fileChangedAt);
       assert.equal(back.handoff.sentBack, true);
@@ -387,10 +387,10 @@ describe("the Mac sync run", () => {
   });
 
   it("only talks to the tailnet", () => {
-    assert.equal(tailnetUrlProblem("https://gsam.tail83d26c.ts.net:3100"), null);
+    assert.equal(tailnetUrlProblem("https://gsam.tail0000.ts.net:3100"), null);
     assert.equal(tailnetUrlProblem("http://100.101.1.2:3100"), null);
     assert.equal(tailnetUrlProblem("http://localhost:3100"), null);
-    assert.match(tailnetUrlProblem("https://gsam.tail83d26c.ts.net"), /Funnel/);
+    assert.match(tailnetUrlProblem("https://gsam.tail0000.ts.net"), /Funnel/);
     assert.match(tailnetUrlProblem("https://gsam.example.com"), /tailnet/);
     assert.match(tailnetUrlProblem("http://8.8.8.8:3100"), /tailnet/);
   });

@@ -176,7 +176,7 @@ describe("morning summary service", () => {
       { companyId, pipelineId: hiring!.id, key: "hired", name: "Hired", kind: "done", position: 0 },
     ]).returning();
     await db.insert(pipelineCases).values([
-      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "a", title: "Indago rollout", terminalKind: "done", terminalAt: new Date("2026-10-16T06:00:00Z") },
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "a", title: "Hooli rollout", terminalKind: "done", terminalAt: new Date("2026-10-16T06:00:00Z") },
       { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "b", title: "Acme renewal", terminalKind: "cancelled", terminalAt: new Date("2026-10-15T21:00:00Z") },
       { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "c", title: "Last week's win", terminalKind: "done", terminalAt: new Date("2026-10-10T09:00:00Z") },
       { companyId, pipelineId: hiring!.id, stageId: hired!.id, caseKey: "d", title: "Candidate hired", terminalKind: "done", terminalAt: new Date("2026-10-16T05:00:00Z") },
@@ -203,7 +203,7 @@ describe("morning summary service", () => {
     const built = await service().build(companyId, "john", now);
     expect(built.deals?.won).toBe(1);
     expect(built.deals?.lost).toBe(1);
-    expect(built.deals?.items.map((deal) => [deal.title, deal.outcome])).toEqual([["Indago rollout", "won"], ["Acme renewal", "lost"]]);
+    expect(built.deals?.items.map((deal) => [deal.title, deal.outcome])).toEqual([["Hooli rollout", "won"], ["Acme renewal", "lost"]]);
   });
 
   it("lists the tasks an agent is working on right now", async () => {

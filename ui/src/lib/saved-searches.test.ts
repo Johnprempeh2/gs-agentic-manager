@@ -6,11 +6,11 @@ describe("saved searches", () => {
   beforeEach(() => window.localStorage.clear());
 
   it("saves searches and pinned pages per company and person, newest first, without duplicates", () => {
-    saveSearchItem("c1", "u1", { kind: "search", label: "indago", query: "indago" });
+    saveSearchItem("c1", "u1", { kind: "search", label: "acme", query: "acme" });
     saveSearchItem("c1", "u1", { kind: "view", label: "Tasks", path: "/issues?status=blocked" });
-    saveSearchItem("c1", "u1", { kind: "search", label: "Indago", query: "Indago " });
+    saveSearchItem("c1", "u1", { kind: "search", label: "Acme", query: "Acme " });
     const items = loadSavedSearches("c1", "u1");
-    expect(items.map((item) => item.label)).toEqual(["Indago", "Tasks"]);
+    expect(items.map((item) => item.label)).toEqual(["Acme", "Tasks"]);
     expect(loadSavedSearches("c1", "u2")).toEqual([]);
     expect(isSaved(items, { kind: "view", label: "x", path: "/issues?status=blocked" })).toBe(true);
     expect(removeSavedSearch("c1", "u1", items[0]!.id).map((item) => item.label)).toEqual(["Tasks"]);

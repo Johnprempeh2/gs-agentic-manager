@@ -20,17 +20,17 @@ function sample() {
     emptyHandoff(),
     {
       doing: "starting the shared memory work",
-      focus: "Ship shared memory (GRE-2668) before Indago.",
+      focus: "Ship shared memory (GRE-2668) before Acme.",
       threads: [
         { ref: "GRE-2668", alsoRefs: ["GRE-2694"], title: "Hindsight shared memory", state: "in review", next: "Flint's security check" },
-        { ref: "gre-571", title: "Airport taxi prototype scope", state: "waiting on discovery", next: "John and Ben sign off" },
+        { ref: "gre-571", title: "City shuttle prototype scope", state: "waiting on discovery", next: "John and Ben sign off" },
       ],
       waiting: ["Approve the release card (GRE-2695)"],
     },
     claude,
     new Date("2026-10-26T00:50:00.000Z"),
   );
-  state = applyHandoffUpdate(state, { doing: "reviewing", notes: "Indago call moved to 9 Nov." }, chatgpt, new Date("2026-10-26T00:55:00.000Z"));
+  state = applyHandoffUpdate(state, { doing: "reviewing", notes: "Acme call moved to 9 Nov." }, chatgpt, new Date("2026-10-26T00:55:00.000Z"));
   return state;
 }
 
@@ -74,9 +74,9 @@ describe("handoff record (GRE-2668)", () => {
   });
 
   it("keeps an old free-form NOW.md as notes", () => {
-    const parsed = parseHandoffMarkdown("# NOW\n\nWorking on Indago.\n\n## Next session\n- call Ben\n");
+    const parsed = parseHandoffMarkdown("# NOW\n\nWorking on Acme.\n\n## Next session\n- call Ben\n");
     expect(parsed.revision).toBeNull();
-    expect(parsed.sections.notes?.text).toBe("Working on Indago.\n\n### Next session\n- call Ben");
+    expect(parsed.sections.notes?.text).toBe("Working on Acme.\n\n### Next session\n- call Ben");
     expect(parseThreadLine("- GRE-1 | state: open")).toMatchObject({ key: "GRE-1", title: "", state: "open" });
   });
 
@@ -85,7 +85,7 @@ describe("handoff record (GRE-2668)", () => {
     const file = renderHandoffMarkdown(base, meta)
       // Codex, offline, edits the GRE-571 line and the focus, and sets the focus "by" line.
       .replace("state: waiting on discovery", "state: discovery booked")
-      .replace("<!-- by Claude · 2026-10-26T00:50:00.000Z -->\nShip shared memory (GRE-2668) before Indago.", "<!-- by ChatGPT · 2026-10-26T03:00:00.000Z -->\nIndago first, then shared memory");
+      .replace("<!-- by Claude · 2026-10-26T00:50:00.000Z -->\nShip shared memory (GRE-2668) before Acme.", "<!-- by ChatGPT · 2026-10-26T03:00:00.000Z -->\nAcme first, then shared memory");
     // Meanwhile Claude, through GSAM, changed the focus earlier and a different thread.
     const server = applyHandoffUpdate(
       base,
@@ -101,7 +101,7 @@ describe("handoff record (GRE-2668)", () => {
       now: new Date("2026-10-26T03:10:00.000Z"),
     });
     expect(fromFile.sort()).toEqual(["focus", "thread:GRE-571"]);
-    expect(merged.focus).toMatchObject({ text: "Indago first, then shared memory", by: chatgpt, at: "2026-10-26T03:00:00.000Z" });
+    expect(merged.focus).toMatchObject({ text: "Acme first, then shared memory", by: chatgpt, at: "2026-10-26T03:00:00.000Z" });
     // The thread line had no new "by" line: it reads as a NOW.md edit at the file's time.
     expect(merged.threads.find((thread) => thread.key === "GRE-571")).toMatchObject({ state: "discovery booked", by: { tool: "now_md" }, at: "2026-10-26T03:05:00.000Z" });
     // GSAM's own change to the other thread survives.
@@ -114,6 +114,6 @@ describe("handoff record (GRE-2668)", () => {
     const later = applyHandoffUpdate(base, { doing: "online", focus: "Release now." }, claude, new Date("2026-10-26T04:00:00.000Z"));
     const second = mergeHandoffFile({ base, server: later, file: parseHandoffMarkdown(file), fileChangedAt: new Date("2026-10-26T03:05:00.000Z"), now: new Date("2026-10-26T04:10:00.000Z") });
     expect(second.merged.focus?.text).toBe("Release now.");
-    expect(second.conflicts).toEqual([expect.objectContaining({ unit: "focus", kept: "gsam", lostValue: "Indago first, then shared memory", lostBy: chatgpt })]);
+    expect(second.conflicts).toEqual([expect.objectContaining({ unit: "focus", kept: "gsam", lostValue: "Acme first, then shared memory", lostBy: chatgpt })]);
   });
 });

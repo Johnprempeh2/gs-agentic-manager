@@ -73,7 +73,7 @@ Each release tag gets its own clone, next to the instance folders, never in
 
 ```sh
 REL=/path/to/instances/releases/<tag>
-git clone --branch <tag> /Users/johnprempeh/Desktop/Code/gs-clip "$REL"
+git clone --branch <tag> <dev-checkout> "$REL"
 git -C "$REL" remote set-url --push origin DISABLED
 (cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
 ```
@@ -797,7 +797,7 @@ for a real client instance:
 
 ```sh
 scripts/client-instance.sh upgrade <root> <stable tag> \
-  [--repo /Users/johnprempeh/Desktop/Code/gs-clip] [--releases <dir>]
+  [--repo <dev-checkout>] [--releases <dir>]
 ```
 
 Run it with a clean environment (see "Where the code runs"). It refuses any

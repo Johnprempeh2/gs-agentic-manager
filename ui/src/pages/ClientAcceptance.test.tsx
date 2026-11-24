@@ -22,7 +22,7 @@ vi.mock("../api/clientAcceptance", () => ({ clientAcceptanceApi: api }));
 
 const open: PublicClientAcceptance = {
   companyName: "Greatstone",
-  clientName: "Omni Group",
+  clientName: "Northwind Group",
   packTitle: "Engagement pack",
   packPath: "/api/client-acceptance/gsa_accept_abc/pack",
   status: "open",
@@ -83,13 +83,13 @@ describe("ClientAcceptancePage", () => {
     api.accept.mockResolvedValue({ ...open, status: "accepted", acceptedAt: "2026-10-16T10:00:00.000Z", acceptedName: "Ada Mensah" });
     await render();
     expect(api.get).toHaveBeenCalledWith("gsa_accept_abc");
-    expect(container.textContent).toContain("Engagement pack for Omni Group");
+    expect(container.textContent).toContain("Engagement pack for Northwind Group");
     expect(container.querySelector<HTMLAnchorElement>("a[href='/api/client-acceptance/gsa_accept_abc/pack']")).not.toBeNull();
 
     const submit = container.querySelector<HTMLButtonElement>("button[type='submit']")!;
     expect(submit.disabled).toBe(true);
     type(container.querySelector<HTMLInputElement>("#client-acceptance-name")!, "Ada Mensah");
-    type(container.querySelector<HTMLInputElement>("#client-acceptance-email")!, "ada@omni.com");
+    type(container.querySelector<HTMLInputElement>("#client-acceptance-email")!, "ada@northwind.example");
     expect(submit.disabled).toBe(true);
     act(() => container.querySelector<HTMLButtonElement>("#client-acceptance-agree")!.click());
     expect(submit.disabled).toBe(false);
@@ -99,7 +99,7 @@ describe("ClientAcceptancePage", () => {
       expect(container.querySelector("[data-testid='client-acceptance-done']")).not.toBeNull();
     });
 
-    expect(api.accept).toHaveBeenCalledWith("gsa_accept_abc", { name: "Ada Mensah", role: null, email: "ada@omni.com", agree: true });
+    expect(api.accept).toHaveBeenCalledWith("gsa_accept_abc", { name: "Ada Mensah", role: null, email: "ada@northwind.example", agree: true });
     expect(container.querySelector("[data-testid='client-acceptance-done']")!.textContent).toContain("Ada Mensah accepted");
   });
 

@@ -83,7 +83,7 @@ describeEmbeddedPostgres("case CRM history", () => {
   }
 
   it("returns the entries and files filed on the case, newest first, and nothing from other cases", async () => {
-    const { company, caseId, otherCaseId } = await seedCase("Omni");
+    const { company, caseId, otherCaseId } = await seedCase("Northwind");
     await db.insert(crmTimelineEntries).values([
       { companyId: company.id, source: "pipedrive", kind: "note", externalId: "n1", body: "Old note", occurredAt: new Date("2026-01-01T10:00:00Z"), caseId },
       { companyId: company.id, source: "pipedrive", kind: "email", externalId: "e1", subject: "Proposal", occurredAt: new Date("2026-03-01T10:00:00Z"), caseId, details: { from: ["a@example.com"] } },
@@ -100,7 +100,7 @@ describeEmbeddedPostgres("case CRM history", () => {
     expect(res.body.truncated).toBe(false);
     expect(res.body.timeline.map((entry: { externalId?: string; subject: string | null; body: string | null }) => entry.subject ?? entry.body))
       .toEqual(["Proposal", "Old note", "Undated"]);
-    expect(res.body.timeline[0]).toMatchObject({ kind: "email", source: "pipedrive", caseTitle: "Omni deal", details: { from: ["a@example.com"] } });
+    expect(res.body.timeline[0]).toMatchObject({ kind: "email", source: "pipedrive", caseTitle: "Northwind deal", details: { from: ["a@example.com"] } });
     expect(res.body.files).toHaveLength(1);
     expect(res.body.files[0]).toMatchObject({ name: "SOW.pdf", contentPath: null, remoteUrl: "https://drive.example.com/sow", notCopied: "Linked from Google Drive" });
   });
@@ -112,7 +112,7 @@ describeEmbeddedPostgres("case CRM history", () => {
   });
 
   it("refuses an agent from another company", async () => {
-    const { caseId } = await seedCase("Omni");
+    const { caseId } = await seedCase("Northwind");
     const [other] = await db.insert(companies).values({ name: "Other", issuePrefix: "OTHR" }).returning();
     const agent: Express.Request["actor"] = { type: "agent", agentId: randomUUID(), companyId: other!.id, source: "agent_key" } as never;
     const res = await request(app(agent)).get(`/api/cases/${caseId}/crm-history`);

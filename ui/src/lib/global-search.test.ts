@@ -9,17 +9,17 @@ describe("global search helpers", () => {
   });
 
   it("needs every word to match somewhere", () => {
-    expect(scoreTextMatch("indago pitch", ["Indago Capital", "pitch deck"])).not.toBeNull();
-    expect(scoreTextMatch("indago pitch", ["Indago Capital", null])).toBeNull();
+    expect(scoreTextMatch("acme pitch", ["Acme Capital", "pitch deck"])).not.toBeNull();
+    expect(scoreTextMatch("acme pitch", ["Acme Capital", null])).toBeNull();
   });
 
   it("ranks title matches above description matches", () => {
     const items = [
-      { title: "Weekly report", description: "covers indago" },
-      { title: "Indago kick-off", description: null },
+      { title: "Weekly report", description: "covers acme" },
+      { title: "Acme kick-off", description: null },
     ];
-    expect(rankByText(items, "indago", (item) => [item.title, item.description], 5).map((item) => item.title)).toEqual([
-      "Indago kick-off",
+    expect(rankByText(items, "acme", (item) => [item.title, item.description], 5).map((item) => item.title)).toEqual([
+      "Acme kick-off",
       "Weekly report",
     ]);
   });

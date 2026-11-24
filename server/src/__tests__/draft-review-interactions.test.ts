@@ -22,7 +22,7 @@ import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
-const DRAFT_BODY = "Dear Martyn,\n\nThank you so much for the call today. Here is the enrolment plan.";
+const DRAFT_BODY = "Dear Sam,\n\nThank you so much for the call today. Here is the enrolment plan.";
 
 describeEmbeddedPostgres("request_draft_review interactions", () => {
   let db!: ReturnType<typeof createDb>;
@@ -78,7 +78,7 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
       id: issueId,
       companyId,
       goalId,
-      title: "Reply to Indago",
+      title: "Reply to Acme",
       status: "in_progress",
       priority: "medium",
       assigneeAgentId: agentId,
@@ -89,13 +89,13 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
         kind: "request_draft_review",
         // Even an explicit "anyone" stays human-only for drafts.
         resolverPolicy: "anyone",
-        title: "Draft email to Indago",
+        title: "Draft email to Acme",
         payload: {
           version: 1,
-          purpose: "Email to Indago",
+          purpose: "Email to Acme",
           body: DRAFT_BODY,
           subject: "Enrolment plan",
-          recipients: ["martyn@example.com"],
+          recipients: ["sam@example.com"],
           channel: "email",
         },
       },
@@ -112,13 +112,13 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
       continuationPolicy: "wake_assignee",
       effectiveResolverPolicy: "human_only",
       createdByAgentId: agentId,
-      payload: { purpose: "Email to Indago", body: DRAFT_BODY, supersedeOnUserComment: false },
+      payload: { purpose: "Email to Acme", body: DRAFT_BODY, supersedeOnUserComment: false },
     });
   });
 
   it("stores the original, edited text and word diff when a person sends edits", async () => {
     const { created, issue } = await seedDraft();
-    const edited = "Hi Martyn,\n\nThanks for the call. Here is the enrolment plan.";
+    const edited = "Hi Sam,\n\nThanks for the call. Here is the enrolment plan.";
     const { interaction } = await interactionsSvc.acceptInteraction(
       issue,
       created.id,
@@ -135,7 +135,7 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
       learnFromEdits: true,
     });
     const message = buildDraftReviewAgentMessage(interaction)!;
-    expect(message).toContain("edited \"Email to Indago\"");
+    expect(message).toContain("edited \"Email to Acme\"");
     expect(message).toContain(edited);
     expect(message).toContain('removed "Dear", added "Hi"');
     expect(message).toContain("memory_contribute");
@@ -151,7 +151,7 @@ describeEmbeddedPostgres("request_draft_review interactions", () => {
     );
     const draft = (interaction.result as { draft?: Record<string, unknown> }).draft!;
     expect(draft).toMatchObject({ edited: false, changeCount: 0, finalBody: DRAFT_BODY, learnFromEdits: false });
-    expect(buildDraftReviewAgentMessage(interaction)).toContain("approved \"Email to Indago\" as is");
+    expect(buildDraftReviewAgentMessage(interaction)).toContain("approved \"Email to Acme\" as is");
   });
 
   it("asks for a redraft with a note", async () => {

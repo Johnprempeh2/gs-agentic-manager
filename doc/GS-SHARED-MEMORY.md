@@ -209,7 +209,7 @@ John, 26 Oct: "Hindsight is where the 'where we left off' notes live."
 
 **John, in his own Mac terminal** (from a checkout of `main` after this ships; tokens only John can make):
 
-1. Paste: `~/Desktop/Code/gs-clip/scripts/shared-memory/setup-mac.sh --company-id 34dad57e-b5ad-4a72-9400-9eba645c99f6`
+1. Paste: `~/Desktop/Code/gs-clip/scripts/shared-memory/setup-mac.sh --company-id <company-id> --gsam-url https://<host>.<tailnet>.ts.net:3100`
 2. When asked, in GSAM open **Memory > Claude and ChatGPT**, click **Connect** for Claude Code, copy the token and
    paste it at the Keychain prompt (twice; nothing shows). Then the same for **Codex**.
 3. The script loads the 30-minute job and runs `check`. Every line should say `PASS`.
@@ -223,12 +223,12 @@ John, 26 Oct: "Hindsight is where the 'where we left off' notes live."
   ```
 - Claude Code:
   ```sh
-  claude mcp add-json --scope user gs-memory '{"type":"http","url":"https://gsam.tail83d26c.ts.net:3100/api/mcp/memory-tools","headers":{"Authorization":"Bearer ${GS_MEMORY_CLAUDE_TOKEN}"}}'
+  claude mcp add-json --scope user gs-memory '{"type":"http","url":"https://<host>.<tailnet>.ts.net:3100/api/mcp/memory-tools","headers":{"Authorization":"Bearer ${GS_MEMORY_CLAUDE_TOKEN}"}}'
   ```
 - Codex, in `~/.codex/config.toml`:
   ```toml
   [mcp_servers.gs_memory]
-  url = "https://gsam.tail83d26c.ts.net:3100/api/mcp/memory-tools"
+  url = "https://<host>.<tailnet>.ts.net:3100/api/mcp/memory-tools"
   bearer_token_env_var = "GS_MEMORY_CODEX_TOKEN"
   ```
 - If the existing `gsam` MCP already points at `/api/mcp/memory-tools` with John's link key, keep it. Only the key

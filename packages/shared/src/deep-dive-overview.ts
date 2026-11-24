@@ -14,7 +14,7 @@ import type { DeepDiveSessionSummary } from "./deep-dive-sessions.js";
 
 /**
  * Deep Dive overview (GRE-2372): Screen 1 of the GRE-2327 plan, from the
- * Indago control centre and the website overview. It holds no data of its
+ * first client's control centre and the website overview. It holds no data of its
  * own: the server reads the streams, findings, sessions, files, boards,
  * opportunities and traceability chain, and deepDiveOverview turns them into
  * "what is next", progress by stream, the next session, the open findings and

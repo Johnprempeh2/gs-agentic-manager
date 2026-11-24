@@ -529,7 +529,7 @@ describe("client case page", () => {
         changedAt: "2026-10-15T10:00:00Z",
         signedDocument: {
           evidenceId: "ev-nda",
-          title: "Signed NDA (Omni.pdf)",
+          title: "Signed NDA (Northwind.pdf)",
           contentPath: "/api/cases/case-1/evidence/ev-nda/content",
           uploadedAt: "2026-10-15T10:00:00Z",
         },
@@ -545,7 +545,7 @@ describe("client case page", () => {
     expect(container.textContent).toContain("Replace the signed NDA");
 
     const input = container.querySelector('input[aria-label="Upload the signed NDA"]') as HTMLInputElement;
-    const file = new File(["%PDF"], "Omni v2.pdf", { type: "application/pdf" });
+    const file = new File(["%PDF"], "Northwind v2.pdf", { type: "application/pdf" });
     Object.defineProperty(input, "files", { value: [file], configurable: true });
     flushSync(() => {
       input.dispatchEvent(new Event("change", { bubbles: true }));

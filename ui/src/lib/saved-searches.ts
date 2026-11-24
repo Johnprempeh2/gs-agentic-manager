@@ -86,7 +86,7 @@ export function removeSavedSearch(companyId: string, userId: string | null, id: 
   return next;
 }
 
-/** "Tasks / Indago" from breadcrumbs, else a tidy version of the path. */
+/** "Tasks / Acme" from breadcrumbs, else a tidy version of the path. */
 export function viewLabel(breadcrumbs: readonly { label: string }[], path: string): string {
   const fromCrumbs = breadcrumbs.map((crumb) => crumb.label.trim()).filter(Boolean).join(" / ");
   if (fromCrumbs) return fromCrumbs;
