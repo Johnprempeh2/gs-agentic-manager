@@ -31,6 +31,7 @@ import {
   type SuggestedTaskTreeNode,
 } from "../lib/issue-thread-interactions";
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
+import { safeNavigableUrl } from "../lib/safe-url";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
 import { AgentQuestionCard } from "./AgentQuestionCard";
@@ -1507,7 +1508,8 @@ function requestConfirmationTargetHref({
   interaction: Pick<IssueThreadInteraction, "issueId">;
   target: RequestConfirmationTarget;
 }) {
-  if (target.href) return target.href;
+  const safeTargetHref = target.href ? normalizeRequestConfirmationTargetHref(target.href) : null;
+  if (safeTargetHref) return safeTargetHref;
   if (target.type === "issue_document") {
     const issueId = target.issueId ?? interaction.issueId;
     return `/issues/${issueId}#document-${encodeURIComponent(target.key)}`;
@@ -1771,8 +1773,8 @@ function ToolActionResolution({
         </Collapsible>
       ) : <p className="flex items-center gap-1.5">{status}</p>}
       {detail ? <p className={cn("break-words", state === "failed" && "text-destructive")}>{detail}</p> : null}
-      {state === "executed" && result?.resultHref?.trim() ? (
-        <a className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground" href={result.resultHref} target="_blank" rel="noreferrer">View result<ExternalLink className="h-3 w-3" /></a>
+      {state === "executed" && safeNavigableUrl(result?.resultHref) ? (
+        <a className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground" href={safeNavigableUrl(result?.resultHref) ?? undefined} target="_blank" rel="noreferrer">View result<ExternalLink className="h-3 w-3" /></a>
       ) : null}
     </div>
   );

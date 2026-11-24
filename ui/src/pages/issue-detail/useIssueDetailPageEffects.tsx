@@ -38,6 +38,7 @@ import type { Company } from "@greatstone/shared";
 import type { IssueExternalObjectsResult } from "@/hooks/useIssueExternalObjects";
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { SidePanelContentMode } from "@/components/side-panel/types";
+import { openSafeUrl } from "@/lib/safe-url";
 
 export type UseIssueDetailPageEffectsInput = {
   conversation: { agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>; questionsOnly?: boolean } | undefined;
@@ -433,7 +434,7 @@ export function useIssueDetailPageEffects({
 
   const handleChatImageClick = useCallback(
     (src: string) => {
-      if (!openIssueGallery(src)) window.open(src, "_blank");
+      if (!openIssueGallery(src)) openSafeUrl(src);
     },
     [openIssueGallery],
   );
