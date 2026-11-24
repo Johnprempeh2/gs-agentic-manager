@@ -774,6 +774,53 @@ node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/fleet.test
 (cd server && npx vitest run src/__tests__/fleet-routes.test.ts src/__tests__/fleet-support-bridge.test.ts)
 ```
 
+### GSAM for Mac: licence keys (P1)
+
+A customer's own Mac (the GSAM app, `packaging/macos`) joins the hub with a
+licence key instead of a registration code. The hub needs
+`GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY` (see `doc/ENTITLEMENT-DOCUMENT.md`).
+
+**Make a licence** (hub instance admin):
+
+```sh
+curl -X POST <hub>/api/fleet/licences \
+  -d '{"features":{"enablePipelines":true},"limits":{"maxUsers":5},"validUntil":"2026-12-31T00:00:00Z","reason":"Monthly plan"}'
+```
+
+Optional: `code` (the hub makes `mac-<8 hex>` when left out) and `grace`
+(days, default 0). The answer holds `licenceKey` (`gsamlk_...`), shown once,
+one use, good for 30 days. The hub keeps only its hash, a new pending
+instance and the first signed document (version 1, `grace: 0`).
+
+**Activation.** The app sends the key, a new public key and a proof signed
+with it to the public `POST /api/fleet/spoke/activate` (10 tries per address
+every 10 minutes). The hub answers once with the instance id and code, its
+entitlement public key (the app pins it), the first document, and a
+Greatstone operator log-in: `operator+<code>@greatstone.invalid` with a random
+password. The hub keeps the password encrypted with its local secrets store
+(`local_encrypted`) and never logs it. A used, expired or unknown key gets
+`fleet_bad_registration_code`. If the answer is lost on the way, the key is
+spent: make a new licence.
+
+**Operator log-in.** `GET <hub>/api/fleet/instances/<id>/operator-login`
+(hub instance admin) returns it for remote help. The Mac makes this log-in as
+an instance admin only after the owner has made theirs, because a bootstrap
+invite only makes the first admin.
+
+**New document.** `PUT <hub>/api/fleet/instances/<id>/entitlement` with the
+same fields signs the next version. Each check-in answer carries the newest
+document; the Mac checks it with the pinned key and applies it at once.
+
+**Check-in from the Mac.** The GSAM server itself sends it every 5 minutes
+(no watch script on a Mac): the same schema, with no restore check, no
+off-site backup, no alerts, no connection counts and storage bytes 0.
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-licences.test.ts src/__tests__/fleet-routes.test.ts)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with
