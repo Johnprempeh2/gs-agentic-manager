@@ -69,20 +69,22 @@ async function api(method, pathname, body) {
 
 function start() {
   log(`starting: pnpm dev:once --data-dir ${dataDir} (port ${port})`);
-  const child = spawn(isWindows ? "pnpm.cmd" : "pnpm", ["dev:once", "--data-dir", dataDir], {
-    cwd: repoRoot,
-    stdio: "inherit",
-    // pnpm is a .cmd shim on Windows, which Node only runs through a shell.
-    shell: isWindows,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      GSAM_TELEMETRY_DISABLED: "1",
-      GSAM_OPEN_ON_LISTEN: "false",
-    },
-  });
+  // pnpm is a .cmd shim on Windows, which Node only runs through a shell; a
+  // single command line (not an argument list) is what a shell takes.
+  const child = isWindows
+    ? spawn(`pnpm dev:once --data-dir "${dataDir}"`, { cwd: repoRoot, stdio: "inherit", shell: true, env: smokeEnv() })
+    : spawn("pnpm", ["dev:once", "--data-dir", dataDir], { cwd: repoRoot, stdio: "inherit", env: smokeEnv() });
   const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
   return { child, exited };
+}
+
+function smokeEnv() {
+  return {
+    ...process.env,
+    PORT: String(port),
+    GSAM_TELEMETRY_DISABLED: "1",
+    GSAM_OPEN_ON_LISTEN: "false",
+  };
 }
 
 async function waitHealthy(server) {
@@ -100,7 +102,9 @@ async function waitHealthy(server) {
 
 async function stop(server) {
   const { child, exited } = server;
-  if (isWindows) {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    // Already gone; nothing to stop.
+  } else if (isWindows) {
     // No POSIX signals on Windows: end the whole tree (pnpm, tsx, the server,
     // embedded PostgreSQL) the way Task Scheduler or a service manager would.
     spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "inherit" });

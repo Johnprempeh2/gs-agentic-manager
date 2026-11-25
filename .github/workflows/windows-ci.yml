@@ -95,8 +95,16 @@ jobs:
           foreach ($dir in @((Split-Path $node), $pnpmHome)) {
             icacls $dir /grant "${user}:(OI)(CI)RX" /T /C /Q | Out-Null
           }
+          # A process started for another user gets that user's environment,
+          # so hand it this step's PATH (node, pnpm, git) through a wrapper.
+          $wrapper = "$env:RUNNER_TEMP\smoke.cmd"
+          Set-Content -Path $wrapper -Encoding Ascii -Value @(
+            "@set ""PATH=$env:PATH""",
+            "@""$node"" scripts\native-install-smoke.mjs --port 3197"
+          )
+          icacls $wrapper /grant "${user}:RX" /Q | Out-Null
           $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$user", $secret)
-          $smoke = Start-Process -FilePath $node -ArgumentList "scripts/native-install-smoke.mjs", "--port", "3197" `
+          $smoke = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", $wrapper `
             -WorkingDirectory $env:GITHUB_WORKSPACE -Credential $credential -LoadUserProfile -NoNewWindow `
             -RedirectStandardOutput "$env:RUNNER_TEMP\smoke.out" -RedirectStandardError "$env:RUNNER_TEMP\smoke.err" -Wait -PassThru
           Get-Content "$env:RUNNER_TEMP\smoke.out", "$env:RUNNER_TEMP\smoke.err"
