@@ -283,6 +283,7 @@ export {
 export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
 export * from "./memory_steward.js";
 export { fleetInstances, fleetCheckIns, fleetOrders, fleetSupportTickets, fleetSupportReplies, fleetSupportAttachments } from "./fleet.js";
+export { fleetBillingItems, fleetBillingPrices, fleetBillingCustomers, fleetBillingEvents } from "./fleet-billing.js";
 export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } from "./client_support.js";
 export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";

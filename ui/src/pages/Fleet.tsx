@@ -8,6 +8,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useFleetInstances } from "@/hooks/useFleetInstances";
 import { formatBytes } from "@/lib/issue-output";
 import { formatCents, formatNumber, relativeTime } from "@/lib/utils";
+import { FleetCatalogue } from "./FleetCatalogue";
 import { ManageInstanceButton, NewLicenceButton, formatDay } from "./FleetManage";
 
 /**
@@ -217,6 +218,21 @@ function SubscriptionCell({ instance }: { instance: FleetInstanceView }) {
       <div className="text-xs text-muted-foreground">{features.length > 0 ? features.join(", ") : "No features"}</div>
       {limits.length > 0 ? <div className="text-xs text-muted-foreground">{limits.join(", ")}</div> : null}
       <div className="text-xs text-muted-foreground">Version {entitlement.version}</div>
+      <BillingLine instance={instance} />
+    </div>
+  );
+}
+
+/** P3: what Stripe last said about the subscription that drives this install. */
+function BillingLine({ instance }: { instance: FleetInstanceView }) {
+  const billing = instance.billing;
+  if (!billing) return null;
+  const status = billing.subscriptionStatus ? billing.subscriptionStatus.replace(/_/g, " ") : "no subscription yet";
+  const trouble = billing.subscriptionStatus === "past_due" || billing.subscriptionStatus === "canceled" || billing.cancelAtPeriodEnd;
+  return (
+    <div className={trouble ? "text-xs font-medium text-destructive" : "text-xs text-muted-foreground"} data-testid={`fleet-billing-${instance.code}`}>
+      Stripe: {status}
+      {billing.cancelAtPeriodEnd ? ", cancels at period end" : ""}
     </div>
   );
 }
@@ -376,6 +392,8 @@ export function Fleet() {
           </div>
         </>
       )}
+
+      <FleetCatalogue />
     </div>
   );
 }

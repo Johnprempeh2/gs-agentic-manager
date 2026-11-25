@@ -11,7 +11,7 @@
 // here and a review.
 
 import { z } from "zod";
-import { entitlementEnvelopeSchema } from "./entitlement-document.js";
+import { ENTITLEMENT_FEATURE_KEYS, entitlementEnvelopeSchema } from "./entitlement-document.js";
 import { fleetSupportAttachmentSchema, fleetSupportSyncSchema } from "./fleet-support.js";
 
 export const FLEET_JWS_TYPE = "gsam-fleet+jwt";
@@ -296,6 +296,8 @@ export interface FleetInstanceView {
   entitlement?: FleetEntitlementSummary | null;
   /** GSAM for Mac (P2): the newest operator orders, newest first. */
   orders?: FleetOrderView[];
+  /** GSAM for Mac (P3): the Stripe customer and subscription that drive this install's document. Null when none is linked. */
+  billing?: FleetBillingLinkView | null;
   createdAt: string;
   latestCheckIn: { receivedAt: string; checkIn: FleetReceivedCheckIn } | null;
 }
@@ -377,3 +379,79 @@ export interface FleetCheckInResponse {
   entitlement: z.infer<typeof entitlementEnvelopeSchema> | null;
   orders?: string[];
 }
+
+// ─── GSAM for Mac (P3): payments and modules ─────────────────────────────────
+
+export const FLEET_BILLING_ITEM_KINDS = ["module", "package", "deal"] as const;
+export type FleetBillingItemKind = (typeof FLEET_BILLING_ITEM_KINDS)[number];
+
+const minorAmount = z.number().int().min(0).max(100_000_000).nullable();
+const stripeCustomerId = z.string().regex(/^cus_[A-Za-z0-9]{1,64}$/, "A Stripe customer id (cus_...)");
+
+/**
+ * A module (its own features and limits), a package (a set of modules at its
+ * own price) or a deal (a package for one Stripe customer only). Prices are
+ * minor units (pence, cents); null means not sold at that interval.
+ */
+export const fleetBillingItemInputSchema = z
+  .object({
+    kind: z.enum(FLEET_BILLING_ITEM_KINDS),
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500).nullable().default(null),
+    features: z.array(z.enum(ENTITLEMENT_FEATURE_KEYS)).max(64).default([]),
+    limits: limitMapSchema.default({}),
+    moduleIds: z.array(z.string().uuid()).max(64).default([]),
+    monthlyAmount: minorAmount.default(null),
+    annualAmount: minorAmount.default(null),
+    currency: z.string().regex(/^[a-z]{3}$/, "A three-letter currency code, lower case").default("gbp"),
+    stripeCustomerId: stripeCustomerId.nullable().default(null),
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    if (item.kind === "module" && item.moduleIds.length > 0) ctx.addIssue({ code: "custom", path: ["moduleIds"], message: "A module holds features, not modules" });
+    if (item.kind !== "module" && item.features.length > 0) ctx.addIssue({ code: "custom", path: ["features"], message: "A package or deal gets its features from its modules" });
+    if (item.kind !== "module" && item.moduleIds.length === 0) ctx.addIssue({ code: "custom", path: ["moduleIds"], message: "Pick at least one module" });
+    if ((item.kind === "deal") !== (item.stripeCustomerId !== null)) {
+      ctx.addIssue({ code: "custom", path: ["stripeCustomerId"], message: "A deal is for exactly one Stripe customer; a module or package is for everyone" });
+    }
+  });
+export type FleetBillingItemInput = z.infer<typeof fleetBillingItemInputSchema>;
+
+export interface FleetBillingPriceView {
+  stripePriceId: string;
+  interval: "month" | "year";
+  amount: number;
+  currency: string;
+  active: boolean;
+}
+
+/** One row of `GET /api/fleet/catalogue`. */
+export interface FleetBillingItemView {
+  id: string;
+  kind: FleetBillingItemKind;
+  name: string;
+  description: string | null;
+  features: string[];
+  limits: Record<string, number>;
+  moduleIds: string[];
+  monthlyAmount: number | null;
+  annualAmount: number | null;
+  currency: string;
+  stripeCustomerId: string | null;
+  /** Null until the item is mirrored to Stripe (no Stripe key on the hub, or the last mirror failed). */
+  stripeProductId: string | null;
+  /** The active Stripe prices; archived ones are kept on the hub for old subscriptions. */
+  prices: FleetBillingPriceView[];
+  archivedAt: string | null;
+  updatedAt: string;
+}
+
+export interface FleetBillingLinkView {
+  stripeCustomerId: string;
+  stripeSubscriptionId: string | null;
+  subscriptionStatus: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+/** `PUT /api/fleet/instances/{id}/billing`: link an install to its Stripe customer, so the next checkout or event for that customer drives it. */
+export const fleetBillingLinkSchema = z.object({ stripeCustomerId }).strict();

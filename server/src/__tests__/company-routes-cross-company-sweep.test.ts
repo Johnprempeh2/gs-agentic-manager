@@ -135,6 +135,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
     + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
   "/api/fleet/instances/:id": "Fleet hub only: the /fleet router answers 404 unless the hub is enabled, then calls "
     + "assertInstanceAdmin. Fleet instances are client installs registered with the hub, not company records.",
+  "/api/fleet/catalogue/:id": "Fleet hub only, instance admins (same /fleet guard). Catalogue items are what the hub sells, "
+    + "instance-wide with no company column.",
   "/api/instance/client-support/attachments/:attachmentId": "Instance-admin only: the handler calls assertInstanceAdmin "
     + "before reading the attachment, so a company owner is refused before any lookup. The operator relays every company's outbox.",
 };
