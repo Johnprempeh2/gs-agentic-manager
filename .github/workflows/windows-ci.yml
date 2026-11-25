@@ -74,8 +74,29 @@ jobs:
       - name: Build the native runner (paperclip-runnerd.exe)
         run: pnpm --filter @greatstone/paperclip-runner run build:binary
 
-      - name: Install smoke test (start, API, stop, restart)
-        run: node scripts/native-install-smoke.mjs --port 3197
+      # As a standard user, as a customer's copy runs: PostgreSQL refuses to
+      # start with administrator rights, and the runner's own account is an
+      # elevated administrator. The user gets a random password (masked) and
+      # access to the checkout and the tools set up above.
+      - name: Install smoke test as a standard user (start, API, stop, restart)
+        shell: pwsh
+        run: |
+          $user = "gsamsmoke"
+          $password = "Gs1!" + [guid]::NewGuid().ToString("N")
+          Write-Output "::add-mask::$password"
+          net user $user $password /add | Out-Null
+          $node = (Get-Command node).Source
+          $pnpmHome = Split-Path (Split-Path $env:PNPM_HOME)
+          icacls $env:GITHUB_WORKSPACE /grant "${user}:(OI)(CI)M" /T /C /Q | Out-Null
+          foreach ($dir in @((Split-Path $node), $pnpmHome)) {
+            icacls $dir /grant "${user}:(OI)(CI)RX" /T /C /Q | Out-Null
+          }
+          $credential = [pscredential]::new($user, (ConvertTo-SecureString $password -AsPlainText -Force))
+          $smoke = Start-Process -FilePath $node -ArgumentList "scripts/native-install-smoke.mjs", "--port", "3197" `
+            -WorkingDirectory $env:GITHUB_WORKSPACE -Credential $credential -LoadUserProfile -NoNewWindow `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\smoke.out" -RedirectStandardError "$env:RUNNER_TEMP\smoke.err" -Wait -PassThru
+          Get-Content "$env:RUNNER_TEMP\smoke.out", "$env:RUNNER_TEMP\smoke.err"
+          exit $smoke.ExitCode
 
       - name: Unit tests (paths, processes, dev runner)
         run: |
