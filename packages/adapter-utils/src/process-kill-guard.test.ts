@@ -10,7 +10,8 @@ import { processKillGuardFiles, processKillGuardPaths, type ProcessKillGuard } f
 import { shellQuote } from "./ssh.js";
 
 describe("process kill guard paths", () => {
-  it("never uses the root or the home directory (or above it) as a marker of live", () => {
+  // POSIX paths; the guard is Linux and macOS only (processKillGuardSupported).
+  it.skipIf(process.platform === "win32")("never uses the root or the home directory (or above it) as a marker of live", () => {
     const { protectedPaths } = processKillGuardPaths({
       protectedPaths: ["/", "/home/agent", "/home", "/srv/gsam-guard-test/live", "relative/live", "/srv/bad\nline"],
       serverPid: 1,
@@ -18,7 +19,8 @@ describe("process kill guard paths", () => {
     expect(protectedPaths).toEqual(["/srv/gsam-guard-test/live"]);
   });
 
-  it("excludes a symlink to the home directory from live markers", async () => {
+  // POSIX paths; the guard is Linux and macOS only (processKillGuardSupported).
+  it.skipIf(process.platform === "win32")("excludes a symlink to the home directory from live markers", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "killguard-home-"));
     try {
       const home = path.join(root, "home");
@@ -34,7 +36,8 @@ describe("process kill guard paths", () => {
     }
   });
 
-  it("exempts the run's own workspace only when it lies strictly inside a protected directory", () => {
+  // POSIX paths; the guard is Linux and macOS only (processKillGuardSupported).
+  it.skipIf(process.platform === "win32")("exempts the run's own workspace only when it lies strictly inside a protected directory", () => {
     const exempt = (ownWorkspace: string) => processKillGuardPaths({
       protectedPaths: ["/srv/gsam-guard-test/live", "/srv/gsam-guard-test/data"], serverPid: 1, ownWorkspace,
     }, "/home/agent").exemptPaths;

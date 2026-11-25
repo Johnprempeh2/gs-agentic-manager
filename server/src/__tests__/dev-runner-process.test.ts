@@ -10,6 +10,7 @@ import {
   devRunnerAttachedToTerminal,
   devRunnerHangupAction,
   handleDevRunnerHangups,
+  serverChildPnpmArgs,
   serverChildUsesProcessGroup,
   signalServerProcessTreeOnExit,
   stopServerProcessTree,
@@ -345,5 +346,53 @@ describe.skipIf(process.platform === "win32")("signalServerProcessTreeOnExit", (
     await stopServerProcessTree(tree, { signal: "SIGTERM", timeoutMs: 5_000, settleMs: 200 });
 
     expect(signalServerProcessTreeOnExit(tree, { headRunning: false })).toBeNull();
+  });
+});
+
+// Windows: no process groups and no signals, so the runner ends the whole tree
+// with taskkill. Ending only the head orphaned the server and its database.
+describe.runIf(process.platform === "win32")("stopServerProcessTree on Windows", () => {
+  it("ends the whole tree, database included, not only the head", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dev-runner-process-"));
+    tempDirs.add(dir);
+    fs.writeFileSync(path.join(dir, "relay.mjs"), RELAY);
+    fs.writeFileSync(path.join(dir, "server.mjs"), SERVER);
+    fs.writeFileSync(path.join(dir, "db.mjs"), DB);
+    const head = spawn(
+      process.execPath,
+      [path.join(dir, "relay.mjs"), path.join(dir, "server.mjs"), dir, "graceful"],
+      { stdio: "ignore" },
+    );
+    const exited = new Promise<ServerChildExit>((resolve) => {
+      head.on("exit", (code, signal) => resolve({ code: code ?? 0, signal }));
+    });
+    const tree: ServerProcessTree = { pid: head.pid!, processGroupId: null, exited };
+    const server = await waitForServer(dir);
+
+    const result = await stopServerProcessTree(tree, { signal: "SIGTERM" });
+
+    expect(result.outcome).toBe("killed");
+    await waitUntil(() => !processRunning(server.pid) && !processRunning(server.dbPid), 5_000);
+    expect(await portIsFree(server.port)).toBe(true);
+  });
+});
+
+describe("serverChildPnpmArgs", () => {
+  const scripts = {
+    dev: "exec tsx src/index.ts",
+    "dev:watch": "exec cross-env A=1 tsx ./scripts/dev-watch.ts",
+  };
+
+  it("runs the package script on POSIX, whose exec keeps a shell out of the tree", () => {
+    expect(serverChildPnpmArgs("dev", scripts, "darwin")).toEqual(["--filter", "@greatstone/server", "dev"]);
+  });
+
+  it("runs the script's command through pnpm exec on Windows, where cmd.exe has no exec", () => {
+    expect(serverChildPnpmArgs("dev", scripts, "win32")).toEqual([
+      "--filter", "@greatstone/server", "exec", "tsx", "src/index.ts",
+    ]);
+    expect(serverChildPnpmArgs("dev:watch", scripts, "win32")).toEqual([
+      "--filter", "@greatstone/server", "exec", "cross-env", "A=1", "tsx", "./scripts/dev-watch.ts",
+    ]);
   });
 });
