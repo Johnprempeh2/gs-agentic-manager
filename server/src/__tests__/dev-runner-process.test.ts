@@ -10,6 +10,7 @@ import {
   devRunnerAttachedToTerminal,
   devRunnerHangupAction,
   handleDevRunnerHangups,
+  serverChildPnpmArgs,
   serverChildUsesProcessGroup,
   signalServerProcessTreeOnExit,
   stopServerProcessTree,
@@ -373,5 +374,25 @@ describe.runIf(process.platform === "win32")("stopServerProcessTree on Windows",
     expect(result.outcome).toBe("killed");
     await waitUntil(() => !processRunning(server.pid) && !processRunning(server.dbPid), 5_000);
     expect(await portIsFree(server.port)).toBe(true);
+  });
+});
+
+describe("serverChildPnpmArgs", () => {
+  const scripts = {
+    dev: "exec tsx src/index.ts",
+    "dev:watch": "exec cross-env A=1 tsx ./scripts/dev-watch.ts",
+  };
+
+  it("runs the package script on POSIX, whose exec keeps a shell out of the tree", () => {
+    expect(serverChildPnpmArgs("dev", scripts, "darwin")).toEqual(["--filter", "@greatstone/server", "dev"]);
+  });
+
+  it("runs the script's command through pnpm exec on Windows, where cmd.exe has no exec", () => {
+    expect(serverChildPnpmArgs("dev", scripts, "win32")).toEqual([
+      "--filter", "@greatstone/server", "exec", "tsx", "src/index.ts",
+    ]);
+    expect(serverChildPnpmArgs("dev:watch", scripts, "win32")).toEqual([
+      "--filter", "@greatstone/server", "exec", "cross-env", "A=1", "tsx", "./scripts/dev-watch.ts",
+    ]);
   });
 });

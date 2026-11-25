@@ -114,8 +114,7 @@ jobs:
           Get-Content "$env:RUNNER_TEMP\smoke.out", "$env:RUNNER_TEMP\smoke.err"
           # Nothing the smoke test started may outlive it.
           $left = @(Get-CimInstance Win32_Process | Where-Object {
-            $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
-            $owner.User -eq $user
+            try { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User -eq $user } catch { $false }
           })
           if ($left.Count -gt 0) {
             Write-Output "Processes left running by the smoke user:"

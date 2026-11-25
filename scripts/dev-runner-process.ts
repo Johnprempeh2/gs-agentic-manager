@@ -70,6 +70,27 @@ export function serverChildUsesProcessGroup(platform: NodeJS.Platform = process.
 }
 
 /**
+ * The pnpm arguments that start the server package script `script`.
+ *
+ * On POSIX the runner runs the script itself; it begins with `exec`, so no
+ * shell sits between pnpm and the server (see the module comment). pnpm runs
+ * scripts with cmd.exe on Windows, which has no `exec`, so there the runner
+ * runs the script's command through `pnpm exec` instead: no shell either.
+ */
+export function serverChildPnpmArgs(
+  script: string,
+  scripts: Record<string, string>,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const filter = ["--filter", "@greatstone/server"];
+  if (platform !== "win32") return [...filter, script];
+  const command = scripts[script]?.replace(/^exec\s+/, "").trim();
+  if (!command) throw new Error(`server package script "${script}" is missing`);
+  // ponytail: whitespace split; the server dev scripts have no quoted arguments.
+  return [...filter, "exec", ...command.split(/\s+/)];
+}
+
+/**
  * Whether the runner is attached to a terminal: one of its standard streams is
  * one. nohup redirects every standard stream that is a terminal, and systemd
  * and scripts that log to a file give it none, so a runner started to outlive
