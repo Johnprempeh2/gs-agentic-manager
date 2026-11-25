@@ -230,6 +230,12 @@ function trustRuleIsActive(policy: typeof toolPolicies.$inferSelect, now = new D
   return true;
 }
 
+function invocationOpener(row: { actorType: string; actorId: string | null; policyExplanation: Record<string, unknown> | null }) {
+  const recorded = row.policyExplanation?.sessionOpenedByUserId;
+  if (typeof recorded === "string" && recorded) return recorded;
+  return row.actorType === "user" && row.actorId ? row.actorId : null;
+}
+
 function sideEffectIdempotencyKey(ctx: ToolAccessContext, argumentsHash: string): string {
   return `side_effect:${sha256({
     companyId: ctx.companyId,
@@ -1463,14 +1469,35 @@ export function toolAccessPolicyService(db: Db) {
     if (!loaded.ok) throw new Error("Cannot record invocation for invalid tool access context");
     const { ctx, redaction } = loaded;
     const argumentsHash = redaction.summary.sha256 ?? sha256(input.request.arguments ?? {});
-    const idempotencyKey = input.request.idempotencyKey
+    // A person-opened session saves and replays calls only for that person.
+    const sessionOpener = input.runContext?.sessionOpenedByUserId ?? null;
+    const unscopedIdempotencyKey = input.request.idempotencyKey
       ?? (input.request.sideEffecting ? sideEffectIdempotencyKey(ctx, argumentsHash) : null);
+    const idempotencyKey = unscopedIdempotencyKey && sessionOpener
+      ? `${unscopedIdempotencyKey}:opened_by:${sha256(sessionOpener)}`
+      : unscopedIdempotencyKey;
     if (idempotencyKey) {
       const [existing] = await db.select().from(toolInvocations).where(and(
         eq(toolInvocations.companyId, input.companyId),
         eq(toolInvocations.idempotencyKey, idempotencyKey),
       ));
       if (existing) return { invocation: existing, replayed: true, actionRequest: null };
+    }
+    if (sessionOpener && unscopedIdempotencyKey) {
+      const [unscoped] = await db.select().from(toolInvocations).where(and(
+        eq(toolInvocations.companyId, input.companyId),
+        eq(toolInvocations.idempotencyKey, unscopedIdempotencyKey),
+      ));
+      if (unscoped) {
+        const opener = invocationOpener(unscoped);
+        if (opener === sessionOpener) return { invocation: unscoped, replayed: true, actionRequest: null };
+        if (opener === null) {
+          throw conflict(
+            "An earlier operation with this request cannot be attributed to the person who opened this session. Reconcile it before retrying; use a new explicit idempotency key only for an intentional new operation.",
+            { reasonCode: "legacy_tool_idempotency_unverifiable" },
+          );
+        }
+      }
     }
     const status = accessDecision.decision === "allow"
       ? "authorized"
@@ -1506,6 +1533,7 @@ export function toolAccessPolicyService(db: Db) {
       errorCode: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : accessDecision.reasonCode,
       errorMessage: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : accessDecision.explanation,
       completedAt: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : new Date(),
+      ...(sessionOpener ? { policyExplanation: { sessionOpenedByUserId: sessionOpener } } : {}),
     }).returning();
     let actionRequest = null;
     if (accessDecision.decision === "require_approval") {
