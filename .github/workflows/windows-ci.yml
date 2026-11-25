@@ -1,0 +1,112 @@
+# Windows CI for GS Agentic Manager: proves GSAM runs natively on Windows
+# (no WSL, no Docker), the way a Windows customer's copy will run it.
+#
+#   windows  on windows-latest: the same setup as Fork CI (Node from .nvmrc,
+#            pnpm, a frozen-lockfile install), the native runner built with
+#            cargo (MSVC from the runner image), the install smoke test
+#            (scripts/native-install-smoke.mjs: `pnpm dev:once --data-dir`,
+#            health, a company and an agent through the API, stop, restart on
+#            the same data, stop), then the Windows-sensitive unit tests: paths,
+#            processes, the dev runner, the adapters and the runner's own tests.
+#
+# Plan and status: doc/plans/2026-11-25-gsam-for-windows.md.
+#
+# Triggers: pull requests that touch code the Windows build runs, and manual
+# runs. No secrets, a read-only token, GitHub-hosted runners only.
+
+name: Windows CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-ci.yml"
+      - ".github/actions/**"
+      - ".gitattributes"
+      - ".nvmrc"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "patches/**"
+      - "cli/**"
+      - "packages/**"
+      - "scripts/**"
+      - "server/src/**"
+      - "server/package.json"
+      - "ui/package.json"
+      - "ui/vite.config.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows (native)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+          save-pnpm-store: "true"
+
+      - name: Runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: windows-runner
+
+      # The same binary `pnpm dev:once` would build on first start, built up
+      # front so its errors show here, not inside the smoke test.
+      - name: Build the native runner (paperclip-runnerd.exe)
+        run: pnpm --filter @greatstone/paperclip-runner run build:binary
+
+      - name: Install smoke test (start, API, stop, restart)
+        run: node scripts/native-install-smoke.mjs --port 3197
+
+      - name: Unit tests (paths, processes, dev runner)
+        run: |
+          pnpm run preflight:workspace-links
+          pnpm --filter @greatstone/plugin-sdk ensure-build-deps
+          pnpm --filter @greatstone/shared exec vitest run src/home-paths.test.ts
+          pnpm --filter gsam exec vitest run src/__tests__/home-paths.test.ts src/__tests__/process-group.test.ts
+          pnpm --filter @greatstone/server exec vitest run \
+            src/__tests__/dev-runner-native-binary.test.ts \
+            src/__tests__/dev-runner-options.test.ts \
+            src/__tests__/dev-runner-paths.test.ts \
+            src/__tests__/dev-runner-process.test.ts \
+            src/__tests__/local-service-supervisor.test.ts
+
+      - name: Unit tests (adapters)
+        run: |
+          pnpm --filter @greatstone/adapter-utils exec vitest run \
+            src/server-utils.test.ts \
+            src/server-utils-env.test.ts \
+            src/process-kill-guard.test.ts \
+            src/child-output-capture.test.ts \
+            src/acpx-engine/spawn-smoke.test.ts
+          pnpm --filter @greatstone/adapter-claude-local exec vitest run \
+            src/server/claude-config.test.ts \
+            src/server/probe-env.test.ts \
+            src/server/parse.test.ts
+          pnpm --filter @greatstone/adapter-codex-local exec vitest run \
+            src/server/codex-home.test.ts \
+            src/server/codex-args.test.ts
+
+      - name: Runner Rust tests (conformance and replay parity)
+        run: |
+          pnpm --filter @greatstone/paperclip-runner run check:conformance-parity
+          pnpm --filter @greatstone/paperclip-runner run check:replay-parity
