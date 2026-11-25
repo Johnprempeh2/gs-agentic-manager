@@ -1,1 +1,7 @@
+# Text files check out with LF on every OS. Git for Windows defaults to
+# core.autocrlf=true, which turned them into CRLF and broke every generated
+# file check (and shell script) on a Windows copy of GSAM.
+* text=auto eol=lf
+# Committed with CRLF; left as it is.
+adapter-plugin.md -text
 patches/*.patch whitespace=-space-before-tab
