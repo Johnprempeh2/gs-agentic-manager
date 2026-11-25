@@ -227,13 +227,34 @@ function record(orders: SpokeOrders, report: FleetOrderReport) {
   orders.results = [...orders.results.filter((r) => r.seq !== report.seq), { ...report, reported: false }].slice(-ORDER_RESULTS_KEPT);
 }
 
-/** Ask launchd to run this install's updater now (the `<label>.update` LaunchAgent gsam.sh made). */
+/**
+ * The command that runs this install's updater now: the `<label>.update`
+ * LaunchAgent gsam.sh made on a Mac, the `<label>.update` scheduled task
+ * gsam.ps1 made on Windows. Null where there is none.
+ */
+export function updaterCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  uid: number = process.getuid?.() ?? 0,
+): { file: string; args: string[] } | null {
+  const valid = (label: string | undefined) => (label && /^[A-Za-z0-9.-]{1,120}$/.test(label.trim()) ? label.trim() : null);
+  if (platform === "darwin") {
+    const label = valid(env.GSAM_LAUNCHD_LABEL);
+    return label ? { file: "launchctl", args: ["kickstart", `gui/${uid}/${label}.update`] } : null;
+  }
+  if (platform === "win32") {
+    const label = valid(env.GSAM_SCHEDULED_TASK);
+    return label ? { file: "schtasks.exe", args: ["/Run", "/TN", `${label}.update`] } : null;
+  }
+  return null;
+}
+
+/** Start this install's updater now (an "update now" order). */
 export function kickUpdater(env: NodeJS.ProcessEnv = process.env): Promise<FleetOrderReport["code"]> {
-  const label = env.GSAM_LAUNCHD_LABEL?.trim();
-  if (!label || !/^[A-Za-z0-9.-]{1,120}$/.test(label) || process.platform !== "darwin") return Promise.resolve("update_unavailable");
-  const uid = process.getuid?.() ?? 0;
+  const command = updaterCommand(env);
+  if (!command) return Promise.resolve("update_unavailable");
   return new Promise((resolve) => {
-    execFile("launchctl", ["kickstart", `gui/${uid}/${label}.update`], { timeout: 10_000 }, (err) => resolve(err ? "update_failed" : null));
+    execFile(command.file, command.args, { timeout: 10_000, windowsHide: true }, (err) => resolve(err ? "update_failed" : null));
   });
 }
 

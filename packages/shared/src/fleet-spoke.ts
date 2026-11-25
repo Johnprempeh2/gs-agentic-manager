@@ -8,17 +8,19 @@ import { createHash, createPrivateKey, generateKeyPairSync, sign, type JsonWebKe
 import {
   FLEET_AUDIENCE,
   FLEET_CHECK_IN_SCHEMA,
-  FLEET_CHECK_IN_SCHEMA_V3,
+  FLEET_CHECK_IN_SCHEMA_V4,
   FLEET_JWS_TYPE,
   FLEET_ALERT_KEY_PATTERN,
   FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
   fleetCheckInV2Schema,
-  fleetCheckInV3Schema,
+  fleetCheckInV4Schema,
   type FleetAction,
   type FleetCheckIn,
   type FleetCheckInV3,
+  type FleetCheckInV4,
   type FleetConnections,
   type FleetLifecycle,
+  type FleetPlatformOs,
   type FleetPublicKey,
 } from "./fleet.js";
 import type { FleetSupportAttachment, FleetSupportSync } from "./fleet-support.js";
@@ -160,16 +162,28 @@ export function buildCheckIn(input: CheckInInput, now = Date.now()): FleetCheckI
   });
 }
 
-/** The Mac spoke's check-in (v3): the v2 facts plus order results, its lifecycle and its tailnet name. */
+/** The operating system and CPU as the v4 check-in names them. */
+export function fleetPlatform(platform: NodeJS.Platform = process.platform, arch: string = process.arch): FleetCheckInV4["platform"] {
+  const os: FleetPlatformOs = platform === "win32" ? "windows" : platform === "darwin" ? "macos" : "linux";
+  return { os, arch: arch === "arm64" || arch === "x64" ? arch : "other" };
+}
+
+/** The app spoke's check-in (v4): the v2 facts plus order results, its lifecycle, its tailnet name and its platform. */
 export function macCheckIn(
   base: FleetCheckIn,
-  extras: { lifecycle: FleetCheckInV3["lifecycle"]; orders: FleetCheckInV3["orders"]; tailnetName: string | null },
-): FleetCheckInV3 {
-  return fleetCheckInV3Schema.parse({
+  extras: {
+    lifecycle: FleetCheckInV3["lifecycle"];
+    orders: FleetCheckInV3["orders"];
+    tailnetName: string | null;
+    platform?: FleetCheckInV4["platform"];
+  },
+): FleetCheckInV4 {
+  return fleetCheckInV4Schema.parse({
     ...base,
-    schema: FLEET_CHECK_IN_SCHEMA_V3,
+    schema: FLEET_CHECK_IN_SCHEMA_V4,
     lifecycle: extras.lifecycle,
     orders: extras.orders,
     remote: { tailnetName: extras.tailnetName },
+    platform: extras.platform ?? fleetPlatform(),
   });
 }

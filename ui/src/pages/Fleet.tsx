@@ -98,6 +98,21 @@ function VersionCell({ instance }: { instance: FleetInstanceView }) {
   );
 }
 
+const OS_LABELS = { macos: "Mac", windows: "Windows", linux: "Linux" } as const;
+
+/** The install's operating system and CPU, from a v4 check-in. Older installs do not say. */
+function OsCell({ instance }: { instance: FleetInstanceView }) {
+  const checkIn = instance.latestCheckIn?.checkIn;
+  const platform = checkIn && "platform" in checkIn ? checkIn.platform : null;
+  if (!platform) return <Muted>Not reported</Muted>;
+  return (
+    <span className="whitespace-nowrap">
+      {OS_LABELS[platform.os]}
+      {platform.arch === "other" ? null : <span className="text-xs text-muted-foreground"> {platform.arch}</span>}
+    </span>
+  );
+}
+
 function UsageCell({ instance }: { instance: FleetInstanceView }) {
   const usage = instance.latestCheckIn?.checkIn.usage;
   if (!usage) return <Muted>Not reported</Muted>;
@@ -201,7 +216,7 @@ function stateNote(instance: FleetInstanceView) {
   return null;
 }
 
-const COLUMNS = ["Instance", "State and alerts", "Last check-in", "Subscription", "Health", "Version", "Usage", "Connections"];
+const COLUMNS = ["Instance", "State and alerts", "Last check-in", "Subscription", "Health", "Version", "OS", "Usage", "Connections"];
 
 /** GSAM for Mac: what the newest signed document grants. */
 function SubscriptionCell({ instance }: { instance: FleetInstanceView }) {
@@ -280,6 +295,7 @@ function FleetCard({ instance }: { instance: FleetInstanceView }) {
     ["Subscription", <SubscriptionCell instance={instance} />],
     ["Health", <HealthCell instance={instance} />],
     ["Version", <VersionCell instance={instance} />],
+    ["OS", <OsCell instance={instance} />],
     ["Usage", <UsageCell instance={instance} />],
     ["Connections", <ConnectionsCell instance={instance} />],
   ];
@@ -383,6 +399,7 @@ export function Fleet() {
                     <td className="px-3 py-2"><SubscriptionCell instance={instance} /></td>
                     <td className="px-3 py-2"><HealthCell instance={instance} /></td>
                     <td className="px-3 py-2"><VersionCell instance={instance} /></td>
+                    <td className="px-3 py-2"><OsCell instance={instance} /></td>
                     <td className="px-3 py-2"><UsageCell instance={instance} /></td>
                     <td className="px-3 py-2"><ConnectionsCell instance={instance} /></td>
                   </tr>
