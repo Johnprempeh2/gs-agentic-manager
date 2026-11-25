@@ -34,6 +34,7 @@ on:
       - "server/package.json"
       - "ui/package.json"
       - "ui/vite.config.ts"
+      - "packaging/**"
   workflow_dispatch:
 
 permissions:
@@ -94,6 +95,7 @@ jobs:
 
       - name: Unit tests (paths, processes, dev runner)
         run: |
+          node --test scripts/fetch-runner-binary.test.mjs
           pnpm run preflight:workspace-links
           pnpm --filter @greatstone/plugin-sdk ensure-build-deps
           pnpm --filter @greatstone/shared exec vitest run src/home-paths.test.ts
@@ -125,3 +127,73 @@ jobs:
         run: |
           pnpm --filter @greatstone/paperclip-runner run check:conformance-parity
           pnpm --filter @greatstone/paperclip-runner run check:replay-parity
+
+  installer:
+    name: Windows installer (build and install as a standard user)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The PowerShell scripts parse
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem packaging\windows\src\*.ps1, packaging\windows\*.ps1, scripts\windows\*.ps1) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors)
+            foreach ($e in $errors) { Write-Output "$($f.Name):$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          exit $bad
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+
+      - name: Runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: windows-runner
+          save-if: "false"
+
+      # Stands in for the release's prebuilt binary (W3), which a test build has none of.
+      - name: Build the native runner
+        run: pnpm --filter @greatstone/paperclip-runner run build:binary
+
+      - name: Install Inno Setup when the image has none
+        shell: powershell
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      # A sandbox build: its hub is the test hub on 127.0.0.1:3491. Never hand it out.
+      - name: Build GSAM-Setup.exe
+        shell: powershell
+        env:
+          GSAM_HUB_URL: http://127.0.0.1:3491
+          GSAM_INSTALLER_VERSION: 0.0.0-ci
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+
+      - name: Keep the sandbox installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: GSAM-Setup-sandbox-hub-do-not-distribute
+          path: packaging/windows/dist/
+          retention-days: 7
+
+      - name: Install, check and uninstall as a standard user
+        shell: powershell
+        run: |
+          git branch -f gsam-installer-smoke HEAD
+          $installer = Resolve-Path packaging\windows\dist\GSAM-Setup.exe
+          $runner = Resolve-Path packages\paperclip-runner\dist\bin\paperclip-runnerd.exe
+          & scripts/windows/run-as-standard-user.ps1 -Name installer -TimeoutMinutes 90 `
+            -Command "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\installer-smoke.ps1 -Installer ""$installer"" -RunnerBinary ""$runner"" -CodeRef gsam-installer-smoke"
+          exit $LASTEXITCODE
