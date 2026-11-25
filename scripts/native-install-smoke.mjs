@@ -23,7 +23,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +97,14 @@ async function waitHealthy(server) {
     if (response?.ok) return response.json();
     await sleep(2000);
   }
+  if (isWindows) {
+    // What is still running, and so what the start is stuck on.
+    spawnSync(
+      "powershell",
+      ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'node|postgres|pnpm|cargo|cmd' } | Format-Table -AutoSize -Wrap ProcessId,ParentProcessId,CommandLine | Out-String -Width 400"],
+      { stdio: "inherit" },
+    );
+  }
   throw new Error(`no healthy /api/health within ${startTimeoutMs / 1000}s`);
 }
 
@@ -120,6 +128,26 @@ async function stop(server) {
     await sleep(1000);
   }
   log(`stopped (${JSON.stringify(result)}), port ${port} is free`);
+}
+
+// On failure: the end of every log the instance wrote, since the server logs
+// to files under the data folder as well as to the console.
+function printLogTails() {
+  let files = [];
+  try {
+    files = readdirSync(dataDir, { recursive: true }).filter((name) => /\.log$/i.test(name));
+  } catch {
+    return;
+  }
+  for (const name of files) {
+    try {
+      const lines = readFileSync(path.join(dataDir, name), "utf8").trimEnd().split(/\r?\n/);
+      console.error(`[smoke] ---- ${name} (last 80 of ${lines.length} lines) ----`);
+      console.error(lines.slice(-80).join("\n"));
+    } catch {
+      // A log that cannot be read (still locked) is skipped.
+    }
+  }
 }
 
 let server = null;
@@ -159,6 +187,7 @@ try {
 } catch (error) {
   console.error(`[smoke] FAIL: ${error instanceof Error ? error.stack : String(error)}`);
   if (server) await stop(server).catch(() => undefined);
+  printLogTails();
   process.exitCode = 1;
 } finally {
   if (ownDataDir && process.exitCode !== 1) rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
