@@ -23,9 +23,10 @@ the pnpm store and the cargo build are cached), then:
 1. **Builds the native runner**, `paperclip-runnerd.exe`, with cargo and MSVC
    from the runner image (`build:binary`, the same binary `pnpm dev:once`
    builds on first start).
-2. **Install smoke test**, `scripts/native-install-smoke.mjs`: starts GSAM
-   exactly as the Mac app's background service does, `pnpm dev:once
-   --data-dir <fresh folder>`, then
+2. **Install smoke test**, `scripts/native-install-smoke.mjs`, run as a
+   freshly created **standard (non-administrator) Windows user**, as a
+   customer's copy runs: starts GSAM exactly as the Mac app's background
+   service does, `pnpm dev:once --data-dir <fresh folder>`, then
    - waits for `/api/health` (embedded PostgreSQL 18 initialised its cluster
      and started, migrations applied),
    - checks the UI answers on `/`,
@@ -34,12 +35,21 @@ the pnpm store and the cargo build are cached), then:
    - stops the whole process tree and checks the port is free,
    - starts again on the same data folder and reads the company and agent
      back (PostgreSQL restarted on an existing cluster and kept the data),
-   - stops again.
+   - stops again,
+   - and fails if any process the smoke user started is still running.
+
+   Green on 25 Nov 2026 (run 45699245241): health in local_trusted mode,
+   UI 200, company and agent created, data kept across the restart, nothing
+   left running. The smoke step (two starts, the first applying 426 migrations
+   and building the runner's TypeScript) takes about 12 minutes; the whole
+   job about 27.
 3. **Unit tests** that cover the Windows-sensitive code: home paths (shared and
    CLI), process groups, the dev runner (options, paths, native binary staging,
    process tree stop, local service supervisor), adapter utilities (spawning,
    process kill guards, child output capture, environment), the Claude and
-   Codex adapters (config, home folders, arguments, parsing).
+   Codex adapters (config, home folders, arguments, parsing). 295 pass, 17
+   skip on Windows (POSIX-only behaviour, each listed under Known gaps or
+   behind an existing platform check).
 4. **Runner Rust tests**: the conformance and replay parity checks.
 
 The job is not part of the `Fork CI` result yet, so it does not block merges
