@@ -138,21 +138,20 @@ jobs:
             src/__tests__/dev-runner-process.test.ts \
             src/__tests__/local-service-supervisor.test.ts
 
+      # From the repository root: adapter-utils has no vitest config of its own.
       - name: Unit tests (adapters)
         run: |
-          pnpm --filter @greatstone/adapter-utils exec vitest run \
-            src/server-utils.test.ts \
-            src/server-utils-env.test.ts \
-            src/process-kill-guard.test.ts \
-            src/child-output-capture.test.ts \
-            src/acpx-engine/spawn-smoke.test.ts
-          pnpm --filter @greatstone/adapter-claude-local exec vitest run \
-            src/server/claude-config.test.ts \
-            src/server/probe-env.test.ts \
-            src/server/parse.test.ts
-          pnpm --filter @greatstone/adapter-codex-local exec vitest run \
-            src/server/codex-home.test.ts \
-            src/server/codex-args.test.ts
+          npx vitest run \
+            packages/adapter-utils/src/server-utils.test.ts \
+            packages/adapter-utils/src/server-utils-env.test.ts \
+            packages/adapter-utils/src/process-kill-guard.test.ts \
+            packages/adapter-utils/src/child-output-capture.test.ts \
+            packages/adapter-utils/src/acpx-engine/spawn-smoke.test.ts \
+            packages/adapters/claude-local/src/server/claude-config.test.ts \
+            packages/adapters/claude-local/src/server/probe-env.test.ts \
+            packages/adapters/claude-local/src/server/parse.test.ts \
+            packages/adapters/codex-local/src/server/codex-home.test.ts \
+            packages/adapters/codex-local/src/server/codex-args.test.ts
 
       - name: Runner Rust tests (conformance and replay parity)
         run: |
