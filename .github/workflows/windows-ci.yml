@@ -104,11 +104,27 @@ jobs:
           )
           icacls $wrapper /grant "${user}:RX" /Q | Out-Null
           $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$user", $secret)
+          # Not -Wait: that also waits for every descendant, so one leftover
+          # process would hang the step with no output.
           $smoke = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", $wrapper `
             -WorkingDirectory $env:GITHUB_WORKSPACE -Credential $credential -LoadUserProfile -NoNewWindow `
-            -RedirectStandardOutput "$env:RUNNER_TEMP\smoke.out" -RedirectStandardError "$env:RUNNER_TEMP\smoke.err" -Wait -PassThru
+            -RedirectStandardOutput "$env:RUNNER_TEMP\smoke.out" -RedirectStandardError "$env:RUNNER_TEMP\smoke.err" -PassThru
+          $null = $smoke.Handle  # keeps ExitCode readable after the process ends
+          $finished = $smoke.WaitForExit(40 * 60 * 1000)
           Get-Content "$env:RUNNER_TEMP\smoke.out", "$env:RUNNER_TEMP\smoke.err"
-          exit $smoke.ExitCode
+          # Nothing the smoke test started may outlive it.
+          $left = @(Get-CimInstance Win32_Process | Where-Object {
+            $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwner
+            $owner.User -eq $user
+          })
+          if ($left.Count -gt 0) {
+            Write-Output "Processes left running by the smoke user:"
+            $left | ForEach-Object { Write-Output ("  {0} {1} {2}" -f $_.ProcessId, $_.Name, $_.CommandLine) }
+            $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          }
+          if (-not $finished) { Write-Output "smoke test did not finish within 40 minutes"; exit 1 }
+          if ($smoke.ExitCode -ne 0) { exit $smoke.ExitCode }
+          if ($left.Count -gt 0) { exit 1 }
 
       - name: Unit tests (paths, processes, dev runner)
         run: |
