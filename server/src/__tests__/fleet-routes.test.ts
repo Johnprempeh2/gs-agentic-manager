@@ -208,7 +208,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     const { id, key, seq } = await register("c001");
     const res = await sendCheckIn(key, id, nextSeq(seq));
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body)).toEqual(["receivedAt"]);
+    expect(res.body).toEqual({ receivedAt: expect.any(String), entitlement: null });
     const list = await request(app()).get(`/api/fleet/instances/${id}/check-ins`);
     expect(list.status).toBe(200);
     expect(list.body).toHaveLength(1);
@@ -496,6 +496,7 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
       (router.stack as Array<{ route?: { path: string } }>).flatMap((layer) => (layer.route ? [layer.route.path] : [])),
     );
     expect(paths.sort()).toEqual([
+      "/api/fleet/spoke/activate",
       "/api/fleet/spoke/check-in",
       "/api/fleet/spoke/delete",
       "/api/fleet/spoke/register",
@@ -506,9 +507,12 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
       "/fleet/instances",
       "/fleet/instances/:id",
       "/fleet/instances/:id/check-ins",
+      "/fleet/instances/:id/entitlement",
+      "/fleet/instances/:id/operator-login",
       "/fleet/instances/:id/registration-code",
       "/fleet/instances/:id/revoke",
       "/fleet/instances/:id/support-queue",
+      "/fleet/licences",
     ]);
   });
 });

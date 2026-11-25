@@ -1,12 +1,22 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { fleetInstanceCodeSchema, fleetRegisterRequestSchema, fleetSignedRequestSchema } from "@greatstone/shared/fleet";
-import { conflict, notFound } from "../errors.js";
+import {
+  fleetActivateRequestSchema,
+  fleetEntitlementInputSchema,
+  fleetInstanceCodeSchema,
+  fleetLicenceCreateSchema,
+  fleetRegisterRequestSchema,
+  fleetSignedRequestSchema,
+} from "@greatstone/shared/fleet";
+import { badRequest, conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import { FLEET_SUPPORT_MESSAGE_MAX_CHARS, fleetSupportAttachmentRequestSchema } from "@greatstone/shared/fleet-support";
 import { FleetMessageError, fleetHubEnabled, fleetService } from "../services/fleet.js";
+import { readHubSigningKey } from "../services/fleet-entitlements.js";
+import { createInviteRateLimiter } from "../services/invite-rate-limit.js";
+import { inviteRateLimitMiddleware } from "../middleware/invite-rate-limit.js";
 import { fleetSupportService } from "../services/fleet-support.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 import type { StorageService } from "../storage/types.js";
@@ -23,6 +33,22 @@ import { assertInstanceAdmin, getActorInfo } from "./authz.js";
 const createInstanceSchema = z.object({ code: fleetInstanceCodeSchema }).strict();
 const supportQueueLinkSchema = z.object({ supportQueueId: z.string().uuid().nullable() }).strict();
 const supportSyncRequestSchema = z.object({ message: z.string().min(1).max(FLEET_SUPPORT_MESSAGE_MAX_CHARS) }).strict();
+
+/** The hub's signing key, or a clear refusal: licences and documents need it. */
+function hubSigningKey() {
+  const key = readHubSigningKey();
+  if (!key) throw conflict("The hub has no entitlement signing key (GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY)");
+  return key;
+}
+
+function issuedByLabel(req: Request) {
+  return req.actor.type === "board" ? (req.actor.userEmail ?? req.actor.userId ?? "hub") : "hub";
+}
+
+/** A document must end after it is issued, or every install refuses it. */
+function assertFutureValidUntil(validUntil: string) {
+  if (Date.parse(validUntil) <= Date.now()) throw badRequest("validUntil must be in the future");
+}
 
 type FleetRouteDeps = { storage?: StorageService; heartbeat?: Pick<ReturnType<typeof heartbeatService>, "wakeup"> };
 
@@ -48,6 +74,36 @@ export function fleetHubRoutes(db: Db) {
     logger.info({ fleetInstanceId: created.instance.id, userId }, "Fleet instance created");
     res.set("Cache-Control", "no-store");
     res.status(201).json(created);
+  });
+
+  // GSAM for Mac (P1): a licence key, shown once, for a new pending instance with its first signed document.
+  router.post("/fleet/licences", validate(fleetLicenceCreateSchema), async (req, res) => {
+    assertFutureValidUntil(req.body.validUntil);
+    const key = hubSigningKey();
+    const userId = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
+    const created = await fleet.createLicence(req.body, { userId, label: issuedByLabel(req) }, key);
+    if (!created) throw conflict("An instance with this code exists");
+    logger.info({ fleetInstanceId: created.instance.id, userId }, "Fleet licence created");
+    res.set("Cache-Control", "no-store");
+    res.status(201).json(created);
+  });
+
+  // A newer signed document; the install gets it with its next check-in answer.
+  router.put("/fleet/instances/:id/entitlement", validate(fleetEntitlementInputSchema), async (req, res) => {
+    assertFutureValidUntil(req.body.validUntil);
+    const updated = await fleet.issueEntitlement(req.params.id as string, req.body, issuedByLabel(req), hubSigningKey());
+    if (!updated) throw notFound("Fleet instance not found");
+    logger.info({ fleetInstanceId: updated.id, entitlementVersion: updated.entitlementVersion }, "Fleet entitlement document issued");
+    res.json(updated);
+  });
+
+  // The Greatstone operator log-in of a licensed install, for remote help. Never logged.
+  router.get("/fleet/instances/:id/operator-login", async (req, res) => {
+    const login = await fleet.operatorLogin(req.params.id as string);
+    if (!login) throw notFound("No operator log-in for this instance");
+    logger.info({ fleetInstanceId: req.params.id }, "Fleet operator log-in read");
+    res.set("Cache-Control", "no-store");
+    res.json(login);
   });
 
   router.post("/fleet/instances/:id/registration-code", async (req, res) => {
@@ -112,6 +168,28 @@ export function fleetSpokeRoutes(db: Db, deps: FleetRouteDeps = {}) {
     }
     res.set("Cache-Control", "no-store");
     next();
+  });
+
+  // GSAM for Mac (P1): licence activation. Public, so rate limited per address on top of the one-use key.
+  const activationLimiter = createInviteRateLimiter({ windowMs: 10 * 60_000, maxRequests: 10 });
+  router.post("/api/fleet/spoke/activate", inviteRateLimitMiddleware(activationLimiter), async (req, res) => {
+    const body = fleetActivateRequestSchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "fleet_bad_message" });
+      return;
+    }
+    const key = readHubSigningKey();
+    if (!key) {
+      res.status(503).json({ error: "fleet_hub_not_signing" });
+      return;
+    }
+    try {
+      const result = await fleet.activate(body.data, key);
+      logger.info({ fleetInstanceId: result.instanceId, os: body.data.facts.os, arch: body.data.facts.arch }, "Fleet licence activated");
+      res.status(201).json(result);
+    } catch (error) {
+      sendRejection(res, error);
+    }
   });
 
   router.post("/api/fleet/spoke/register", async (req, res) => {

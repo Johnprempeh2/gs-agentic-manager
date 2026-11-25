@@ -11,6 +11,7 @@
 // here and a review.
 
 import { z } from "zod";
+import { entitlementEnvelopeSchema } from "./entitlement-document.js";
 import { fleetSupportAttachmentSchema, fleetSupportSyncSchema } from "./fleet-support.js";
 
 export const FLEET_JWS_TYPE = "gsam-fleet+jwt";
@@ -26,6 +27,13 @@ export const FLEET_MAX_CLOCK_SKEW_SECONDS = 60;
 /** A one-time registration code is good for this long. */
 export const FLEET_REGISTRATION_CODE_TTL_HOURS = 24;
 export const FLEET_REGISTRATION_CODE_PREFIX = "gsamfr_";
+/**
+ * GSAM for Mac (P1): a licence key is a one-time registration code that also
+ * carries the first signed entitlement document and gets a Greatstone
+ * operator log-in. Shown once on the hub (and, later, on the website).
+ */
+export const FLEET_LICENCE_KEY_PREFIX = "gsamlk_";
+export const FLEET_LICENCE_TTL_DAYS = 30;
 
 /**
  * `delete` (B9): the spoke asks the hub to remove its record and check-ins, as the last step of `client-instance.sh delete`.
@@ -198,8 +206,66 @@ export interface FleetInstanceView {
   revokedAt: string | null;
   revokedBy: string | null;
   registrationCodeExpiresAt: string | null;
+  /** GSAM for Mac: the newest signed document's version, and the operator log-in's email (never the password). */
+  entitlementVersion?: number | null;
+  operatorEmail?: string | null;
   createdAt: string;
   latestCheckIn: { receivedAt: string; checkIn: FleetReceivedCheckIn } | null;
 }
 
 export const fleetSignedRequestSchema = z.object({ message: z.string().min(1).max(16_384) }).strict();
+
+const featureMapSchema = z.record(z.string().min(1).max(80), z.boolean());
+const limitMapSchema = z.record(z.string().min(1).max(80), z.number().int().nonnegative());
+
+/** What a hub admin sets for a licence or a new entitlement document. The hub signs it. */
+export const fleetEntitlementInputSchema = z
+  .object({
+    features: featureMapSchema,
+    limits: limitMapSchema.default({}),
+    validUntil: z.string().datetime({ offset: true }),
+    /** Days after `validUntil`; customer installs use 0 (stop at the end of the paid period). */
+    grace: z.number().int().min(0).max(365).default(0),
+    reason: z.string().trim().max(1000).optional(),
+  })
+  .strict();
+export type FleetEntitlementInput = z.infer<typeof fleetEntitlementInputSchema>;
+
+/** `POST /api/fleet/licences`: a new pending instance with a licence key. The code is made by the hub when left out. */
+export const fleetLicenceCreateSchema = fleetEntitlementInputSchema.extend({ code: fleetInstanceCodeSchema.optional() }).strict();
+
+/** Facts the Mac app sends with its activation. Nothing about the person or their business. */
+export const fleetActivationFactsSchema = z
+  .object({
+    os: z.literal("macos"),
+    arch: z.enum(["arm64", "x64"]),
+    releaseTag: releaseTag.nullable(),
+  })
+  .strict();
+
+export const fleetActivateRequestSchema = z
+  .object({
+    licenceKey: z.string().startsWith(FLEET_LICENCE_KEY_PREFIX).max(128),
+    publicKey: fleetPublicKeySchema,
+    /** A fleet message with act `register` and sub = SHA-256 of the licence key, signed by the new key. */
+    proof: z.string().min(1).max(4096),
+    facts: fleetActivationFactsSchema,
+  })
+  .strict();
+export type FleetActivateRequest = z.infer<typeof fleetActivateRequestSchema>;
+
+export interface FleetActivateResponse {
+  instanceId: string;
+  code: string;
+  /** The hub's entitlement public key (raw 32 bytes, base64url). The install pins it. */
+  entitlementPublicKey: string;
+  entitlement: z.infer<typeof entitlementEnvelopeSchema>;
+  /** Greatstone's operator log-in for this install (instance admin). The hub keeps the password in its secrets store. */
+  operator: { email: string; password: string };
+}
+
+/** The hub's answer to a check-in: when it was taken, and the newest signed document for the instance. */
+export interface FleetCheckInResponse {
+  receivedAt: string;
+  entitlement: z.infer<typeof entitlementEnvelopeSchema> | null;
+}

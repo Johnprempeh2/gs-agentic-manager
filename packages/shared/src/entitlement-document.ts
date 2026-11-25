@@ -12,7 +12,7 @@ import type { InstanceFeatureKey } from "./feature-catalog.js";
 
 export const ENTITLEMENT_DOCUMENT_VERSION = 1;
 
-/** A last good document keeps applying for this long after `validUntil`; then the base floor. */
+/** A last good document keeps applying for this long after `validUntil`; then the base floor. A document may set its own `grace`. */
 export const ENTITLEMENT_GRACE_DAYS = 14;
 
 /** The file is re-read at least this often, so a new document applies within 5 minutes. */
@@ -95,6 +95,8 @@ export const entitlementDocumentSchema = z
     features: z.record(z.string().min(1), z.boolean()),
     /** Named limits (for example `maxAgents`). Reported now; enforced by later work. */
     limits: z.record(z.string().min(1), z.number().int().nonnegative()).default({}),
+    /** Days the document still applies after `validUntil`. Absent: ENTITLEMENT_GRACE_DAYS. Customer (Mac) documents carry 0: the service stops at the end of the paid period. */
+    grace: z.number().int().min(0).max(365).optional(),
   })
   .strict();
 

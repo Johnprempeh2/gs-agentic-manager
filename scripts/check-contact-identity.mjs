@@ -19,6 +19,7 @@ export const ALLOWED = {
   join_requests: "Snapshot of a GSAM member's email at the time they asked to join.",
   client_acceptance_links: "Signed record of acceptance: the email exactly as the person typed it on the page.",
   client_deliverable_publications: "Signed record of acceptance: the email exactly as the person typed it on the page.",
+  fleet_instances: "operator_email is the generated Greatstone operator log-in on a licensed install (operator+<code>@greatstone.invalid), not a client person.",
 };
 
 const IDENTITY_COLUMN = /(^|_)(email|password)(_|$)/;
