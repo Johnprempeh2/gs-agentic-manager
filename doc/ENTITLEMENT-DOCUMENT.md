@@ -64,7 +64,7 @@ The document:
 - A feature works only when the document allows it **and** the switch is on. The document never turns a switch on by itself, and nothing stored is changed or deleted.
 - A missing, unreadable, badly signed, malformed or older file keeps the last good copy. With no good copy the base floor applies (every governed feature off). Never "all on".
 - The file is re-read every minute. `POST /api/instance/entitlements/sync` ("Sync now", instance admins) re-reads it at once.
-- After `validUntil` the document still applies for `grace` days, then the base floor applies. `grace` is optional; a document without it gets 14 days. Customer (Mac) documents carry `grace: 0`: the service stops at the end of the paid period.
+- After `validUntil` the document still applies for `grace` days, then the base floor applies. `grace` is optional; a document without it gets 14 days. Customer (Mac) documents carry `grace: 0`: the service stops at the end of the paid period. On a Mac install the base floor also holds new agent runs and shows the "Your GSAM subscription has ended" page (P2, `doc/CLIENT-INSTANCES.md`).
 - Switches in `RESTART_WIRED_ENTITLEMENT_KEYS` change only after a restart and show `pendingRestart` until then. The list is empty today.
 - Every change and every refused file is written to the activity log of each company (`instance.entitlements.changed`, `instance.entitlements.rejected`) with who (`issuedBy`, `requestedBy`), what (state, versions, feature changes), when, and why (`reason`).
 

@@ -1,4 +1,5 @@
 import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
+import { currentServiceHold } from "./service-hold.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
@@ -9864,7 +9865,11 @@ export function resolveHeartbeatSchedulingSuppression(
 ): {
   suppressed: boolean;
   reason:
-    "worktree_instance" | "database_restore_in_progress" | "task_drain" | null;
+    | "worktree_instance"
+    | "database_restore_in_progress"
+    | "task_drain"
+    | "service_hold"
+    | null;
 } {
   if (
     isTruthyRuntimeEnvValue(env.GSAM_IN_WORKTREE) &&
@@ -9880,6 +9885,10 @@ export function resolveHeartbeatSchedulingSuppression(
   }
   if (readTaskDrain(new Date()) !== null) {
     return { suppressed: true, reason: "task_drain" };
+  }
+  // GSAM for Mac (P2): Greatstone paused or stopped the service, or the paid period ended.
+  if (currentServiceHold() !== null) {
+    return { suppressed: true, reason: "service_hold" };
   }
   return { suppressed: false, reason: null };
 }
@@ -29248,9 +29257,11 @@ export function heartbeatService(
     // here dropped the wake permanently — an accepted plan whose
     // continuation wake landed mid-drain left its issue in `todo` with no
     // run and no path until a person noticed.
+    // A service hold (GSAM for Mac P2) is the same: the work waits for a resume or a renewal.
     if (
       schedulingSuppression.suppressed &&
-      schedulingSuppression.reason !== "task_drain"
+      schedulingSuppression.reason !== "task_drain" &&
+      schedulingSuppression.reason !== "service_hold"
     ) {
       await writeSkippedHeartbeatRequest("heartbeat.scheduling_suppressed", {
         reason: schedulingSuppression.reason,

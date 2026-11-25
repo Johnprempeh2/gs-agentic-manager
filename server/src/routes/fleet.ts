@@ -6,6 +6,7 @@ import {
   fleetEntitlementInputSchema,
   fleetInstanceCodeSchema,
   fleetLicenceCreateSchema,
+  fleetOrderCreateSchema,
   fleetRegisterRequestSchema,
   fleetSignedRequestSchema,
 } from "@greatstone/shared/fleet";
@@ -15,6 +16,7 @@ import { validate } from "../middleware/validate.js";
 import { FLEET_SUPPORT_MESSAGE_MAX_CHARS, fleetSupportAttachmentRequestSchema } from "@greatstone/shared/fleet-support";
 import { FleetMessageError, fleetHubEnabled, fleetService } from "../services/fleet.js";
 import { readHubSigningKey } from "../services/fleet-entitlements.js";
+import { fleetTailscaleAuthKey, logFleetActivity } from "../services/fleet-orders.js";
 import { createInviteRateLimiter } from "../services/invite-rate-limit.js";
 import { inviteRateLimitMiddleware } from "../middleware/invite-rate-limit.js";
 import { fleetSupportService } from "../services/fleet-support.js";
@@ -28,7 +30,8 @@ import { assertInstanceAdmin, getActorInfo } from "./authz.js";
 // - fleetSpokeRoutes: what a client instance calls. No session; the signed
 //   message is the whole authorization. It answers only with the caller's own
 //   registration result, never with another instance's facts.
-// Both answer 404 unless GSAM_FLEET_HUB=true. No route sends a command to a spoke.
+// Both answer 404 unless GSAM_FLEET_HUB=true. The only commands to a spoke are
+// signed operator orders (GSAM for Mac P2), which ride on its own check-in answer.
 
 const createInstanceSchema = z.object({ code: fleetInstanceCodeSchema }).strict();
 const supportQueueLinkSchema = z.object({ supportQueueId: z.string().uuid().nullable() }).strict();
@@ -43,6 +46,10 @@ function hubSigningKey() {
 
 function issuedByLabel(req: Request) {
   return req.actor.type === "board" ? (req.actor.userEmail ?? req.actor.userId ?? "hub") : "hub";
+}
+
+function actorUserId(req: Request) {
+  return req.actor.type === "board" ? (req.actor.userId ?? null) : null;
 }
 
 /** A document must end after it is issued, or every install refuses it. */
@@ -83,6 +90,12 @@ export function fleetHubRoutes(db: Db) {
     const userId = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
     const created = await fleet.createLicence(req.body, { userId, label: issuedByLabel(req) }, key);
     if (!created) throw conflict("An instance with this code exists");
+    await logFleetActivity(db, {
+      actorUserId: userId,
+      action: "fleet.licence.created",
+      instanceId: created.instance.id,
+      details: { code: created.instance.code, features: req.body.features, limits: req.body.limits, validUntil: req.body.validUntil, reason: req.body.reason ?? null },
+    });
     logger.info({ fleetInstanceId: created.instance.id, userId }, "Fleet licence created");
     res.set("Cache-Control", "no-store");
     res.status(201).json(created);
@@ -94,16 +107,47 @@ export function fleetHubRoutes(db: Db) {
     const updated = await fleet.issueEntitlement(req.params.id as string, req.body, issuedByLabel(req), hubSigningKey());
     if (!updated) throw notFound("Fleet instance not found");
     logger.info({ fleetInstanceId: updated.id, entitlementVersion: updated.entitlementVersion }, "Fleet entitlement document issued");
+    await logFleetActivity(db, {
+      actorUserId: actorUserId(req),
+      action: "fleet.entitlement.issued",
+      instanceId: updated.id,
+      details: { code: updated.code, version: updated.entitlementVersion, features: req.body.features, limits: req.body.limits, validUntil: req.body.validUntil, reason: req.body.reason ?? null },
+    });
     res.json(updated);
   });
 
-  // The Greatstone operator log-in of a licensed install, for remote help. Never logged.
+  // The Greatstone operator log-in of a licensed install, for remote help. The password is never logged; each read is.
   router.get("/fleet/instances/:id/operator-login", async (req, res) => {
     const login = await fleet.operatorLogin(req.params.id as string);
     if (!login) throw notFound("No operator log-in for this instance");
     logger.info({ fleetInstanceId: req.params.id }, "Fleet operator log-in read");
+    await logFleetActivity(db, {
+      actorUserId: actorUserId(req),
+      action: "fleet.operator_login.read",
+      instanceId: req.params.id as string,
+      details: { email: login.email },
+    });
     res.set("Cache-Control", "no-store");
     res.json(login);
+  });
+
+  // P2: a signed order (pause, resume, stop, update). It rides on the install's next check-in answer.
+  router.post("/fleet/instances/:id/orders", validate(fleetOrderCreateSchema), async (req, res) => {
+    const order = await fleet.createOrder(req.params.id as string, req.body, { userId: actorUserId(req), label: issuedByLabel(req) }, hubSigningKey()).catch(
+      (error: unknown) => {
+        if (error instanceof FleetMessageError) throw conflict("The instance is not registered, or another order was made at the same moment");
+        throw error;
+      },
+    );
+    if (!order) throw notFound("Fleet instance not found");
+    logger.info({ fleetInstanceId: req.params.id, kind: order.kind, seq: order.seq }, "Fleet order signed");
+    await logFleetActivity(db, {
+      actorUserId: actorUserId(req),
+      action: "fleet.order.created",
+      instanceId: req.params.id as string,
+      details: { kind: order.kind, seq: order.seq, reason: order.reason, issuedBy: order.issuedBy, expiresAt: order.expiresAt },
+    });
+    res.status(201).json(order);
   });
 
   router.post("/fleet/instances/:id/registration-code", async (req, res) => {
@@ -158,7 +202,15 @@ function sendRejection(res: Response, error: unknown) {
 
 export function fleetSpokeRoutes(db: Db, deps: FleetRouteDeps = {}) {
   const router = Router();
-  const fleet = fleetService(db);
+  const fleet = fleetService(db, {
+    onOrderResult: (instanceId, order) =>
+      logFleetActivity(db, {
+        actorUserId: null,
+        action: "fleet.order.result",
+        instanceId,
+        details: { kind: order.kind, seq: order.seq, result: order.result, code: order.code },
+      }),
+  });
   const support = fleetSupportService(db, { storage: deps.storage, wakeup: deps.heartbeat?.wakeup });
 
   router.use("/api/fleet/spoke", (_req, res, next) => {
@@ -184,8 +236,16 @@ export function fleetSpokeRoutes(db: Db, deps: FleetRouteDeps = {}) {
       return;
     }
     try {
-      const result = await fleet.activate(body.data, key);
-      logger.info({ fleetInstanceId: result.instanceId, os: body.data.facts.os, arch: body.data.facts.arch }, "Fleet licence activated");
+      const result = await fleet.activate(body.data, key, new Date(), () =>
+        fleetTailscaleAuthKey().catch((err: unknown) => {
+          logger.warn({ err: (err as Error).message }, "Fleet activation: no Tailscale auth key");
+          return null;
+        }),
+      );
+      logger.info(
+        { fleetInstanceId: result.instanceId, os: body.data.facts.os, arch: body.data.facts.arch, tailscale: Boolean(result.tailscale) },
+        "Fleet licence activated",
+      );
       res.status(201).json(result);
     } catch (error) {
       sendRejection(res, error);

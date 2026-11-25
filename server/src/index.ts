@@ -1821,7 +1821,8 @@ async function startServerWithDatabaseTeardown(
     // session-goal recovery below is deferred to that first tick.
     const startupRestartRecoveryAllowed =
       !heartbeatSchedulingSuppression.suppressed ||
-      heartbeatSchedulingSuppression.reason === "task_drain";
+      heartbeatSchedulingSuppression.reason === "task_drain" ||
+      heartbeatSchedulingSuppression.reason === "service_hold";
     let sessionGoalRecoveryDeferred = false;
     const recoverSessionGoals = async (phase: "startup" | "deferred") => {
       const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();

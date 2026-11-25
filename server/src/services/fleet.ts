@@ -1,12 +1,13 @@
 import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
-import { fleetCheckIns, fleetInstances } from "@greatstone/db";
+import { fleetCheckIns, fleetInstances, fleetOrders } from "@greatstone/db";
 import type { EntitlementEnvelope } from "@greatstone/shared";
 import {
   FLEET_AUDIENCE,
-  FLEET_CHECK_IN_SCHEMA,
+  FLEET_CHECK_IN_SCHEMA_V1,
+  FLEET_CHECK_IN_SCHEMA_V3,
   FLEET_LICENCE_KEY_PREFIX,
   FLEET_LICENCE_TTL_DAYS,
   FLEET_JWS_TYPE,
@@ -22,6 +23,9 @@ import {
   type FleetCheckInResponse,
   type FleetClaims,
   type FleetEntitlementInput,
+  type FleetEntitlementSummary,
+  type FleetOrderKind,
+  type FleetOrderView,
   type FleetInstanceStatus,
   type FleetLifecycle,
   type FleetPublicKey,
@@ -29,6 +33,7 @@ import {
 } from "@greatstone/shared/fleet";
 import { localEncryptedProvider } from "../secrets/local-encrypted-provider.js";
 import { signEntitlementDocument, type HubSigningKey } from "./fleet-entitlements.js";
+import { signFleetOrder } from "./fleet-orders.js";
 
 // Hub side of the fleet channel (GRE-1082). Same shape as the Cloud control
 // assertion (services/cloud-runtime-identity.ts): a compact EdDSA JWS, a
@@ -135,6 +140,47 @@ function verifyMessage(compactJws: string, key: KeyObject, expected: { act: Flee
 }
 
 export type FleetInstanceRow = typeof fleetInstances.$inferSelect;
+type FleetOrderRow = typeof fleetOrders.$inferSelect;
+
+/** What the newest signed document grants, read back from the bytes the hub signed. */
+function entitlementSummary(row: FleetInstanceRow): FleetEntitlementSummary | null {
+  const envelope = row.entitlementDocument as EntitlementEnvelope | null;
+  if (!envelope?.document) return null;
+  try {
+    const doc = JSON.parse(Buffer.from(envelope.document, "base64url").toString("utf8"));
+    return {
+      version: doc.version,
+      features: doc.features ?? {},
+      limits: doc.limits ?? {},
+      validUntil: doc.validUntil,
+      grace: typeof doc.grace === "number" ? doc.grace : 14,
+      issuedAt: doc.issuedAt,
+      issuedBy: doc.issuedBy,
+      reason: doc.reason ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function orderView(row: FleetOrderRow, now: Date): FleetOrderView {
+  const status = (row.result as FleetOrderView["status"] | null) ?? (row.expiresAt <= now ? "expired" : "pending");
+  return {
+    id: row.id,
+    seq: row.seq,
+    kind: row.kind as FleetOrderKind,
+    reason: row.reason,
+    issuedBy: row.issuedBy,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    status,
+    resultCode: (row.resultCode as FleetOrderView["resultCode"]) ?? null,
+    resultAt: row.resultAt?.toISOString() ?? null,
+  };
+}
+
+/** Orders shown per instance on the fleet page. */
+const ORDERS_SHOWN = 5;
 
 /** What the hub shows about an instance. Never the registration code hash. */
 function view(row: FleetInstanceRow, now = new Date()) {
@@ -166,6 +212,7 @@ function view(row: FleetInstanceRow, now = new Date()) {
     /** GSAM for Mac: the version of the newest signed document the hub holds, and the operator log-in's email. Never the password. */
     entitlementVersion: row.entitlementVersion,
     operatorEmail: row.operatorEmail,
+    entitlement: entitlementSummary(row),
     createdAt: row.createdAt,
   };
 }
@@ -245,7 +292,11 @@ export async function advanceSeq(
   return rows.length > 0;
 }
 
-export function fleetService(db: Db) {
+export function fleetService(
+  db: Db,
+  opts: { onOrderResult?: (instanceId: string, order: { id: string; seq: number; kind: string; result: string; code: string | null }) => Promise<void> } = {},
+) {
+  const { onOrderResult } = opts;
   const signedSenderFor = (compactJws: string, act: Exclude<FleetAction, "register">, now: Date) => signedSender(db, compactJws, act, now);
 
   return {
@@ -261,10 +312,23 @@ export function fleetService(db: Db) {
         .from(fleetCheckIns)
         .orderBy(fleetCheckIns.fleetInstanceId, desc(fleetCheckIns.receivedAt));
       const latestById = new Map(latest.map((entry) => [entry.fleetInstanceId, entry]));
+      // ponytail: every order of the last 30 days in one read, grouped here; page it if a fleet grows into thousands.
+      const orders = await db
+        .select()
+        .from(fleetOrders)
+        .where(gt(fleetOrders.createdAt, new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)))
+        .orderBy(desc(fleetOrders.seq));
+      const ordersById = new Map<string, FleetOrderView[]>();
+      for (const order of orders) {
+        const list = ordersById.get(order.fleetInstanceId) ?? [];
+        if (list.length < ORDERS_SHOWN) list.push(orderView(order, now));
+        ordersById.set(order.fleetInstanceId, list);
+      }
       return rows.map((row) => {
         const entry = latestById.get(row.id);
         return {
           ...view(row, now),
+          orders: ordersById.get(row.id) ?? [],
           latestCheckIn: entry ? { receivedAt: entry.receivedAt, checkIn: entry.checkIn as FleetReceivedCheckIn } : null,
         };
       });
@@ -411,7 +475,12 @@ export function fleetService(db: Db) {
      * log-in. One use: the key hash is cleared in the same update. A used,
      * expired or unknown key gets the same refusal.
      */
-    async activate(input: FleetActivateRequest, key: HubSigningKey, now = new Date()): Promise<FleetActivateResponse> {
+    async activate(
+      input: FleetActivateRequest,
+      key: HubSigningKey,
+      now = new Date(),
+      tailscaleAuthKey: () => Promise<string | null> = async () => null,
+    ): Promise<FleetActivateResponse> {
       const codeHash = hashRegistrationCode(input.licenceKey);
       const claims = verifyMessage(input.proof, publicKeyFromX(input.publicKey.x), { act: "register", sub: codeHash }, now);
       const password = randomBytes(24).toString("base64url");
@@ -441,12 +510,15 @@ export function fleetService(db: Db) {
         )
         .returning();
       if (!row) return reject("fleet_bad_registration_code");
+      // Remote network access is optional: an install without a key still works, it just cannot be reached.
+      const authKey = await tailscaleAuthKey().catch(() => null);
       return {
         instanceId: row.id,
         code: row.code,
         entitlementPublicKey: key.publicKey,
         entitlement: row.entitlementDocument!,
         operator: { email: fleetOperatorEmail(row.code), password },
+        tailscale: authKey ? { authKey } : null,
       };
     },
 
@@ -464,7 +536,9 @@ export function fleetService(db: Db) {
       const { signer, claims } = await signedSenderFor(compactJws, "check-in", now);
       const checkIn = claims.checkIn!;
       // A v1 check-in says nothing about lifecycle, so the stored one stays.
-      const lifecycle = checkIn.schema === FLEET_CHECK_IN_SCHEMA ? checkIn.lifecycle : null;
+      const lifecycle = checkIn.schema === FLEET_CHECK_IN_SCHEMA_V1 ? null : checkIn.lifecycle;
+      const reports = checkIn.schema === FLEET_CHECK_IN_SCHEMA_V3 ? checkIn.orders : [];
+      const recorded: Array<{ id: string; seq: number; kind: string; result: string; code: string | null }> = [];
       await db.transaction(async (tx) => {
         const fields: PgUpdateSetSource<typeof fleetInstances> = { lastCheckInAt: now, lastAppHealth: checkIn.health.app };
         if (lifecycle) {
@@ -475,13 +549,73 @@ export function fleetService(db: Db) {
         await tx.insert(fleetCheckIns).values({ fleetInstanceId: signer.id, seq: claims.seq, payload: checkIn, receivedAt: now });
         const cutoff = new Date(now.getTime() - CHECK_IN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
         await tx.delete(fleetCheckIns).where(and(eq(fleetCheckIns.fleetInstanceId, signer.id), lt(fleetCheckIns.receivedAt, cutoff)));
+        // P2: order results. The first report of a seq wins; a repeat changes nothing.
+        for (const report of reports) {
+          const [order] = await tx
+            .update(fleetOrders)
+            .set({ result: report.result, resultCode: report.code, resultAt: now })
+            .where(and(eq(fleetOrders.fleetInstanceId, signer.id), eq(fleetOrders.seq, report.seq), isNull(fleetOrders.result)))
+            .returning({ id: fleetOrders.id, seq: fleetOrders.seq, kind: fleetOrders.kind });
+          if (order) recorded.push({ ...order, result: report.result, code: report.code });
+        }
       });
+      if (onOrderResult) for (const order of recorded) await onOrderResult(signer.id, order).catch(() => undefined);
       const entitlement = await db
         .select({ document: fleetInstances.entitlementDocument })
         .from(fleetInstances)
         .where(eq(fleetInstances.id, signer.id))
         .then((rows) => (rows[0]?.document as EntitlementEnvelope | null | undefined) ?? null);
-      return { receivedAt: now.toISOString(), entitlement };
+      // Signed orders not yet reported on and still in date, oldest first: the install obeys them in seq order.
+      const orders = await db
+        .select({ message: fleetOrders.message })
+        .from(fleetOrders)
+        .where(and(eq(fleetOrders.fleetInstanceId, signer.id), isNull(fleetOrders.result), gt(fleetOrders.expiresAt, now)))
+        .orderBy(asc(fleetOrders.seq))
+        .then((rows) => rows.map((row) => row.message));
+      return { receivedAt: now.toISOString(), entitlement, orders };
+    },
+
+    /**
+     * Hub admin: a signed order for an active instance. `seq` is one above the
+     * instance's last order. Null when the instance is not found.
+     */
+    async createOrder(
+      id: string,
+      input: { kind: FleetOrderKind; reason: string },
+      issuedBy: { userId: string | null; label: string },
+      key: HubSigningKey,
+      now = new Date(),
+    ) {
+      if (!UUID_PATTERN.test(id)) return null;
+      const row = await db.select().from(fleetInstances).where(eq(fleetInstances.id, id)).then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      if (row.status !== "active") return reject("fleet_not_registered", 409);
+      const [last] = await db
+        .select({ seq: fleetOrders.seq })
+        .from(fleetOrders)
+        .where(eq(fleetOrders.fleetInstanceId, id))
+        .orderBy(desc(fleetOrders.seq))
+        .limit(1);
+      const seq = (last?.seq ?? 0) + 1;
+      const signed = signFleetOrder({ instanceId: row.id, code: row.code, seq, kind: input.kind }, key, now);
+      // The unique (instance, seq) index refuses a second order made at the same moment.
+      const [order] = await db
+        .insert(fleetOrders)
+        .values({
+          fleetInstanceId: row.id,
+          seq,
+          kind: input.kind,
+          reason: input.reason,
+          issuedBy: issuedBy.label,
+          issuedByUserId: issuedBy.userId,
+          message: signed.message,
+          expiresAt: signed.expiresAt,
+          createdAt: now,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!order) return reject("fleet_replay", 409);
+      return orderView(order, now);
     },
 
     /** Hub admin: remove the record and its check-ins (B9 delete, when the spoke cannot ask). Null when not found. */

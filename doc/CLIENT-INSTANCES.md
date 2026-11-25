@@ -821,6 +821,151 @@ Tests:
 (cd server && npx vitest run src/__tests__/fleet-licences.test.ts src/__tests__/fleet-routes.test.ts)
 ```
 
+### GSAM for Mac: admin controls, orders and remote access (P2)
+
+All of this is on the hub's Fleet page (Settings, Fleet), for hub instance
+admins. Every action below goes into the hub activity log of each company on
+the hub, with who did it and why: `fleet.licence.created`,
+`fleet.entitlement.issued`, `fleet.order.created`, `fleet.order.result` and
+`fleet.operator_login.read`. No password or key is ever written there.
+
+**See every install.** Each row shows the code, the state (OK, Stale, Down,
+Paused, Stopped, Waiting, Not registered, Revoked), the version, the last
+check-in, the usage totals, and a Subscription column read from the newest
+signed document: paid until (or Ended), the features, the limits and the
+document version.
+
+**New licence.** The New licence button makes a licence key
+(`POST /api/fleet/licences`) with the features, the limits (users, agents)
+and the paid-until date you pick. The key is shown once, with a copy button.
+
+**Change features, limits or paid-until.** Manage, then "Features, limits and
+paid until", signs the next document (`PUT /api/fleet/instances/<id>/entitlement`).
+The install applies it at its next check-in.
+
+**Orders.** Manage, then Orders: Pause, Resume, Update now and Stop service,
+each with a required reason. Stop asks for a second click.
+
+| Order | What the install does |
+|---|---|
+| `pause` | No new agent run starts. GSAM works as usual with a banner: "Paused by Greatstone". |
+| `stop` | No new agent run starts, and GSAM shows a full page: "Service stopped by Greatstone", a contact link and an export link. Nothing is deleted; the export page stays open. |
+| `resume` | Lifts a pause or a stop. |
+| `update` | Starts the install's updater LaunchAgent (`<label>.update`) now instead of at 03:30. |
+
+`POST /api/fleet/instances/<id>/orders` with `{"kind": "pause", "reason": "..."}`.
+The hub signs the order with its entitlement key, as a compact JWS
+(`gsam-fleet-order+jwt`, audience `gsam-fleet-order/v1`) holding the instance
+id and code, the kind, a `seq` one above the instance's last order, and an
+expiry 24 hours on. The reason and who sent it stay on the hub. Each check-in
+answer carries every order the install has not reported on and that has not
+expired, oldest first (`orders` in the answer; an install from before P2
+ignores it). The install:
+
+- checks each order against the hub key it pinned at activation, its own id
+  and code, and the expiry; a badly signed order, or one for another install,
+  is dropped and logged on the install;
+- obeys each `seq` once, in order, and keeps the last one in
+  `fleet/orders.json`. An order at or below it is never obeyed again: its
+  first result is reported again;
+- refuses an expired order (`refused`, `expired`);
+- reports each result (`done`, `failed` or `refused`, with a code from a
+  closed list) in its next check-in. The hub records the first report of each
+  `seq` and stops sending that order.
+
+Orders run in seconds on the install, so an order is obeyed within one
+check-in (5 minutes) and its result shows on the Fleet page within the next.
+Agent runs already going when a pause or stop arrives finish; no new one
+starts (heartbeat scheduling suppression, reason `service_hold`).
+
+**Check-in v3.** The Mac sends `gsam-fleet-check-in/v3`: v2 plus `orders`
+(the results above), the `stopped` lifecycle, and `remote.tailnetName` (its
+tailnet machine name, or null). The schema stays closed: no free text. The
+hub still takes v1 and v2, and host-script instances keep sending v2.
+
+**Subscription ended.** Customer documents carry `grace: 0`, so when
+`validUntil` passes with no newer document the base floor applies. On a Mac
+install that also holds agent runs and shows the full page "Your GSAM
+subscription has ended" with a renew link (`GSAM_RENEW_URL` on the install,
+default `https://greatstoneint.com`) and the export link. A newer document
+lifts it within 5 minutes.
+
+**Open remotely.** Manage, then Remote access:
+
+- "Show operator log-in" shows the install's Greatstone operator log-in
+  (`GET /api/fleet/instances/<id>/operator-login`) with copy buttons. Each
+  read is logged.
+- "Open remotely" opens `http://<tailnet name>:3100` when the install has
+  reported a tailnet name.
+
+#### Remote network reach: Tailscale
+
+The hub hands each new install a Tailscale auth key in its activation answer,
+when it has one. Set one of these in the hub's environment file:
+
+| Variable | Meaning |
+|---|---|
+| `GSAM_FLEET_TAILSCALE_OAUTH_CLIENT_ID`, `GSAM_FLEET_TAILSCALE_OAUTH_CLIENT_SECRET` | Preferred. A Tailscale OAuth client with the "Auth Keys: write" scope and the tag `tag:gsam-customer`. The hub mints a one-use, pre-approved key per install, good for one hour. |
+| `GSAM_FLEET_TAILSCALE_AUTH_KEY` | A pre-made auth key tagged `tag:gsam-customer` (reusable, pre-approved). Simpler; anyone who gets it can add a machine as `tag:gsam-customer` until it expires. |
+
+With neither set, activation sends no key and the install skips remote network
+access quietly. A failure to mint a key is logged on the hub and the install
+goes without.
+
+On the Mac, the app's `tailscale` step (`packaging/macos/src/gsam.sh`):
+
+1. Builds `tailscale` and `tailscaled` from source at a pinned release
+   (`TS_VERSION`), with Go downloaded from go.dev and checked against pinned
+   SHA-256 sums (`GO_SHA256_*`); Go checks every module against its checksum
+   database (sum.golang.org). The Go toolchain and caches (about 1 GB) are
+   deleted after the build. Homebrew is not used.
+2. Runs `tailscaled --tun=userspace-networking` as the Mac user from a
+   LaunchAgent (`<label>.tailscale`), with its state in
+   `~/Library/Application Support/GSAM/runtime/tailscale`. No system
+   extension, no sudo, and the Mac's own network is not changed.
+3. Joins with `tailscale up --auth-key=file:<path> --hostname=gsam-<code>
+   --advertise-tags=tag:gsam-customer --accept-dns=false`, then deletes the key.
+4. Serves GSAM to the tailnet: `tailscale serve --bg --tcp=3100 tcp://127.0.0.1:<port>`.
+5. Writes its tailnet name to `fleet/tailnet.json` (sent in every check-in) and
+   adds it to GSAM's `server.allowedHostnames`, so log-ins over the tailnet work.
+
+The app treats this step as optional: if it fails, setup carries on and the
+reason is in the setup log. Test the command lines without an account:
+`GSAM_TAILSCALE_DRY_RUN=1 bash src/gsam.sh tailscale` prints them.
+
+**Tailnet policy John must add** (admin console, Access controls). Replace the
+default "allow all" rule: with it, a customer Mac could reach every machine on
+the tailnet.
+
+```jsonc
+{
+  "groups": {
+    "group:greatstone-admins": ["john@example.com"] // the Greatstone admins who give remote help
+  },
+  "tagOwners": {
+    "tag:gsam-customer": ["autogroup:admin"]
+  },
+  "grants": [
+    // Only Greatstone admins reach customer installs, and only GSAM's port.
+    { "src": ["group:greatstone-admins"], "dst": ["tag:gsam-customer"], "ip": ["tcp:3100"] }
+    // Keep your own rules for your own machines here. Never use "*" as a source:
+    // it includes tag:gsam-customer. No rule may have tag:gsam-customer as a source,
+    // so a customer Mac reaches nothing.
+  ]
+}
+```
+
+Also in the admin console: turn on MagicDNS (the Fleet page opens the
+install by its name) and turn key expiry off for `tag:gsam-customer` machines
+(tagged machines have no key expiry by default).
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-orders.test.ts src/__tests__/fleet-licences.test.ts src/__tests__/fleet-routes.test.ts)
+(cd ui && npx vitest run src/pages/Fleet.test.tsx src/components/CloudAccessGate.test.tsx)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with

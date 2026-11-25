@@ -10,6 +10,11 @@
  *   fleet/owner-invite.json the owner's one-time set-up link (mode 600), while
  *                           no owner exists; then deleted.
  *   fleet/spoke-state.json  the last seq sent and the last check-in result.
+ *   fleet/orders.json       (P2) the last order seq obeyed, the hold it set
+ *                           (paused or stopped) and results not yet reported.
+ *   fleet/tailscale.json    (P2) the one-use Tailscale auth key from activation
+ *                           (mode 600), until gsam.sh `tailscale` has joined.
+ *   fleet/tailnet.json      (P2) the install's tailnet name, written by gsam.sh.
  */
 
 import { readFileSync } from "node:fs";
@@ -40,6 +45,8 @@ export function fleetSpokePaths(instanceRoot: string) {
     operator: path.join(dir, "operator.json"),
     ownerInvite: path.join(dir, "owner-invite.json"),
     state: path.join(dir, "spoke-state.json"),
+    orders: path.join(dir, "orders.json"),
+    tailnet: path.join(dir, "tailnet.json"),
   };
 }
 

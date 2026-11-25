@@ -11,6 +11,7 @@ import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
 import { useSignOut } from "@/hooks/useSignOut";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ServiceHoldBanner, ServiceHoldPage, isServiceStopped } from "@/components/ServiceHoldPage";
 
 function NoBoardAccessPage() {
   return (
@@ -87,11 +88,11 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data as
-        | { deploymentMode?: "local_trusted" | "authenticated"; bootstrapStatus?: "ready" | "bootstrap_pending" }
+        | { deploymentMode?: "local_trusted" | "authenticated"; bootstrapStatus?: "ready" | "bootstrap_pending"; service?: unknown }
         | undefined;
-      return data?.deploymentMode === "authenticated" && data.bootstrapStatus === "bootstrap_pending"
-        ? 2000
-        : false;
+      if (data?.deploymentMode === "authenticated" && data.bootstrapStatus === "bootstrap_pending") return 2000;
+      // A GSAM for Mac install: a pause, stop, resume or renewal shows within a minute.
+      return data?.service ? 60_000 : false;
     },
     refetchIntervalInBackground: true,
   });
@@ -141,6 +142,14 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
     return <AppShellSkeleton />;
+  }
+
+  // GSAM for Mac: a stopped service or an ended subscription replaces the app,
+  // signed in or not. The export page stays open so the customer keeps their data.
+  const service = healthQuery.data?.service;
+  const onExportPage = /\/company\/export(\/|$)/.test(location.pathname);
+  if (service && isServiceStopped(service) && !onExportPage) {
+    return <ServiceHoldPage service={service} signedIn={Boolean(sessionQuery.data)} />;
   }
 
   if (twoStepSetupRequired) {
@@ -203,5 +212,10 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     return <NoBoardAccessPage />;
   }
 
-  return <Outlet />;
+  return (
+    <>
+      {service ? <ServiceHoldBanner service={service} /> : null}
+      <Outlet />
+    </>
+  );
 }

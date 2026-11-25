@@ -554,7 +554,7 @@ import {
   clientSupportInboxSchema,
   fleetSupportAttachmentRequestSchema,
 } from "@greatstone/shared/fleet-support";
-import { fleetActivateRequestSchema, fleetEntitlementInputSchema, fleetLicenceCreateSchema } from "@greatstone/shared/fleet";
+import { fleetActivateRequestSchema, fleetEntitlementInputSchema, fleetLicenceCreateSchema, fleetOrderCreateSchema } from "@greatstone/shared/fleet";
 import {
   createCaseContactSchema,
   createProjectLinkSchema,
@@ -1958,6 +1958,7 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
   "POST /api/fleet/licences",
   "PUT /api/fleet/instances/{id}/entitlement",
   "GET /api/fleet/instances/{id}/operator-login",
+  "POST /api/fleet/instances/{id}/orders",
   "POST /api/companies",
   "POST /api/plugins/install",
   "POST /api/instance/database-backups",
@@ -1973,6 +1974,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/fleet/spoke/register",
   "POST /api/fleet/licences",
   "POST /api/fleet/spoke/activate",
+  "POST /api/fleet/instances/{id}/orders",
   "POST /api/adapters/install",
   "POST /api/chat-endpoints/{endpointId}/setup-secret",
   "POST /api/companies/{companyId}/agent-hires",
@@ -12702,6 +12704,15 @@ registry.registerPath({
   summary: "The Greatstone operator log-in of a licensed install, for remote help",
   request: { params: fleetIdParams },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/instances/{id}/orders",
+  tags: ["fleet"],
+  summary: "Sign an operator order (pause, resume, stop, update); it rides on the install's next check-in answer",
+  request: { params: fleetIdParams, body: jsonBody(fleetOrderCreateSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

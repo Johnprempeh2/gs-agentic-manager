@@ -8,12 +8,15 @@ import { createHash, createPrivateKey, generateKeyPairSync, sign, type JsonWebKe
 import {
   FLEET_AUDIENCE,
   FLEET_CHECK_IN_SCHEMA,
+  FLEET_CHECK_IN_SCHEMA_V3,
   FLEET_JWS_TYPE,
   FLEET_ALERT_KEY_PATTERN,
   FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
   fleetCheckInV2Schema,
+  fleetCheckInV3Schema,
   type FleetAction,
   type FleetCheckIn,
+  type FleetCheckInV3,
   type FleetConnections,
   type FleetLifecycle,
   type FleetPublicKey,
@@ -62,7 +65,7 @@ export function registrationSubject(registrationCode: string): string {
 
 export function signFleetMessage(
   privateJwk: JsonWebKey,
-  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn; support?: FleetSupportSync; attachment?: FleetSupportAttachment },
+  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn | FleetCheckInV3; support?: FleetSupportSync; attachment?: FleetSupportAttachment },
   now = Date.now(),
 ): string {
   const iat = Math.floor(now / 1000);
@@ -154,5 +157,19 @@ export function buildCheckIn(input: CheckInInput, now = Date.now()): FleetCheckI
     alerts: instanceAlerts(input.signals),
     lifecycle: input.lifecycle ?? "active",
     connections: input.connections,
+  });
+}
+
+/** The Mac spoke's check-in (v3): the v2 facts plus order results, its lifecycle and its tailnet name. */
+export function macCheckIn(
+  base: FleetCheckIn,
+  extras: { lifecycle: FleetCheckInV3["lifecycle"]; orders: FleetCheckInV3["orders"]; tailnetName: string | null },
+): FleetCheckInV3 {
+  return fleetCheckInV3Schema.parse({
+    ...base,
+    schema: FLEET_CHECK_IN_SCHEMA_V3,
+    lifecycle: extras.lifecycle,
+    orders: extras.orders,
+    remote: { tailnetName: extras.tailnetName },
   });
 }

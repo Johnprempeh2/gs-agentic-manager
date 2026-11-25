@@ -26,6 +26,7 @@ import {
 import { getCloudRuntimeIdentity } from "../services/cloud-runtime-identity.js";
 import { getHiddenSettings } from "../services/settings-visibility.js";
 import { getPartnerBranding } from "../services/partner-branding.js";
+import { serviceHoldHealth } from "../services/service-hold.js";
 import {
   inspectDatabaseBackupHealth,
   type DatabaseBackupHealthStatus,
@@ -345,6 +346,10 @@ export function healthRoutes(
     // Partner branding rides every response too, the redacted one included:
     // the sign-in page shows it before anyone is logged in. Omitted when unset.
     const branding = getPartnerBranding(runtimeEnv);
+    // GSAM for Mac (P2): active, paused, stopped or subscription ended. Rides
+    // every response (the redacted one too) so the full-page screen shows
+    // before sign-in. Omitted on any instance that is not a Mac spoke.
+    const service = serviceHoldHealth();
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller
     // in local_trusted dev — never anonymous authenticated callers. The
@@ -381,6 +386,7 @@ export function healthRoutes(
               ...(cloud ? { cloud } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
               ...(branding ? { branding } : {}),
+              ...(service ? { service } : {}),
             }
           : {
               status: healthStatus,
@@ -389,6 +395,7 @@ export function healthRoutes(
               ...(cloud ? { cloud } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
               ...(branding ? { branding } : {}),
+              ...(service ? { service } : {}),
             },
       );
       return;
@@ -530,6 +537,7 @@ export function healthRoutes(
         ...(cloud ? { cloud } : {}),
         ...(hiddenSettings.length ? { hiddenSettings } : {}),
         ...(branding ? { branding } : {}),
+        ...(service ? { service } : {}),
       });
       return;
     }
@@ -560,6 +568,7 @@ export function healthRoutes(
       ...(cloud ? { cloud } : {}),
       ...(hiddenSettings.length ? { hiddenSettings } : {}),
       ...(branding ? { branding } : {}),
+      ...(service ? { service } : {}),
     });
   });
 
