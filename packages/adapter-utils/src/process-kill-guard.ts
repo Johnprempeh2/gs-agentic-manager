@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { windowsProcessKillGuardFiles } from "./process-kill-guard-windows.js";
 import { shellQuote } from "./ssh.js";
 
 /**
@@ -24,9 +25,12 @@ export type ProcessKillGuard = {
 
 export const PROCESS_KILL_GUARD_COMMANDS = ["pkill", "killall"] as const;
 
-/** The wrappers rely on procps/psmisc (Linux) or the BSD tools (macOS). */
+/**
+ * The wrappers rely on procps/psmisc (Linux) or the BSD tools (macOS); on
+ * Windows a taskkill guard asks Windows itself (process-kill-guard-windows.ts).
+ */
 export function processKillGuardSupported(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "linux" || platform === "darwin";
+  return platform === "linux" || platform === "darwin" || platform === "win32";
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -514,6 +518,7 @@ export function processKillGuardFiles(
   platform: NodeJS.Platform = process.platform,
 ): Record<string, string> {
   if (!guard || !processKillGuardSupported(platform)) return {};
+  if (platform === "win32") return windowsProcessKillGuardFiles(guard);
   const script = processKillGuardScript(guard, platform);
   return Object.fromEntries(PROCESS_KILL_GUARD_COMMANDS.map((name) => [name, script]));
 }
