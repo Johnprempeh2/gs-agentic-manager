@@ -1128,6 +1128,32 @@ describe("stageCodexHomeForSync", () => {
     }
   });
 
+  // Windows has no mode bits: the staged credentials take the ACL of the folder
+  // they are staged in (os.tmpdir(), which is %LOCALAPPDATA%\Temp). That folder
+  // is private to the user, so no broad group may read the files.
+  it.runIf(process.platform === "win32")("stages credentials that Users and Everyone cannot read (Windows)", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-acl-"));
+    let staged: string | null = null;
+    try {
+      const { home } = await buildFakeHome(root);
+      staged = await stageCodexHomeForSync(home, { runId: "run-acl" });
+      const { execFileSync } = await import("node:child_process");
+      const broadGroup = /\\Users:|Everyone:|Authenticated Users:/i;
+      for (const name of ["auth.json", "config.toml"]) {
+        const acl = execFileSync("icacls", [path.join(staged, name)], { encoding: "utf8" });
+        expect(acl, `${name} ACL`).not.toMatch(broadGroup);
+      }
+      // The check itself goes red on a file Users can read.
+      const decoy = path.join(root, "decoy.txt");
+      await fs.writeFile(decoy, "x", "utf8");
+      execFileSync("icacls", [decoy, "/grant", "*S-1-5-32-545:R"]);
+      expect(execFileSync("icacls", [decoy], { encoding: "utf8" })).toMatch(broadGroup);
+    } finally {
+      if (staged) await fs.rm(staged, { recursive: true, force: true });
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   // C1 — staged credential file must be mode 0600 (not the world-readable default).
   it("writes the staged auth.json with mode 0600", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-mode-"));
