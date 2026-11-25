@@ -20,8 +20,8 @@ The first time the user opens it, the app asks for their licence key (`gsamlk_..
 | `xcode` | Asks macOS to install the Apple command line tools if they are missing (git, compilers). |
 | `node` | Downloads Node.js 24 from nodejs.org, checks its SHA-256, and keeps it in `~/Library/Application Support/GSAM/runtime`. |
 | `activate` | Checks the licence key with the hub (`src/mac-setup.mjs`, no dependencies). A wrong, used or expired key asks again. Writes `~/GSAM-data/instances/default/fleet/` (the install's key, the hub's pinned key, the operator log-in until it is made) and the first signed entitlement document. |
-| `rust` | Installs a minimal Rust toolchain with rustup into the same folder. Nothing goes on the system PATH. |
 | `code` | Clones this repository into `~/GSAM` and checks out the newest `live-*` release tag, never unreleased work on `main`. |
+| `runner` | Downloads the prebuilt native runner for that release (`paperclip-runnerd`, attached to every live release by `.github/workflows/runner-binaries.yml`), checks it against the release's `SHA256SUMS`, and keeps it in `runtime/runner/<tag>`; the service hands it to GSAM as `GSAM_RUNNER_BINARY`. Only when there is none (a test build) does it fall back to `rust`: a minimal Rust toolchain with rustup in the same folder, so the first start builds the runner from source. |
 | `deps` | `pnpm install --frozen-lockfile`. |
 | `tools` | Installs the Claude Code and Codex command line apps, which agents use to sign in with the user's own subscription. |
 | `config` | Log-ins on: authenticated mode, this Mac only (loopback), sign-up closed (invites still work). Backups every hour, kept 30 days. An existing config keeps every other value and is saved as `config.json.before-licence`. |
@@ -69,7 +69,7 @@ export GSAM_CODE_SOURCE=$PWD/../.. GSAM_CODE_REF=<branch>   # a local checkout a
 export GSAM_NO_WINDOW=1                        # do not open the GSAM window
 export GSAM_FLEET_CHECK_IN_SECONDS=20          # check in every 20 seconds instead of 5 minutes (written into the test LaunchAgent)
 GSAM_LICENCE_KEY=<key from the sandbox hub> bash src/gsam.sh activate
-for s in xcode node rust code deps tools config service wait owner; do bash src/gsam.sh $s || break; done
+for s in xcode node code runner deps tools config service wait owner; do bash src/gsam.sh $s || break; done
 ```
 
 The set-up link is then in `$GSAM_DATA_DIR/instances/default/fleet/owner-invite.json`.

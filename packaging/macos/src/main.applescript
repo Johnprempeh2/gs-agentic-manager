@@ -5,8 +5,8 @@
 property newSteps : {{"xcode", "Checking Apple's developer tools (a window may ask you to install them)"}, ¬
 	{"node", "Installing Node.js"}, ¬
 	{"activate", "Checking your licence key"}, ¬
-	{"rust", "Installing Rust (about 3 minutes)"}, ¬
 	{"code", "Downloading GSAM"}, ¬
+	{"runner", "Downloading GSAM's runner"}, ¬
 	{"deps", "Installing GSAM's components (about 5 minutes)"}, ¬
 	{"tools", "Installing the Claude and ChatGPT sign-in apps"}, ¬
 	{"config", "Turning on log-ins and hourly backups"}, ¬
@@ -16,6 +16,7 @@ property newSteps : {{"xcode", "Checking Apple's developer tools (a window may a
 
 -- An install from before licences: update, keep a backup, switch to log-ins. No data is removed.
 property licenceSteps : {{"code", "Downloading the newest GSAM"}, ¬
+	{"runner", "Downloading GSAM's runner"}, ¬
 	{"deps", "Installing GSAM's components (about 5 minutes)"}, ¬
 	{"wait", "Making sure GSAM is running"}, ¬
 	{"activate", "Checking your licence key"}, ¬
