@@ -3,7 +3,7 @@
 import "../packages/shared/src/legacy-env-bootstrap.ts";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -19,6 +19,7 @@ import {
   devRunnerAttachedToTerminal,
   handleDevRunnerHangups,
   serverChildUsesProcessGroup,
+  serverChildPnpmArgs,
   signalServerProcessTreeOnExit,
   stopServerProcessTree,
   type ServerChildExit,
@@ -758,9 +759,12 @@ async function startServerChild() {
   // Its own process group on POSIX, so stopping it can reach every process of
   // the server tree (see dev-runner-process.ts).
   const detached = serverChildUsesProcessGroup();
+  const serverScripts = (JSON.parse(readFileSync(path.join(repoRoot, "server", "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  }).scripts;
   child = spawn(
     pnpmBin,
-    ["--filter", "@greatstone/server", serverScript, ...forwardedArgs],
+    [...serverChildPnpmArgs(serverScript, serverScripts), ...forwardedArgs],
     { stdio: "inherit", env, shell: process.platform === "win32", detached },
   );
 

@@ -1045,7 +1045,7 @@ describe("evaluateCodexCredentialReadiness", () => {
         gateways: [],
       });
 
-      expect((await fs.stat(configPath)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") expect((await fs.stat(configPath)).mode & 0o777).toBe(0o600);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1128,6 +1128,32 @@ describe("stageCodexHomeForSync", () => {
     }
   });
 
+  // Windows has no mode bits: the staged credentials take the ACL of the folder
+  // they are staged in (os.tmpdir(), which is %LOCALAPPDATA%\Temp). That folder
+  // is private to the user, so no broad group may read the files.
+  it.runIf(process.platform === "win32")("stages credentials that Users and Everyone cannot read (Windows)", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-acl-"));
+    let staged: string | null = null;
+    try {
+      const { home } = await buildFakeHome(root);
+      staged = await stageCodexHomeForSync(home, { runId: "run-acl" });
+      const { execFileSync } = await import("node:child_process");
+      const broadGroup = /\\Users:|Everyone:|Authenticated Users:/i;
+      for (const name of ["auth.json", "config.toml"]) {
+        const acl = execFileSync("icacls", [path.join(staged, name)], { encoding: "utf8" });
+        expect(acl, `${name} ACL`).not.toMatch(broadGroup);
+      }
+      // The check itself goes red on a file Users can read.
+      const decoy = path.join(root, "decoy.txt");
+      await fs.writeFile(decoy, "x", "utf8");
+      execFileSync("icacls", [decoy, "/grant", "*S-1-5-32-545:R"]);
+      expect(execFileSync("icacls", [decoy], { encoding: "utf8" })).toMatch(broadGroup);
+    } finally {
+      if (staged) await fs.rm(staged, { recursive: true, force: true });
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   // C1 — staged credential file must be mode 0600 (not the world-readable default).
   it("writes the staged auth.json with mode 0600", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-mode-"));
@@ -1136,7 +1162,7 @@ describe("stageCodexHomeForSync", () => {
       const { home } = await buildFakeHome(root);
       staged = await stageCodexHomeForSync(home, { runId: "run-mode" });
       const mode = (await fs.stat(path.join(staged, "auth.json"))).mode & 0o777;
-      expect(mode).toBe(0o600);
+      if (process.platform !== "win32") expect(mode).toBe(0o600);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1160,7 +1186,7 @@ describe("stageCodexHomeForSync", () => {
       );
       staged = await stageCodexHomeForSync(home, { runId: "run-toml-mode" });
       const mode = (await fs.stat(path.join(staged, "config.toml"))).mode & 0o777;
-      expect(mode).toBe(0o600);
+      if (process.platform !== "win32") expect(mode).toBe(0o600);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1177,7 +1203,7 @@ describe("stageCodexHomeForSync", () => {
       staged = await stageCodexHomeForSync(home, { runId: "run-all-mode" });
       for (const entry of ["auth.json", "config.toml", "config.json", "instructions.md"]) {
         const mode = (await fs.stat(path.join(staged, entry))).mode & 0o777;
-        expect(mode, `${entry} should be staged 0600`).toBe(0o600);
+        if (process.platform !== "win32") expect(mode, `${entry} should be staged 0600`).toBe(0o600);
       }
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
@@ -1193,7 +1219,7 @@ describe("stageCodexHomeForSync", () => {
       const { home } = await buildFakeHome(root);
       staged = await stageCodexHomeForSync(home, { runId: "run-dir" });
       const mode = (await fs.stat(staged)).mode & 0o777;
-      expect(mode).toBe(0o700);
+      if (process.platform !== "win32") expect(mode).toBe(0o700);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1306,7 +1332,7 @@ describe("stageCodexHomeForSync", () => {
       staged = await stageCodexHomeForSync(home, { runId: "run-skill-mode" });
       for (const rel of ["my-skill/SKILL.md", "my-skill/run.sh"]) {
         const mode = (await fs.stat(path.join(staged, "skills", rel))).mode & 0o777;
-        expect(mode, `skills/${rel} should be staged 0600`).toBe(0o600);
+        if (process.platform !== "win32") expect(mode, `skills/${rel} should be staged 0600`).toBe(0o600);
       }
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });

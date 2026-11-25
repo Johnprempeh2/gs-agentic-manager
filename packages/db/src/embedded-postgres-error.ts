@@ -24,6 +24,12 @@ function summarizeRecentLogs(recentLogs: string[]): string | null {
 
 function detectEmbeddedPostgresHint(recentLogs: string[]): string | null {
   const haystack = recentLogs.join("\n").toLowerCase();
+  if (haystack.includes("by a user with administrative permissions is not")) {
+    return (
+      "Embedded PostgreSQL refuses to run with administrator rights. " +
+      "On Windows, start GSAM as a standard user (not \"Run as administrator\", and not from an elevated terminal)."
+    );
+  }
   if (!haystack.includes("could not create shared memory segment")) {
     return null;
   }

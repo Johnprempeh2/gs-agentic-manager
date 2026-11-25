@@ -17,6 +17,18 @@ describe("formatEmbeddedPostgresError", () => {
     expect(error.message).toContain("could not create shared memory segment");
   });
 
+  it("tells a Windows administrator to start GSAM as a standard user", () => {
+    const error = formatEmbeddedPostgresError(new Error("Postgres exited with code 1"), {
+      fallbackMessage: "Failed to start embedded PostgreSQL",
+      recentLogs: [
+        "Execution of PostgreSQL by a user with administrative permissions is not",
+        "permitted.",
+      ],
+    });
+
+    expect(error.message).toContain("start GSAM as a standard user");
+  });
+
   it("keeps only recent non-empty log lines in the collector", () => {
     const buffer = createEmbeddedPostgresLogBuffer(2);
     buffer.append("line one\n\n");
