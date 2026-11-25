@@ -1045,7 +1045,7 @@ describe("evaluateCodexCredentialReadiness", () => {
         gateways: [],
       });
 
-      expect((await fs.stat(configPath)).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") expect((await fs.stat(configPath)).mode & 0o777).toBe(0o600);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1136,7 +1136,7 @@ describe("stageCodexHomeForSync", () => {
       const { home } = await buildFakeHome(root);
       staged = await stageCodexHomeForSync(home, { runId: "run-mode" });
       const mode = (await fs.stat(path.join(staged, "auth.json"))).mode & 0o777;
-      expect(mode).toBe(0o600);
+      if (process.platform !== "win32") expect(mode).toBe(0o600);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1160,7 +1160,7 @@ describe("stageCodexHomeForSync", () => {
       );
       staged = await stageCodexHomeForSync(home, { runId: "run-toml-mode" });
       const mode = (await fs.stat(path.join(staged, "config.toml"))).mode & 0o777;
-      expect(mode).toBe(0o600);
+      if (process.platform !== "win32") expect(mode).toBe(0o600);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1177,7 +1177,7 @@ describe("stageCodexHomeForSync", () => {
       staged = await stageCodexHomeForSync(home, { runId: "run-all-mode" });
       for (const entry of ["auth.json", "config.toml", "config.json", "instructions.md"]) {
         const mode = (await fs.stat(path.join(staged, entry))).mode & 0o777;
-        expect(mode, `${entry} should be staged 0600`).toBe(0o600);
+        if (process.platform !== "win32") expect(mode, `${entry} should be staged 0600`).toBe(0o600);
       }
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
@@ -1193,7 +1193,7 @@ describe("stageCodexHomeForSync", () => {
       const { home } = await buildFakeHome(root);
       staged = await stageCodexHomeForSync(home, { runId: "run-dir" });
       const mode = (await fs.stat(staged)).mode & 0o777;
-      expect(mode).toBe(0o700);
+      if (process.platform !== "win32") expect(mode).toBe(0o700);
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });
       await fs.rm(root, { recursive: true, force: true });
@@ -1306,7 +1306,7 @@ describe("stageCodexHomeForSync", () => {
       staged = await stageCodexHomeForSync(home, { runId: "run-skill-mode" });
       for (const rel of ["my-skill/SKILL.md", "my-skill/run.sh"]) {
         const mode = (await fs.stat(path.join(staged, "skills", rel))).mode & 0o777;
-        expect(mode, `skills/${rel} should be staged 0600`).toBe(0o600);
+        if (process.platform !== "win32") expect(mode, `skills/${rel} should be staged 0600`).toBe(0o600);
       }
     } finally {
       if (staged) await fs.rm(staged, { recursive: true, force: true });

@@ -9,7 +9,8 @@ const tempDirs: string[] = [];
 async function makeTrustedPathWithClaude(): Promise<{ dir: string; claudePath: string }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "paperclip-probe-env-"));
   tempDirs.push(dir);
-  const claudePath = path.join(dir, "claude");
+  // Windows finds commands through PATHEXT, so an install there is claude.cmd.
+  const claudePath = path.join(dir, process.platform === "win32" ? "claude.cmd" : "claude");
   await writeFile(claudePath, "#!/bin/sh\nexit 0\n");
   await chmod(claudePath, 0o755);
   return { dir, claudePath };
