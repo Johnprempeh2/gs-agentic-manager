@@ -1,6 +1,6 @@
 {
-  "id": "f8463621-8187-4fc6-9329-f99aea718ca9",
-  "prevId": "7572837c-f65c-4115-818f-783dfc66704b",
+  "id": "e785fae1-6850-47fd-a929-9113410f2aa1",
+  "prevId": "fd34c6f9-ba2d-43fa-82ef-297c3c0a302c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -32616,135 +32616,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.fleet_orders": {
-      "name": "fleet_orders",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "fleet_instance_id": {
-          "name": "fleet_instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_by": {
-          "name": "issued_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "issued_by_user_id": {
-          "name": "issued_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "message": {
-          "name": "message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "result": {
-          "name": "result",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result_code": {
-          "name": "result_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result_at": {
-          "name": "result_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "fleet_orders_instance_seq_uq": {
-          "name": "fleet_orders_instance_seq_uq",
-          "columns": [
-            {
-              "expression": "fleet_instance_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fleet_orders_fleet_instance_id_fleet_instances_id_fk": {
-          "name": "fleet_orders_fleet_instance_id_fleet_instances_id_fk",
-          "tableFrom": "fleet_orders",
-          "tableTo": "fleet_instances",
-          "columnsFrom": [
-            "fleet_instance_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.fleet_support_attachments": {
       "name": "fleet_support_attachments",
       "schema": "",
@@ -64492,6 +64363,12 @@
         },
         "correlation_id": {
           "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

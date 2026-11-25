@@ -321,6 +321,8 @@ export interface ToolGatewaySession {
   gatewayTokenAllowedActions?: ToolMcpGatewayTokenAction[];
   actorType?: "agent" | "user" | "system" | "plugin";
   actorId?: string | null;
+  /** Person who opened this session; personal grants resolve for this person only. */
+  createdByUserId?: string | null;
   /** Human whose personal connection grant applies to this execution. */
   responsibleUserId?: string | null;
   /** Captured by the controller for this request, never accepted from tool arguments. */
@@ -335,6 +337,8 @@ export interface ToolGatewaySession {
 
 /** Same rule as run start and gh/git export: see githubIdentityScopeForRun. */
 function githubScopeForSession(session: ToolGatewaySession) {
+  // A person-opened session acts as its opener, never as the run's person.
+  if (session.createdByUserId) return { responsibleUserId: session.createdByUserId, allowStandingDelegation: false };
   return githubIdentityScopeForRun({ cause: session.identityCause, responsibleUserId: session.responsibleUserId });
 }
 
@@ -683,9 +687,15 @@ function gatewaySessionFromRow(
     runId: row.runId,
     issueId: row.issueId,
     projectId: row.projectId,
+    createdByUserId: row.createdByUserId ?? null,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
+}
+
+function sessionOpenerFromInvocation(invocation: { policyExplanation?: Record<string, unknown> | null }) {
+  const opener = invocation.policyExplanation?.sessionOpenedByUserId;
+  return typeof opener === "string" && opener ? opener : null;
 }
 
 function timeoutMs(value: number | undefined) {
@@ -2686,6 +2696,7 @@ export function createToolGatewayService(
       issueId: input.session.issueId,
       projectId: input.session.projectId,
       gatewayId: input.session.gatewayId ?? null,
+      sessionOpenedByUserId: input.session.createdByUserId ?? null,
     });
   }
 
@@ -2702,6 +2713,7 @@ export function createToolGatewayService(
     issueId?: string | null;
     projectId?: string | null;
     gatewayId?: string | null;
+    sessionOpenedByUserId?: string | null;
   }): ToolAccessDecisionInput {
     const actorType = input.actorType ?? (input.agentId ? "agent" : "system");
     const actorId =
@@ -2718,6 +2730,7 @@ export function createToolGatewayService(
         issueId: input.issueId ?? null,
         projectId: input.projectId ?? null,
         gatewayId: input.gatewayId ?? null,
+        ...(input.sessionOpenedByUserId ? { sessionOpenedByUserId: input.sessionOpenedByUserId } : {}),
       },
       request: {
         toolName: input.tool.name,
@@ -4477,6 +4490,21 @@ export function createToolGatewayService(
     session: ToolGatewaySession,
     connection: typeof toolConnections.$inferSelect,
   ): Promise<typeof connectionGrants.$inferSelect> {
+    const grant = await resolveConnectionGrantForSession(session, connection);
+    if (session.createdByUserId && grant.subjectUserId && grant.subjectUserId !== session.createdByUserId) {
+      throw new ToolGatewayHttpError(
+        403,
+        "Only the person who owns this personal connection can use it from a session they open.",
+        "personal_grant_owner_required",
+      );
+    }
+    return grant;
+  }
+
+  async function resolveConnectionGrantForSession(
+    session: ToolGatewaySession,
+    connection: typeof toolConnections.$inferSelect,
+  ): Promise<typeof connectionGrants.$inferSelect> {
     const [run] =
       session.runId && !session.identityContextId
         ? await db
@@ -4493,9 +4521,9 @@ export function createToolGatewayService(
             )
             .limit(1)
         : [];
-    const actingUserId = session.identityContextId
+    const actingUserId = session.createdByUserId ?? (session.identityContextId
       ? (session.responsibleUserId ?? null)
-      : (run?.responsibleUserId ?? session.responsibleUserId ?? null);
+      : (run?.responsibleUserId ?? session.responsibleUserId ?? null));
     if (
       session.identityContextId &&
       session.agentId &&
@@ -8057,6 +8085,7 @@ export function createToolGatewayService(
       gatewayTokenId: invocation.gatewayTokenId,
       actorType: "agent",
       actorId: invocation.agentId,
+      createdByUserId: sessionOpenerFromInvocation(invocation),
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
     };
@@ -8336,6 +8365,9 @@ export function createToolGatewayService(
           eq(toolActionRequests.canonicalArgumentsHash, input.argumentsHash),
           eq(toolInvocations.agentId, input.session.agentId),
           eq(toolInvocations.toolName, input.toolName),
+          input.session.createdByUserId
+            ? sql`${toolInvocations.policyExplanation}->>'sessionOpenedByUserId' = ${input.session.createdByUserId}`
+            : sql`(${toolInvocations.policyExplanation}->>'sessionOpenedByUserId') is null`,
           inArray(toolActionRequests.status, [
             "pending",
             "approved",
@@ -9025,6 +9057,7 @@ export function createToolGatewayService(
       ttlMs?: number;
       actorType?: LogActivityInput["actorType"];
       actorId?: string;
+      createdByUserId?: string | null;
     }): Promise<ToolGatewaySession> {
       await assertAgentInCompany(input.companyId, input.agentId);
       const { issueId, projectId } = await resolveRunContext(input);
@@ -9039,6 +9072,7 @@ export function createToolGatewayService(
         runId: input.runId,
         issueId,
         projectId,
+        createdByUserId: input.createdByUserId ?? null,
         createdAt: now,
         expiresAt: new Date(now.getTime() + sessionTtlMs(input.ttlMs)),
       };
@@ -9050,6 +9084,7 @@ export function createToolGatewayService(
         runId: input.runId,
         issueId: session.issueId,
         projectId: session.projectId,
+        createdByUserId: session.createdByUserId,
         tokenHash: hashGatewayToken(token),
         expiresAt: session.expiresAt,
         createdAt: session.createdAt,
@@ -9890,6 +9925,7 @@ export function createToolGatewayService(
           runId: invocation.runId,
           issueId: issue.id,
           projectId: issue.projectId,
+          createdByUserId: sessionOpenerFromInvocation(invocation),
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
         };
