@@ -258,6 +258,34 @@ full test suite). Added by W3 to W5:
 | Code signing | Unsigned: SmartScreen warns (More info, then Run anyway). The hook is in place (`GSAM_SIGN_COMMAND`, Inno's `SignTool`). | S once a certificate exists |
 | Publish the runner binaries for the current live tag | The workflow publishes on each new `live-*` tag. A tag made before it needs one manual run (Actions, Runner binaries, Run workflow, tag). Until then, a new Windows install of that tag has no runner to download and stops with a clear message. | S |
 
+## Release assets: both installers on every live release
+
+`.github/workflows/release-assets.yml` builds everything a customer downloads
+and, on each `live-*` tag, attaches it to that tag's GitHub release with one
+`SHA256SUMS`: the three runner binaries, **`GSAM-Installer.dmg`** (Mac) and
+**`GSAM-Setup.exe`** (Windows). The release is marked latest only when it is
+the newest `live-*` tag, so
+`https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/<file>`
+always serves the newest installers, and the website links there. A run by
+hand with a tag back-fills a tag made before the workflow (not run yet: to be
+done with John, since it publishes to the public repository). Pull requests
+build everything as workflow artifacts, plus screenshots of the mounted DMG
+window (Light and Dark Mode) and of the Windows wizard. The installers take
+the hub address from the repository variable `GSAM_HUB_URL`; unset, they
+still build, with a warning, and say at activation that they do not know
+where Greatstone's service is.
+
+The Mac installer was polished at the same time (`packaging/macos`): a
+branded disk image laid out by dmgbuild (pinned, hashes checked; no Finder
+needed, so it builds in CI), Greatstone void background with the wordmark and
+a lime arrow from GSAM to the Applications alias, the stone as the volume
+icon, the window exactly the size of the background, icon labels on
+`#767676` pills (Finder draws them black or white depending on the Mac; both
+pass AA on that grey), and the first-open step (right-click, then Open) on
+the background and in the README. `GSAM.app` is an AppleScript applet, which
+is universal; the build fails if it ever is not. Still ad hoc signed and not
+notarised.
+
 ## W3: prebuilt runner binaries (built)
 
 `.github/workflows/release-assets.yml` builds `paperclip-runnerd` with the

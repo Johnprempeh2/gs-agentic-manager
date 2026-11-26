@@ -102,6 +102,12 @@ try {
   Check $false "unexpected error: $($_.Exception.Message)"
 } finally {
   & taskkill.exe /PID $hubProc.Id /T /F 2>&1 | Out-Null
+  # Every log, for the job to keep (the standard user may write in the checkout).
+  $keep = Join-Path $repo "installer-logs"
+  New-Item -ItemType Directory -Force -Path $keep | Out-Null
+  foreach ($f in "$work\install.log", "$env:LOCALAPPDATA\GSAM\setup.log", "$env:USERPROFILE\GSAM-data\gsam.log", "$work\hub.log") {
+    if (Test-Path $f) { Copy-Item $f (Join-Path $keep (Split-Path $f -Leaf)) -Force }
+  }
   foreach ($f in "$work\install.log", "$env:LOCALAPPDATA\GSAM\setup.log", "$env:USERPROFILE\GSAM-data\gsam.log", "$work\hub.log") {
     if ($failures.Count -gt 0 -and (Test-Path $f)) {
       Write-Output "---- ${f}: error lines"
