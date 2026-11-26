@@ -102,7 +102,7 @@ jobs:
       - name: Codex home tests as a standard user
         shell: powershell
         run: |
-          & scripts/windows/run-as-standard-user.ps1 -Name codex-home -TimeoutMinutes 15 -Command "npx vitest run packages/adapters/codex-local/src/server/codex-home.test.ts"
+          & scripts/windows/run-as-standard-user.ps1 -Name codex-home -TimeoutMinutes 15 -Command "set ""GSAM_EXPECT_NO_SYMLINKS=1"" && npx vitest run packages/adapters/codex-local/src/server/codex-home-windows.test.ts"
           exit $LASTEXITCODE
 
       - name: Unit tests (paths, processes, dev runner)
