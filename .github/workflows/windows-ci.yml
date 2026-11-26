@@ -260,6 +260,7 @@ jobs:
           dir /AL "node_modules\.pnpm\esbuild@0.28.2\node_modules\@esbuild"
           dir "node_modules\.pnpm" | findstr /i "esbuild+win32"
           '@
+          $probe = $probe.Replace('%GITHUB_WORKSPACE%', $env:GITHUB_WORKSPACE)
           Set-Content -Path "$env:RUNNER_TEMP\probe.cmd" -Value $probe -Encoding Ascii
           icacls "$env:RUNNER_TEMP\probe.cmd" /grant "Users:RX" /Q | Out-Null
           Write-Output "########## as the runner's administrator"
