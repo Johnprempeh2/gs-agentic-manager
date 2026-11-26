@@ -135,6 +135,7 @@ import {
   documentEvidenceBulletIdSchema,
   upsertDocumentEvidenceSchema,
   BLOCKED_WITHOUT_REASON_MESSAGE,
+  SELF_OWNED_BLOCK_WITHOUT_WAKE_MESSAGE,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -422,6 +423,10 @@ import {
 import { externalObjectService } from "../services/external-objects.js";
 import { getExternalChannelBindingSummary } from "../services/chat-channel-binding.js";
 import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
+import {
+  hasDeferredUnblockWake,
+  isSelfOwnedUnblock,
+} from "../services/recovery/self-owned-block.js";
 import {
   assertIssueReviewVerdictActorAllowed,
   isIssueReviewVerdictInteraction,
@@ -15128,6 +15133,29 @@ export function issueRoutes(
           res.status(400).json({
             error: BLOCKED_WITHOUT_REASON_MESSAGE,
             code: "issue_blocked_without_reason",
+          });
+          return;
+        }
+        // GRE-6360: naming the assignee as its own unblock owner wakes no one
+        // else, so the block must also have a path that will move it.
+        const blockedAssigneeAgentId =
+          updateFields.assigneeAgentId === undefined
+            ? existing.assigneeAgentId
+            : (updateFields.assigneeAgentId as string | null);
+        const blockedMonitorNextCheckAt =
+          updateFields.monitorNextCheckAt === undefined
+            ? existing.monitorNextCheckAt
+            : (updateFields.monitorNextCheckAt as Date | null);
+        if (
+          !hasUnresolvedBlocker &&
+          !pendingInteraction &&
+          !pendingApproval &&
+          isSelfOwnedUnblock(descriptor, blockedAssigneeAgentId) &&
+          !hasDeferredUnblockWake(descriptor, blockedMonitorNextCheckAt, new Date())
+        ) {
+          res.status(400).json({
+            error: SELF_OWNED_BLOCK_WITHOUT_WAKE_MESSAGE,
+            code: "issue_blocked_self_owned_without_wake",
           });
           return;
         }

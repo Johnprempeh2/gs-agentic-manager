@@ -830,37 +830,66 @@ export const BLOCKED_WITHOUT_REASON_MESSAGE =
   "or unblockDescriptor { owner, action } (who must act and what they must do), " +
   "or (on an existing task) open a card on it first.";
 
+export const SELF_OWNED_BLOCK_WITHOUT_WAKE_MESSAGE =
+  "The unblock owner is the task's own assignee, so nothing will wake it. " +
+  "Add a wake path: send blockedByIssueIds (the open task it waits on), open a card on it first, " +
+  "schedule a monitor, or set unblockDescriptor.expectedBy (the day to check again). " +
+  "A board user may instead name another owner, who is woken when the task is blocked.";
+
+type BlockedCreateValue = {
+  status?: string;
+  assigneeAgentId?: string | null;
+  blockedByIssueIds?: string[];
+  unblockDescriptor?: unknown;
+  executionPolicy?: { monitor?: unknown } | null;
+};
+
 /**
  * GRE-2329: a new task cannot start blocked with nothing blocking it. It has
  * no cards yet, so a blocker or an unblock descriptor is the only reason.
+ * GRE-6360: a descriptor that names the assignee itself is no reason unless
+ * something will wake it: a waiting date, a card, or a monitor.
  */
 function requireReasonForBlockedCreate(
-  value: {
-    status?: string;
-    blockedByIssueIds?: string[];
-    unblockDescriptor?: unknown;
-  },
+  value: BlockedCreateValue,
   ctx: z.RefinementCtx,
 ) {
-  if (
-    value.status === "blocked" &&
-    (value.blockedByIssueIds?.length ?? 0) === 0 &&
-    value.unblockDescriptor == null
-  ) {
+  if (value.status !== "blocked" || (value.blockedByIssueIds?.length ?? 0) > 0) return;
+  if (value.unblockDescriptor == null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: BLOCKED_WITHOUT_REASON_MESSAGE,
       path: ["status"],
     });
+    return;
+  }
+  const descriptor = value.unblockDescriptor as {
+    owner?: unknown;
+    expectedBy?: string;
+    interactionId?: string;
+  };
+  const owner = descriptor.owner;
+  const selfOwned =
+    !!value.assigneeAgentId &&
+    typeof owner === "object" &&
+    owner !== null &&
+    (owner as { agentId?: string }).agentId === value.assigneeAgentId;
+  if (
+    selfOwned &&
+    !descriptor.expectedBy &&
+    !descriptor.interactionId &&
+    !value.executionPolicy?.monitor
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: SELF_OWNED_BLOCK_WITHOUT_WAKE_MESSAGE,
+      path: ["unblockDescriptor", "owner"],
+    });
   }
 }
 
 function refineCreateIssue(
-  value: {
-    status?: string;
-    blockedByIssueIds?: string[];
-    unblockDescriptor?: unknown;
-  },
+  value: BlockedCreateValue,
   ctx: z.RefinementCtx,
 ) {
   requireBlockedStatusForUnblockDescriptor(value, ctx);

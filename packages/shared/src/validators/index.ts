@@ -434,6 +434,7 @@ export {
 export {
   createIssueSchema,
   BLOCKED_WITHOUT_REASON_MESSAGE,
+  SELF_OWNED_BLOCK_WITHOUT_WAKE_MESSAGE,
   describeUnknownIssueFields,
   createIssueInputSchema,
   createChildIssueSchema,
