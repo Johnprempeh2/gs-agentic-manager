@@ -229,7 +229,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: Compare
+      - name: The engine's steps as a standard user, then the failing link
         shell: powershell
         run: |
           $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
@@ -237,34 +237,37 @@ jobs:
           Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
           corepack enable
           git branch -f diag HEAD
+          $engine = Join-Path $env:GITHUB_WORKSPACE "packaging\windows\src\gsam.ps1"
           $probe = @'
           @echo off
-          set "GIT_CONFIG_COUNT=1"
-          set "GIT_CONFIG_KEY_0=safe.directory"
-          set "GIT_CONFIG_VALUE_0=*"
-          set "D=%LOCALAPPDATA%\diag-%1"
-          git clone -q --no-checkout "%GITHUB_WORKSPACE%" "%D%"
-          git -C "%D%" checkout -q diag
-          cd /d "%D%"
-          echo === whoami & whoami
-          call corepack pnpm --version
-          call corepack pnpm install --frozen-lockfile --ignore-scripts > "%D%\install.log" 2>&1
-          echo install exit %ERRORLEVEL%
-          findstr /i "WARN ERR EPERM symlink junction" "%D%\install.log"
+          set "GSAM_CODE_SOURCE=%GITHUB_WORKSPACE%"
+          set "GSAM_CODE_REF=diag"
+          set "GSAM_NONINTERACTIVE=1"
+          for %%s in (node git code deps) do (
+            echo === step %%s
+            powershell -NoProfile -ExecutionPolicy Bypass -File "%ENGINE%" %%s
+            echo exit %%ERRORLEVEL%%
+          )
+          echo === engine log, errors
+          findstr /i "ERR_ unknown Failed EPERM" "%LOCALAPPDATA%\GSAM\setup.log"
+          cd /d "%LOCALAPPDATA%\GSAM\app"
+          echo === env
+          echo cd=%CD% LOCALAPPDATA=%LOCALAPPDATA% TEMP=%TEMP%
           echo === links in cpu-features
           dir /AL "node_modules\.pnpm\cpu-features@0.0.10\node_modules"
-          fsutil reparsepoint query "node_modules\.pnpm\cpu-features@0.0.10\node_modules\buildcheck"
-          echo === read through it
-          node -e "try{console.log(require('fs').readFileSync('node_modules/.pnpm/cpu-features@0.0.10/node_modules/buildcheck/package.json','utf8').length,'bytes')}catch(e){console.log('READ FAILED',e.code,e.message)}"
-          echo === esbuild platform package
-          dir /AL "node_modules\.pnpm\esbuild@0.28.2\node_modules\@esbuild"
-          dir "node_modules\.pnpm" | findstr /i "esbuild+win32"
+          fsutil reparsepoint query "node_modules\.pnpm\cpu-features@0.0.10\node_modules\buildcheck" | findstr /i "Tag Name"
+          echo === read through it with the engine's node
+          "%LOCALAPPDATA%\GSAM\runtime\node\node.exe" -e "try{console.log(require('fs').readFileSync('node_modules/.pnpm/cpu-features@0.0.10/node_modules/buildcheck/package.json','utf8').length,'bytes')}catch(e){console.log('READ FAILED',e.code,e.message)}"
+          "%LOCALAPPDATA%\GSAM\runtime\node\node.exe" -e "try{console.log(require.resolve('buildcheck/package.json',{paths:[require('path').resolve('node_modules/.pnpm/cpu-features@0.0.10/node_modules/cpu-features')]}))}catch(e){console.log('RESOLVE FAILED',e.code,e.message)}"
+          echo === git attributes of the clone
+          "%LOCALAPPDATA%\GSAM\runtime\git\cmd\git.exe" -C . config --list --show-origin | findstr /i "symlink longpath autocrlf"
+          echo === pnpm install again with the normal PATH
+          call corepack pnpm install --frozen-lockfile > "%TEMP%\again.log" 2>&1
+          echo again exit %ERRORLEVEL%
+          findstr /i "ERR_ unknown Failed" "%TEMP%\again.log"
           '@
-          $probe = $probe.Replace('%GITHUB_WORKSPACE%', $env:GITHUB_WORKSPACE)
+          $probe = $probe.Replace('%GITHUB_WORKSPACE%', $env:GITHUB_WORKSPACE).Replace('%ENGINE%', $engine)
           Set-Content -Path "$env:RUNNER_TEMP\probe.cmd" -Value $probe -Encoding Ascii
           icacls "$env:RUNNER_TEMP\probe.cmd" /grant "Users:RX" /Q | Out-Null
-          Write-Output "########## as the runner's administrator"
-          cmd /d /c "$env:RUNNER_TEMP\probe.cmd" admin
-          Write-Output "########## as a standard user"
-          & scripts/windows/run-as-standard-user.ps1 -Name diag -TimeoutMinutes 25 -Command "call ""$env:RUNNER_TEMP\probe.cmd"" std"
+          & scripts/windows/run-as-standard-user.ps1 -Name diag -TimeoutMinutes 35 -Command "call ""$env:RUNNER_TEMP\probe.cmd"""
           exit 0
