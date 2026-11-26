@@ -1,6 +1,7 @@
 import { getAgentWorkEligibility, isAgentInvokable, type IssueUnblockDescriptor } from "@greatstone/shared";
 import { buildIssueGraphLivenessIncidentKey } from "./origins.js";
 import { isHumanUnblockOwner } from "./human-wait-deadline.js";
+import { hasDeferredUnblockWake } from "./self-owned-block.js";
 
 export type IssueLivenessSeverity = "warning" | "critical";
 
@@ -523,6 +524,9 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
   function hasExplicitWaitingPath(issue: IssueLivenessIssueInput) {
     return Boolean(issue.assigneeUserId) ||
       hasScheduledIssueMonitorPath(issue, nowMs) ||
+      // GRE-6360: the card it waits on, or a waiting date whose wake has not
+      // fired, will move it later.
+      hasDeferredUnblockWake(issue.unblockDescriptor, null, new Date(nowMs)) ||
       hasActiveExecutionPath(issue.companyId, issue.id, activeRuns, queuedWakeRequests) ||
       hasWaitingPath(issue.companyId, issue.id, pendingInteractions) ||
       hasWaitingPath(issue.companyId, issue.id, pendingApprovals) ||

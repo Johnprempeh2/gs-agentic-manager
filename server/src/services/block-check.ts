@@ -12,6 +12,7 @@ import type {
   IssueUnblockDescriptor,
   IssueUnblockOwner,
 } from "@greatstone/shared";
+import { hasDeferredUnblockWake, isSelfOwnedUnblock } from "./recovery/self-owned-block.js";
 
 /** Tasks read per kind of row in one check; keeps one request bounded. */
 export const BLOCK_CHECK_LIMIT = 1000;
@@ -39,6 +40,7 @@ export type BlockCheckTaskRow = {
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
   unblockDescriptor: IssueUnblockDescriptor | null;
+  monitorNextCheckAt?: Date | null;
   blockedTransitionAt: Date | null;
   updatedAt: Date;
 };
@@ -95,7 +97,7 @@ function fingerprintOf(items: BlockCheckItem[]) {
 
 /**
  * Finds the blocks a project lead should look at (GRE-2287): blocked tasks
- * nothing recorded holds, blocks whose blocker or card is already closed or
+ * nothing recorded holds (or only their own assignee, GRE-6360), blocks whose blocker or card is already closed or
  * answered, titles that name a condition, and asks a person has sat on for
  * over a day. Grouped by project, so each lead reads only their own.
  */
@@ -173,6 +175,17 @@ export function buildBlockCheck(input: {
             detail: "Blocked, but nothing recorded is blocking it.",
             since: since.toISOString(),
           });
+        } else if (
+          isSelfOwnedUnblock(row.unblockDescriptor, row.assigneeAgentId) &&
+          !hasDeferredUnblockWake(row.unblockDescriptor, row.monitorNextCheckAt, input.now)
+        ) {
+          // GRE-6360: the assignee named itself as the way out, and nothing
+          // else will wake it.
+          add(row, {
+            kind: "unexplained",
+            detail: `Blocked on its own assignee, and nothing will wake it: ${action}`,
+            since: since.toISOString(),
+          });
         } else if (isPerson(row.unblockDescriptor?.owner) && since.getTime() < askCutoff) {
           add(row, {
             kind: "old_human_ask",
@@ -241,6 +254,7 @@ const taskColumns = {
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
   unblockDescriptor: issues.unblockDescriptor,
+  monitorNextCheckAt: issues.monitorNextCheckAt,
   blockedTransitionAt: issues.blockedTransitionAt,
   updatedAt: issues.updatedAt,
 };
