@@ -97,8 +97,31 @@ describe("GRE-72 blocked issue with no action path", () => {
     // open recovery action already has an owner and is on the board.
     ["an open recovery action", gre37({ unblockDescriptor: null }), { openRecoveryIssues: [{ companyId, issueId: "issue-37", status: "escalated" }] }],
     ["a queued wake", gre37(), { queuedWakeRequests: [{ companyId, issueId: "issue-37", status: "queued" }] }],
+    // GRE-6360: the waiting-date sweep wakes the assignee once the day passes.
+    [
+      "a waiting date whose wake has not fired",
+      gre37({ unblockDescriptor: { owner: { agentId: assigneeId }, action: "Chase the client.", expectedBy: "2026-09-27" } }),
+      {},
+    ],
+    [
+      "the card it waits on",
+      gre37({ unblockDescriptor: { owner: { agentId: assigneeId }, action: "Wait for the answer.", interactionId: "card-1" } }),
+      {},
+    ],
   ] as const)("does not flag an issue with %s", (_label, issue, extra) => {
     expect(classify(issue, extra as Partial<IssueGraphLivenessInput>)).toEqual([]);
+  });
+
+  it("flags a self-owned block once its waiting-date wake has fired", () => {
+    const woken = gre37({
+      unblockDescriptor: {
+        owner: { agentId: assigneeId },
+        action: "Chase the client.",
+        expectedBy: "2026-09-27",
+        expectedByWokenFor: "2026-09-27",
+      },
+    });
+    expect(classify(woken)[0]?.state).toBe("blocked_without_action_path");
   });
 
   it("does not flag a blocked issue that waits on a live blocker", () => {
