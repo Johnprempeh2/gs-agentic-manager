@@ -103,7 +103,11 @@ try {
 } finally {
   & taskkill.exe /PID $hubProc.Id /T /F 2>&1 | Out-Null
   foreach ($f in "$work\install.log", "$env:LOCALAPPDATA\GSAM\setup.log", "$env:USERPROFILE\GSAM-data\gsam.log", "$work\hub.log") {
-    if ($failures.Count -gt 0 -and (Test-Path $f)) { Write-Output "---- $f (last 60 lines)"; Get-Content $f -Tail 60 }
+    if ($failures.Count -gt 0 -and (Test-Path $f)) {
+      Write-Output "---- $f: error lines"
+      Select-String -Path $f -Pattern 'ERR_|ERROR|Error:|error |Failed|EPERM|EBUSY|ENOENT|UNKNOWN|unknown error' | Select-Object -Last 60 | ForEach-Object { $_.Line }
+      Write-Output "---- $f (last 60 lines)"; Get-Content $f -Tail 60
+    }
   }
 }
 if ($failures.Count -gt 0) { Write-Output "[installer-smoke] $($failures.Count) check(s) failed"; exit 1 }

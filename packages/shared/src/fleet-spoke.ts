@@ -67,7 +67,7 @@ export function registrationSubject(registrationCode: string): string {
 
 export function signFleetMessage(
   privateJwk: JsonWebKey,
-  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn | FleetCheckInV3; support?: FleetSupportSync; attachment?: FleetSupportAttachment },
+  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn | FleetCheckInV3 | FleetCheckInV4; support?: FleetSupportSync; attachment?: FleetSupportAttachment },
   now = Date.now(),
 ): string {
   const iat = Math.floor(now / 1000);

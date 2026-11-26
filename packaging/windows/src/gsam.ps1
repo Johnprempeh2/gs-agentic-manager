@@ -214,8 +214,19 @@ switch ($Step) {
   }
 
   "deps" {
+    # Once more on failure: antivirus scanning thousands of new files can lock one for a moment,
+    # and a second install only fills in what the first missed.
     Push-Location $Code
-    try { Run (Join-Path $NodeDir "corepack.cmd") @("pnpm", "install", "--frozen-lockfile") "GSAM's components could not be installed. Check the internet connection and try again." }
+    try {
+      $pnpm = Join-Path $NodeDir "corepack.cmd"
+      $first = Start-Process -FilePath $pnpm -ArgumentList "pnpm install --frozen-lockfile" -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput "$Log.out" -RedirectStandardError "$Log.err"
+      foreach ($f in "$Log.out", "$Log.err") { if (Test-Path $f) { Get-Content $f | Add-Content -Path $Log; Remove-Item $f } }
+      if ($first.ExitCode -ne 0) {
+        Say "deps: pnpm install failed ($($first.ExitCode)); once more"
+        Run $pnpm @("pnpm", "install", "--frozen-lockfile") "GSAM's components could not be installed. Check the internet connection and try again."
+      }
+    }
     finally { Pop-Location }
   }
 

@@ -85,8 +85,20 @@ jobs:
           & scripts/windows/run-as-standard-user.ps1 -Name smoke -Command """$node"" scripts\native-install-smoke.mjs --port 3197"
           exit $LASTEXITCODE
 
-      # Standard users cannot make file symlinks without Developer Mode, which
-      # the Codex managed home uses: run its tests as one.
+      # Standard users cannot make file symlinks without Developer Mode or the
+      # symlink privilege, which the Codex managed home uses. Make sure this PC
+      # is like a customer's (Developer Mode off), show what the standard user
+      # may do, then run the Codex home tests as that user.
+      - name: Developer Mode off, as on a customer's PC
+        shell: powershell
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          Write-Output ("Developer Mode before: " + (Get-ItemProperty $key -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense)
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
+          & scripts/windows/run-as-standard-user.ps1 -Name whoami -TimeoutMinutes 2 -Command "whoami /groups /priv"
+          exit $LASTEXITCODE
+
       - name: Codex home tests as a standard user
         shell: powershell
         run: |
@@ -191,6 +203,10 @@ jobs:
       - name: Install, check and uninstall as a standard user
         shell: powershell
         run: |
+          # As on a customer's PC: Developer Mode off.
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
           git branch -f gsam-installer-smoke HEAD
           $installer = Resolve-Path packaging\windows\dist\GSAM-Setup.exe
           $runner = Resolve-Path packages\paperclip-runner\dist\bin\paperclip-runnerd.exe

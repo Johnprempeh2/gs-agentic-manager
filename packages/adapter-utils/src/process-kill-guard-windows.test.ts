@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -75,7 +76,9 @@ describe.runIf(onWindows)("Windows process kill guard against real processes", (
   it("is first on the run's PATH for cmd.exe and Git Bash", async () => {
     const { env } = await stage();
     const where = spawnSync("where.exe", ["taskkill"], { env: { ...process.env, PATH: env.PATH }, encoding: "utf8" });
-    expect(where.stdout.trim().split(/\r?\n/)[0].toLowerCase()).toBe(path.join(env.GSAM_GITHUB_LAUNCHER_DIR, "taskkill.cmd").toLowerCase());
+    // Compared as real paths: Windows may spell the temp folder in its short 8.3 form.
+    const first = realpathSync.native(where.stdout.trim().split(/\r?\n/)[0]);
+    expect(first.toLowerCase()).toBe(realpathSync.native(path.join(env.GSAM_GITHUB_LAUNCHER_DIR, "taskkill.cmd")).toLowerCase());
   });
 
   it("ends the agent's own process and leaves the server and live's processes alone", async () => {
