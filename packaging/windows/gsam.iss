@@ -53,7 +53,7 @@ Name: "{userprograms}\GSAM log"; Filename: "{sys}\WindowsPowerShell\v1.0\powersh
   Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\gsam.ps1"" log"
 
 [UninstallRun]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\gsam.ps1"" uninstall"; \
   Flags: runhidden waituntilterminated; RunOnceId: "GsamUninstall"
 
@@ -93,7 +93,7 @@ begin
   begin
     SetEnvironmentVariable('GSAM_LICENCE_KEY', Trim(KeyPage.Values[0]));
     WizardForm.StatusLabel.Caption := 'Setting up GSAM. A window shows each step; it takes about 15 minutes.';
-    Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
       '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\gsam.ps1') + '" setup',
       '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
     SetEnvironmentVariable('GSAM_LICENCE_KEY', '');

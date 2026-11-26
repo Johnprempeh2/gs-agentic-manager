@@ -9,6 +9,12 @@
 # a step fails (exit code 1).
 param([Parameter(Position = 0)][string]$Step = "", [Parameter(Position = 1)][string]$Arg = "")
 $ErrorActionPreference = "Stop"
+# Always 64-bit. The installer (Inno Setup) is a 32-bit program, and Windows quietly gives
+# a 32-bit program the 32-bit PowerShell; everything GSAM installs is 64-bit.
+if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+  & (Join-Path $env:WINDIR "sysnative\WindowsPowerShell\v1.0\powershell.exe") -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath $Step $Arg
+  exit $LASTEXITCODE
+}
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is many times slower with the progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -50,7 +56,7 @@ $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
 New-Item -ItemType Directory -Force -Path $AppHome, $Runtime, $Data | Out-Null
 
 function Say([string]$Text) { Add-Content -Path $Log -Value $Text }
-Say "=== $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $Step $Arg"
+Say "=== $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $Step $Arg (64-bit: $([Environment]::Is64BitProcess), $env:PROCESSOR_ARCHITECTURE)"
 
 # A message the person sees in the installer's error box.
 function Fail([string]$Message) {
