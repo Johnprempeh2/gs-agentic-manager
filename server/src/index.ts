@@ -66,6 +66,8 @@ import {
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
 import { readEntitlementConfig } from "./services/entitlement-document.js";
+import { startFleetSpoke } from "./services/fleet-spoke.js";
+import { serverVersion } from "./version.js";
 import { createEntitlementRuntime, setEntitlementRuntime } from "./services/entitlement-runtime.js";
 import { entitlementActivityAuditSink } from "./services/entitlement-audit.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
@@ -1819,7 +1821,8 @@ async function startServerWithDatabaseTeardown(
     // session-goal recovery below is deferred to that first tick.
     const startupRestartRecoveryAllowed =
       !heartbeatSchedulingSuppression.suppressed ||
-      heartbeatSchedulingSuppression.reason === "task_drain";
+      heartbeatSchedulingSuppression.reason === "task_drain" ||
+      heartbeatSchedulingSuppression.reason === "service_hold";
     let sessionGoalRecoveryDeferred = false;
     const recoverSessionGoals = async (phase: "startup" | "deferred") => {
       const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
@@ -2448,6 +2451,15 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // GSAM for Mac (P1): owner and operator set-up, and check-ins to the hub. Only when the app activated a licence.
+  const stopFleetSpoke = startFleetSpoke({
+    db: db as any,
+    instanceRoot: resolvePaperclipInstanceRoot(),
+    port: listenPort,
+    backupDir: config.databaseBackupDir,
+    appVersion: serverVersion,
+  });
+
   setStartupRecoveryPhase("ready");
   logger.info(`Server startup recovery complete on ${config.host}:${listenPort}`);
   void systemdNotify(["--ready", `--status=Listening on ${config.host}:${listenPort}`]).then((notified) => {
@@ -2507,6 +2519,7 @@ async function startServerWithDatabaseTeardown(
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
     entitlementRuntime?.stop();
+    stopFleetSpoke?.();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
     agentDailyDigestStopped = true;

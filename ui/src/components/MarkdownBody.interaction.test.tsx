@@ -167,3 +167,42 @@ describe("MarkdownBody issue mention chips", () => {
     expect(issuesApi.get).not.toHaveBeenCalled();
   });
 });
+
+describe("MarkdownBody image clicks", () => {
+  function renderWithImageClick(markdown: string, onImageClick: (src: string) => void) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    flushSync(() => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <MarkdownBody onImageClick={onImageClick}>{markdown}</MarkdownBody>
+          </ThemeProvider>
+        </QueryClientProvider>,
+      );
+    });
+    return container;
+  }
+
+  it.each([
+    "javascript:alert(1)//issues/PAP-1",
+    "javascript:alert(1)",
+    "data:text/html,x//issues/PAP-1",
+  ])("never hands an unsafe image URL to the click handler: %s", (src) => {
+    const onImageClick = vi.fn();
+    const node = renderWithImageClick(`![x](${src})`, onImageClick);
+    const image = node.querySelector("img");
+    image?.click();
+    expect(onImageClick).not.toHaveBeenCalled();
+    expect(image?.getAttribute("src") ?? "").not.toMatch(/^(javascript|data):/i);
+  });
+
+  it("hands an http image URL to the click handler", () => {
+    const onImageClick = vi.fn();
+    const node = renderWithImageClick("![x](https://example.com/a.png)", onImageClick);
+    node.querySelector("img")?.click();
+    expect(onImageClick).toHaveBeenCalledWith("https://example.com/a.png");
+  });
+});

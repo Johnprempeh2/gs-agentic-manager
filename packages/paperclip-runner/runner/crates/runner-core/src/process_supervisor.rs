@@ -960,7 +960,9 @@ impl SupervisedProcess {
         self.stdin.take();
         #[cfg(unix)]
         signal_process_group(self.process_group_id, "TERM");
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        kill_process_tree(self.process_group_id);
+        #[cfg(not(any(unix, windows)))]
         let _ = self.child.kill();
 
         let deadline = Instant::now() + self.shutdown_grace;
@@ -979,7 +981,9 @@ impl SupervisedProcess {
 
         #[cfg(unix)]
         signal_process_group(self.process_group_id, "KILL");
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        kill_process_tree(self.process_group_id);
+        #[cfg(not(any(unix, windows)))]
         let _ = self.child.kill();
         self.wait()
     }
@@ -1002,6 +1006,21 @@ fn signal_process_group(process_group_id: u32, signal: &str) {
             format!("-{process_group_id}"),
         ])
         .env_clear()
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// Windows has no process groups: `Child::kill` ends only the direct child and
+/// orphans what it started (a provider CLI behind a `.cmd` shim is cmd.exe,
+/// then node, then its own children). End the whole tree instead.
+// ponytail: taskkill walks the tree at kill time, so a descendant that was
+// re-parented earlier escapes; a Job Object with KILL_ON_JOB_CLOSE closes that
+// gap (doc/plans/2026-11-25-gsam-for-windows.md).
+#[cfg(windows)]
+fn kill_process_tree(process_id: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/PID", &process_id.to_string(), "/T", "/F"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();

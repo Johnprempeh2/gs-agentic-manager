@@ -9,6 +9,7 @@ import { Link, useCaseHref } from "@/lib/router";
 import { useTheme } from "../context/ThemeContext";
 import { useOptionalCompany } from "../context/CompanyContext";
 import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
+import { safeNavigableUrl } from "../lib/safe-url";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { findIssueInCachedLists } from "../lib/issueDetailCache";
@@ -383,7 +384,10 @@ function extractMermaidSource(children: ReactNode): string | null {
 function safeMarkdownUrlTransform(url: string): string {
   if (url.startsWith(WORKSPACE_FILE_HREF_PREFIX)) return url;
   if (url.startsWith(SETTINGS_WINDOW_HREF_PREFIX)) return url;
-  return parseMentionChipHref(url) ? url : defaultUrlTransform(url);
+  const mention = parseMentionChipHref(url);
+  if (!mention) return defaultUrlTransform(url);
+  if (mention.kind === "issue") return safeNavigableUrl(url) ?? "";
+  return url;
 }
 
 type MarkdownAstNode = {
@@ -1012,13 +1016,14 @@ function MarkdownBodyImpl({
       map.img = ({ node: _node, src, alt, ...imgProps }) => {
         const resolved = resolveImageSrc && src ? resolveImageSrc(src) : null;
         const finalSrc = resolved ?? src;
+        const clickSrc = onImageClick ? safeNavigableUrl(finalSrc) : null;
         return (
           <img
             {...imgProps}
             src={finalSrc}
             alt={alt ?? ""}
-            onClick={onImageClick && finalSrc ? (e) => { e.preventDefault(); onImageClick(finalSrc); } : undefined}
-            style={onImageClick ? { cursor: "pointer", ...(imgProps.style as React.CSSProperties | undefined) } : imgProps.style as React.CSSProperties | undefined}
+            onClick={onImageClick && clickSrc ? (e) => { e.preventDefault(); onImageClick(clickSrc); } : undefined}
+            style={clickSrc ? { cursor: "pointer", ...(imgProps.style as React.CSSProperties | undefined) } : imgProps.style as React.CSSProperties | undefined}
           />
         );
       };

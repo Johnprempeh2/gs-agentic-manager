@@ -16,6 +16,7 @@ import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } fr
 import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
 import { forbidden, HttpError } from "../errors.js";
 import { accessService } from "../services/index.js";
+import { authorizationDeniedDetails } from "../services/authorization.js";
 import { listConnectionLifecycleEvents } from "../services/tool-connection-activity.js";
 import {
   acceptMcpMessage,
@@ -559,6 +560,17 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
         return;
       }
       assertCompanyAccess(req, companyId);
+      if (req.actor.type === "board") {
+        const decision = await access.decide({
+          actor: req.actor,
+          action: "agent:wake",
+          resource: { type: "agent", companyId, agentId },
+        });
+        if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
+      }
+      const createdByUserId = req.actor.type === "board" && req.actor.source !== "local_implicit"
+        ? req.actor.userId ?? null
+        : null;
 
       const session = await toolGateway.createSession({
         companyId,
@@ -569,6 +581,7 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
         ttlMs: body.ttlMs,
         actorType: actor.actorType,
         actorId: actor.actorId,
+        createdByUserId,
       });
 
       res.status(201).json({

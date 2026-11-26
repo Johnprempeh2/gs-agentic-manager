@@ -73,7 +73,7 @@ Each release tag gets its own clone, next to the instance folders, never in
 
 ```sh
 REL=/path/to/instances/releases/<tag>
-git clone --branch <tag> /Users/johnprempeh/Desktop/Code/gs-clip "$REL"
+git clone --branch <tag> <dev-checkout> "$REL"
 git -C "$REL" remote set-url --push origin DISABLED
 (cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
 ```
@@ -774,6 +774,283 @@ node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/fleet.test
 (cd server && npx vitest run src/__tests__/fleet-routes.test.ts src/__tests__/fleet-support-bridge.test.ts)
 ```
 
+### GSAM for Mac: licence keys (P1)
+
+A customer's own Mac (the GSAM app, `packaging/macos`) joins the hub with a
+licence key instead of a registration code. The hub needs
+`GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY` (see `doc/ENTITLEMENT-DOCUMENT.md`).
+
+**Make a licence** (hub instance admin):
+
+```sh
+curl -X POST <hub>/api/fleet/licences \
+  -d '{"features":{"enablePipelines":true},"limits":{"maxUsers":5},"validUntil":"2026-12-31T00:00:00Z","reason":"Monthly plan"}'
+```
+
+Optional: `code` (the hub makes `mac-<8 hex>` when left out) and `grace`
+(days, default 0). The answer holds `licenceKey` (`gsamlk_...`), shown once,
+one use, good for 30 days. The hub keeps only its hash, a new pending
+instance and the first signed document (version 1, `grace: 0`).
+
+**Activation.** The app sends the key, a new public key and a proof signed
+with it to the public `POST /api/fleet/spoke/activate` (10 tries per address
+every 10 minutes). The hub answers once with the instance id and code, its
+entitlement public key (the app pins it), the first document, and a
+Greatstone operator log-in: `operator+<code>@greatstone.invalid` with a random
+password. The hub keeps the password encrypted with its local secrets store
+(`local_encrypted`) and never logs it. A used, expired or unknown key gets
+`fleet_bad_registration_code`. If the answer is lost on the way, the key is
+spent: make a new licence.
+
+**Operator log-in.** `GET <hub>/api/fleet/instances/<id>/operator-login`
+(hub instance admin) returns it for remote help. The Mac makes this log-in as
+an instance admin only after the owner has made theirs, because a bootstrap
+invite only makes the first admin.
+
+**New document.** `PUT <hub>/api/fleet/instances/<id>/entitlement` with the
+same fields signs the next version. Each check-in answer carries the newest
+document; the Mac checks it with the pinned key and applies it at once.
+
+**Check-in from the Mac.** The GSAM server itself sends it every 5 minutes
+(no watch script on a Mac): the same schema, with no restore check, no
+off-site backup, no alerts, no connection counts and storage bytes 0.
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-licences.test.ts src/__tests__/fleet-routes.test.ts)
+```
+
+### GSAM for Mac: admin controls, orders and remote access (P2)
+
+All of this is on the hub's Fleet page (Settings, Fleet), for hub instance
+admins. Every action below goes into the hub activity log of each company on
+the hub, with who did it and why: `fleet.licence.created`,
+`fleet.entitlement.issued`, `fleet.order.created`, `fleet.order.result` and
+`fleet.operator_login.read`. No password or key is ever written there.
+
+**See every install.** Each row shows the code, the state (OK, Stale, Down,
+Paused, Stopped, Waiting, Not registered, Revoked), the version, the last
+check-in, the usage totals, and a Subscription column read from the newest
+signed document: paid until (or Ended), the features, the limits and the
+document version.
+
+**New licence.** The New licence button makes a licence key
+(`POST /api/fleet/licences`) with the features, the limits (users, agents)
+and the paid-until date you pick. The key is shown once, with a copy button.
+
+**Change features, limits or paid-until.** Manage, then "Features, limits and
+paid until", signs the next document (`PUT /api/fleet/instances/<id>/entitlement`).
+The install applies it at its next check-in.
+
+**Orders.** Manage, then Orders: Pause, Resume, Update now and Stop service,
+each with a required reason. Stop asks for a second click.
+
+| Order | What the install does |
+|---|---|
+| `pause` | No new agent run starts. GSAM works as usual with a banner: "Paused by Greatstone". |
+| `stop` | No new agent run starts, and GSAM shows a full page: "Service stopped by Greatstone", a contact link and an export link. Nothing is deleted; the export page stays open. |
+| `resume` | Lifts a pause or a stop. |
+| `update` | Starts the install's updater LaunchAgent (`<label>.update`) now instead of at 03:30. |
+
+`POST /api/fleet/instances/<id>/orders` with `{"kind": "pause", "reason": "..."}`.
+The hub signs the order with its entitlement key, as a compact JWS
+(`gsam-fleet-order+jwt`, audience `gsam-fleet-order/v1`) holding the instance
+id and code, the kind, a `seq` one above the instance's last order, and an
+expiry 24 hours on. The reason and who sent it stay on the hub. Each check-in
+answer carries every order the install has not reported on and that has not
+expired, oldest first (`orders` in the answer; an install from before P2
+ignores it). The install:
+
+- checks each order against the hub key it pinned at activation, its own id
+  and code, and the expiry; a badly signed order, or one for another install,
+  is dropped and logged on the install;
+- obeys each `seq` once, in order, and keeps the last one in
+  `fleet/orders.json`. An order at or below it is never obeyed again: its
+  first result is reported again;
+- refuses an expired order (`refused`, `expired`);
+- reports each result (`done`, `failed` or `refused`, with a code from a
+  closed list) in its next check-in. The hub records the first report of each
+  `seq` and stops sending that order.
+
+Orders run in seconds on the install, so an order is obeyed within one
+check-in (5 minutes) and its result shows on the Fleet page within the next.
+Agent runs already going when a pause or stop arrives finish; no new one
+starts (heartbeat scheduling suppression, reason `service_hold`).
+
+**Check-in v3.** The Mac sends `gsam-fleet-check-in/v3`: v2 plus `orders`
+(the results above), the `stopped` lifecycle, and `remote.tailnetName` (its
+tailnet machine name, or null). The schema stays closed: no free text. The
+hub still takes v1 and v2, and host-script instances keep sending v2.
+
+**Subscription ended.** Customer documents carry `grace: 0`, so when
+`validUntil` passes with no newer document the base floor applies. On a Mac
+install that also holds agent runs and shows the full page "Your GSAM
+subscription has ended" with a renew link (`GSAM_RENEW_URL` on the install,
+default `https://greatstoneint.com`) and the export link. A newer document
+lifts it within 5 minutes.
+
+**Open remotely.** Manage, then Remote access:
+
+- "Show operator log-in" shows the install's Greatstone operator log-in
+  (`GET /api/fleet/instances/<id>/operator-login`) with copy buttons. Each
+  read is logged.
+- "Open remotely" opens `http://<tailnet name>:3100` when the install has
+  reported a tailnet name.
+
+#### Remote network reach: Tailscale
+
+The hub hands each new install a Tailscale auth key in its activation answer,
+when it has one. Set one of these in the hub's environment file:
+
+| Variable | Meaning |
+|---|---|
+| `GSAM_FLEET_TAILSCALE_OAUTH_CLIENT_ID`, `GSAM_FLEET_TAILSCALE_OAUTH_CLIENT_SECRET` | Preferred. A Tailscale OAuth client with the "Auth Keys: write" scope and the tag `tag:gsam-customer`. The hub mints a one-use, pre-approved key per install, good for one hour. |
+| `GSAM_FLEET_TAILSCALE_AUTH_KEY` | A pre-made auth key tagged `tag:gsam-customer` (reusable, pre-approved). Simpler; anyone who gets it can add a machine as `tag:gsam-customer` until it expires. |
+
+With neither set, activation sends no key and the install skips remote network
+access quietly. A failure to mint a key is logged on the hub and the install
+goes without.
+
+On the Mac, the app's `tailscale` step (`packaging/macos/src/gsam.sh`):
+
+1. Builds `tailscale` and `tailscaled` from source at a pinned release
+   (`TS_VERSION`), with Go downloaded from go.dev and checked against pinned
+   SHA-256 sums (`GO_SHA256_*`); Go checks every module against its checksum
+   database (sum.golang.org). The Go toolchain and caches (about 1 GB) are
+   deleted after the build. Homebrew is not used.
+2. Runs `tailscaled --tun=userspace-networking` as the Mac user from a
+   LaunchAgent (`<label>.tailscale`), with its state in
+   `~/Library/Application Support/GSAM/runtime/tailscale`. No system
+   extension, no sudo, and the Mac's own network is not changed.
+3. Joins with `tailscale up --auth-key=file:<path> --hostname=gsam-<code>
+   --advertise-tags=tag:gsam-customer --accept-dns=false`, then deletes the key.
+4. Serves GSAM to the tailnet: `tailscale serve --bg --tcp=3100 tcp://127.0.0.1:<port>`.
+5. Writes its tailnet name to `fleet/tailnet.json` (sent in every check-in) and
+   adds it to GSAM's `server.allowedHostnames`, so log-ins over the tailnet work.
+
+The app treats this step as optional: if it fails, setup carries on and the
+reason is in the setup log. Test the command lines without an account:
+`GSAM_TAILSCALE_DRY_RUN=1 bash src/gsam.sh tailscale` prints them.
+
+**Tailnet policy John must add** (admin console, Access controls). Replace the
+default "allow all" rule: with it, a customer Mac could reach every machine on
+the tailnet.
+
+```jsonc
+{
+  "groups": {
+    "group:greatstone-admins": ["john@example.com"] // the Greatstone admins who give remote help
+  },
+  "tagOwners": {
+    "tag:gsam-customer": ["autogroup:admin"]
+  },
+  "grants": [
+    // Only Greatstone admins reach customer installs, and only GSAM's port.
+    { "src": ["group:greatstone-admins"], "dst": ["tag:gsam-customer"], "ip": ["tcp:3100"] }
+    // Keep your own rules for your own machines here. Never use "*" as a source:
+    // it includes tag:gsam-customer. No rule may have tag:gsam-customer as a source,
+    // so a customer Mac reaches nothing.
+  ]
+}
+```
+
+Also in the admin console: turn on MagicDNS (the Fleet page opens the
+install by its name) and turn key expiry off for `tag:gsam-customer` machines
+(tagged machines have no key expiry by default).
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-orders.test.ts src/__tests__/fleet-licences.test.ts src/__tests__/fleet-routes.test.ts)
+(cd ui && npx vitest run src/pages/Fleet.test.tsx src/components/CloudAccessGate.test.tsx)
+```
+
+### GSAM for Mac: payments and modules (P3)
+
+Customers pay on the Greatstone website with Stripe, monthly or annually, for
+the modules they pick. Stripe then drives each install's signed document. The
+service stops at the end of the paid period: every document Stripe causes
+carries `grace: 0`, so the day after `validUntil` the install shows "Your
+GSAM subscription has ended" (P2). Data stays on the Mac and can be exported.
+
+**Hub settings** (the hub's environment file, never the repository):
+
+| Variable | Meaning |
+|---|---|
+| `GSAM_FLEET_HUB=true` | Turns on every fleet route, these included. |
+| `GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY` | Signs licences and documents (P1). Without it billing events answer 503. |
+| `GSAM_STRIPE_SECRET_KEY` | Stripe secret key (`sk_test_...` until John says live). Mirrors the catalogue and reads subscriptions. Unset: the catalogue is kept on the hub only ("Not in Stripe yet") and checkout and invoice events answer 503 so the sender tries again. |
+| `GSAM_BILLING_EVENTS_SECRET` | Shared secret for `POST /api/fleet/billing/events`. Unset: the route answers 503. Make one: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))'`. The website keeps the same value. |
+
+**The catalogue** (Settings, Fleet, Catalogue; hub instance admins):
+
+| Kind | What it holds |
+|---|---|
+| Module | A set of governed features (`ENTITLEMENT_FEATURE_KEYS`) and limits (`maxUsers`, `maxAgents`). |
+| Package | A set of modules at its own price. Its own limits replace the modules' limits. |
+| Deal | A package for one Stripe customer only (`cus_...`): an exclusive price or bundle. A deal bought by any other customer grants nothing. |
+
+Each item has a monthly and an annual price in minor units (pence), and a
+currency (default `gbp`). Every save mirrors it to Stripe: one Product
+(metadata `gsam_item_id`, `gsam_kind`, `gsam_customer`) and one recurring
+Price per interval. Stripe prices cannot change, so a new amount archives the
+old Stripe price and makes a new one. The hub keeps every old price, so a
+subscription still on it keeps mapping to its item. Archive (not delete) stops
+new sales; customers who bought the item keep its features. If Stripe refuses
+a save, the item is still saved on the hub (502); save again to retry.
+
+Routes: `GET`, `POST /api/fleet/catalogue`, `PUT`, `DELETE /api/fleet/catalogue/<id>`.
+The website (P4) lists what to sell from Stripe Products by their metadata,
+and offers a deal only to the customer in `gsam_customer`.
+
+**Stripe events.** The website receives Stripe's webhook, checks it with its
+own Stripe webhook secret, and forwards the event JSON unchanged,
+server to server, to `POST <hub>/api/fleet/billing/events` with the header
+`Stripe-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`
+keyed with `GSAM_BILLING_EVENTS_SECRET`. That is Stripe's own signature
+format, so a Stripe webhook endpoint can also point straight at the hub with
+its signing secret as `GSAM_BILLING_EVENTS_SECRET`; the website route is the
+one used, because only it can show the licence key to the customer. A bad
+signature, or one more than 5 minutes old or ahead, gets 401
+`fleet_billing_bad_signature`. Each event id is handled once: a repeat answers
+`{"outcome": "duplicate"}` and changes nothing.
+
+| Event | What the hub does |
+|---|---|
+| `checkout.session.completed` (paid), `checkout.session.async_payment_succeeded` | Reads the subscription from Stripe. A new customer gets a new install with a licence key, returned once in the answer as `licenceKey` (the website shows it; a repeat of the event does not return it again). A customer already linked to an install re-signs that install's document instead. Paid until the subscription's period end. |
+| `invoice.paid` (each renewal) | Re-signs with `validUntil` at the end of the period the invoice paid for. Paid-until only moves forward. |
+| `customer.subscription.updated` (module change, cancel at period end) | Re-signs with the features and limits of the subscription's prices. Paid-until does not move: only a paid invoice extends it. A change older than the last one applied is ignored. |
+| `customer.subscription.deleted` | Re-signs with the same paid-until: no renewal, the service stops at period end. |
+| `invoice.payment_failed` | Re-signs with the same paid-until and features: no extension. |
+| Anything else | Recorded and ignored. |
+
+Features add up across a subscription's prices; a limit takes the highest
+value. A price the hub does not know grants nothing (the document's reason
+says so). Each re-signed document reaches the install with its next
+check-in, within 5 minutes, and each processed event is in the hub activity
+log as `fleet.billing.event`. Stripe errors answer 502 and missing settings
+503, with nothing recorded, so the website (or Stripe) sends the event again.
+
+**One customer, one install, one subscription.** The hub links a Stripe
+customer to one install and follows one subscription: the one from the last
+checkout. Events for any other subscription of that customer change nothing.
+Module changes go through the Stripe customer portal (P4) as changes to that
+subscription, not as a second subscription.
+
+**Link by hand.** For a licence made before payments: Manage, Stripe customer,
+`cus_...` (`PUT /api/fleet/instances/<id>/billing`). That customer's next
+checkout then drives the existing install, with no new licence key. The Fleet
+page shows what Stripe last said in the Subscription column (for example
+"Stripe: past due", "cancels at period end").
+
+Tests:
+
+```sh
+(cd server && npx vitest run src/__tests__/fleet-billing.test.ts)
+(cd ui && npx vitest run src/pages/Fleet.test.tsx)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with
@@ -797,7 +1074,7 @@ for a real client instance:
 
 ```sh
 scripts/client-instance.sh upgrade <root> <stable tag> \
-  [--repo /Users/johnprempeh/Desktop/Code/gs-clip] [--releases <dir>]
+  [--repo <dev-checkout>] [--releases <dir>]
 ```
 
 Run it with a clean environment (see "Where the code runs"). It refuses any

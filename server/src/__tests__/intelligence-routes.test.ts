@@ -275,14 +275,14 @@ describePostgres("intelligence routes", () => {
     expect(crossCompany.status).toBe(403);
   });
 
-  it("migration 0427 gives companies with intelligence data the AI preset and leaves new companies unset", async () => {
+  it("migration 0431 gives companies with intelligence data the AI preset and leaves new companies unset", async () => {
     const withData = await seed();
     const withReport = await seed();
     const fresh = await seed();
     await db.insert(intelligenceBoardSnapshots).values({ companyId: withData.company.id, board: "ai_systems", snapshotDate: "2026-11-01", entries: [] });
     await db.insert(intelligenceReports).values({ companyId: withReport.company.id, reportDate: "2026-11-01", kind: "daily_pulse", sections: {} });
 
-    const migration = readFileSync(new URL("../../../packages/db/src/migrations/0427_intelligence_settings.sql", import.meta.url), "utf8");
+    const migration = readFileSync(new URL("../../../packages/db/src/migrations/0431_intelligence_settings.sql", import.meta.url), "utf8");
     const seedStatement = migration.split("--> statement-breakpoint").find((part) => part.includes("INSERT INTO"))!;
     await db.execute(sql.raw(seedStatement));
     await db.execute(sql.raw(seedStatement)); // re-running changes nothing

@@ -13,6 +13,22 @@ and applies it without a restart. The hub admin screen and delivery come later
 | `GSAM_ENTITLEMENT_FILE` | Path to the signed file. Default `<instance root>/entitlements/entitlement.json`. |
 | `GSAM_ENTITLEMENT_CLIENT` | Optional. A document for another client is refused. |
 
+A GSAM for Mac install sets none of these. Its activation pins the hub key and
+the client (the instance code) in `<instance root>/fleet/spoke.json`, and the
+server uses them when `GSAM_ENTITLEMENT_PUBLIC_KEY` is unset.
+
+## The hub signs (GSAM for Mac)
+
+| Variable | Meaning |
+|---|---|
+| `GSAM_ENTITLEMENT_SIGN_PRIVATE_KEY` | Hub only. Ed25519 private key: PEM (PKCS#8) or the raw 32-byte seed in base64url. Unset: the hub makes no licences or documents (409, and activation answers 503). Keep it in the hub's environment file, never in the repository. |
+
+Make one: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64url"))'`.
+The hub stores the current signed document per fleet instance and sends it
+with every check-in answer (`doc/CLIENT-INSTANCES.md`, "GSAM for Mac: licence keys").
+Changing the key means every install must be activated again, because each one
+pinned the old public key.
+
 The last good copy is saved as `last-good.json` next to the file.
 
 ## File format
@@ -33,7 +49,8 @@ The document:
   "issuedBy": "jane@greatstone",
   "reason": "CRM bundle, monthly",
   "features": { "enablePipelines": true, "enableStrategy": true },
-  "limits": { "maxAgents": 10 }
+  "limits": { "maxAgents": 10 },
+  "grace": 0
 }
 ```
 
@@ -47,7 +64,7 @@ The document:
 - A feature works only when the document allows it **and** the switch is on. The document never turns a switch on by itself, and nothing stored is changed or deleted.
 - A missing, unreadable, badly signed, malformed or older file keeps the last good copy. With no good copy the base floor applies (every governed feature off). Never "all on".
 - The file is re-read every minute. `POST /api/instance/entitlements/sync` ("Sync now", instance admins) re-reads it at once.
-- After `validUntil` the document still applies for 14 days (`grace`), then the base floor applies.
+- After `validUntil` the document still applies for `grace` days, then the base floor applies. `grace` is optional; a document without it gets 14 days. Customer (Mac) documents carry `grace: 0`: the service stops at the end of the paid period. On a Mac install the base floor also holds new agent runs and shows the "Your GSAM subscription has ended" page (P2, `doc/CLIENT-INSTANCES.md`).
 - Switches in `RESTART_WIRED_ENTITLEMENT_KEYS` change only after a restart and show `pendingRestart` until then. The list is empty today.
 - Every change and every refused file is written to the activity log of each company (`instance.entitlements.changed`, `instance.entitlements.rejected`) with who (`issuedBy`, `requestedBy`), what (state, versions, feature changes), when, and why (`reason`).
 

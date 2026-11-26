@@ -57,7 +57,7 @@ describe("applyDevRunnerOptions", () => {
     applyDevRunnerOptions(["--data-dir", "/isolated/home"], env, "/unused");
 
     expect(env.GSAM_CONFIG).toBe(
-      path.join("/isolated/home", "instances", "experiment", "config.json"),
+      path.join(path.resolve("/isolated/home"), "instances", "experiment", "config.json"),
     );
   });
 
@@ -69,7 +69,7 @@ describe("applyDevRunnerOptions", () => {
 
     applyDevRunnerOptions(["--data-dir", "/isolated/home"], env, "/unused");
 
-    expect(env.GSAM_HOME).toBe("/isolated/home");
+    expect(env.GSAM_HOME).toBe(path.resolve("/isolated/home"));
     expect(env.GSAM_CONFIG).toBe("/explicit/config.json");
     expect(env.GSAM_CONTEXT).toBe("/explicit/context.json");
   });

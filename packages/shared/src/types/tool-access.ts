@@ -1176,6 +1176,8 @@ export interface ConnectToolAppAuthChallenge {
   resource?: string | null;
   registrationSource?: ToolOAuthClientRegistrationSource | null;
   manualClientRequired?: boolean;
+  /** Plain-language reason shown with the client fields, when GS Agentic Manager has one. */
+  manualClientReason?: string | null;
 }
 
 export interface ConnectToolAppResult {
@@ -1568,6 +1570,7 @@ export interface ToolAccessDecisionInput {
     clientSubjectId?: string | null;
     clientName?: string | null;
     externalClient?: boolean | null;
+    sessionOpenedByUserId?: string | null;
   } | null;
   request: {
     applicationId?: string | null;

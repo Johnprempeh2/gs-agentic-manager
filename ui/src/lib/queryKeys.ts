@@ -836,6 +836,7 @@ export const queryKeys = {
     runAdmissionStatus: ["instance", "run-admission-status"] as const,
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
+    fleetCatalogue: ["instance", "fleet-catalogue"] as const,
     taskDrain: ["instance", "task-drain"] as const,
   },
   clientSupport: {

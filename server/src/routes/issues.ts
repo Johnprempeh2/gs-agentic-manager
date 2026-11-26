@@ -429,6 +429,7 @@ import {
 } from "../services/issue-review-policy.js";
 import {
   evaluateIssueThreadInteractionResolverAudience,
+  conversationInteractionResponderAllowed,
   issueThreadInteractionAttentionAgentAllowed,
   type IssueThreadInteractionResolverAudienceDecision,
   type IssueThreadInteractionResolverRestriction,
@@ -6271,7 +6272,7 @@ export function issueRoutes(
     issue: Parameters<typeof assertAgentIssueMutationAllowed>[2] & { conversationAgentId?: string | null; conversationUserId?: string | null },
     interactionId: string,
   ) {
-    if (issue.conversationAgentId && req.actor.type === "board" && req.actor.userId !== issue.conversationUserId) {
+    if (req.actor.type === "board" && !conversationInteractionResponderAllowed(issue, req.actor.userId)) {
       throw forbidden("Only the conversation owner can respond to chat interactions");
     }
     // Actor-only gates deliberately precede the interaction lookup. An actor

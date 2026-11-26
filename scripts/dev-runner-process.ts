@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { isatty } from "node:tty";
 import { isPidAlive, isProcessGroupAlive } from "../server/src/services/local-service-supervisor.ts";
 
@@ -69,6 +70,27 @@ export function serverChildUsesProcessGroup(platform: NodeJS.Platform = process.
 }
 
 /**
+ * The pnpm arguments that start the server package script `script`.
+ *
+ * On POSIX the runner runs the script itself; it begins with `exec`, so no
+ * shell sits between pnpm and the server (see the module comment). pnpm runs
+ * scripts with cmd.exe on Windows, which has no `exec`, so there the runner
+ * runs the script's command through `pnpm exec` instead: no shell either.
+ */
+export function serverChildPnpmArgs(
+  script: string,
+  scripts: Record<string, string>,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const filter = ["--filter", "@greatstone/server"];
+  if (platform !== "win32") return [...filter, script];
+  const command = scripts[script]?.replace(/^exec\s+/, "").trim();
+  if (!command) throw new Error(`server package script "${script}" is missing`);
+  // ponytail: whitespace split; the server dev scripts have no quoted arguments.
+  return [...filter, "exec", ...command.split(/\s+/)];
+}
+
+/**
  * Whether the runner is attached to a terminal: one of its standard streams is
  * one. nohup redirects every standard stream that is a terminal, and systemd
  * and scripts that log to a file give it none, so a runner started to outlive
@@ -127,6 +149,11 @@ function sendSignal(target: number, signal: NodeJS.Signals) {
   }
 }
 
+/** Ends a Windows process and every process it started. */
+export function killWindowsProcessTree(pid: number) {
+  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -174,6 +201,8 @@ export async function stopServerProcessTree(
     killWaitMs?: number;
     pollIntervalMs?: number;
     log?: (message: string) => void;
+    platform?: NodeJS.Platform;
+    killTree?: (pid: number) => void;
   },
 ): Promise<StopServerProcessTreeResult> {
   const startedAt = Date.now();
@@ -205,6 +234,23 @@ export async function stopServerProcessTree(
     }
     return true;
   };
+
+  if ((options.platform ?? process.platform) === "win32") {
+    // Windows has no signals: process.kill() ends only the head (the cmd.exe
+    // behind the pnpm.cmd shim) and orphans pnpm, tsx, the server and embedded
+    // PostgreSQL, which keep the port and the data folder. End the whole tree.
+    // ponytail: no ordered shutdown on Windows yet (the hot-restart snapshot is
+    // skipped, PostgreSQL recovers from its WAL); see
+    // doc/plans/2026-11-25-gsam-for-windows.md for the polite stop design.
+    log(`stopping server process tree ${tree.pid} (Windows: taskkill /T /F)`);
+    (options.killTree ?? killWindowsProcessTree)(tree.pid);
+    const killedExit = await settleBefore(exited, Date.now() + killWaitMs);
+    return {
+      exit: killedExit === TIMED_OUT ? null : killedExit,
+      outcome: killedExit === TIMED_OUT ? "still_running" : "killed",
+      elapsedMs: Date.now() - startedAt,
+    };
+  }
 
   sendSignal(tree.pid, options.signal);
   const headExit = await settleBefore(exited, deadline);
@@ -247,9 +293,15 @@ export async function stopServerProcessTree(
  */
 export function signalServerProcessTreeOnExit(
   tree: ServerProcessTree,
-  options: { headRunning: boolean; signal?: NodeJS.Signals },
+  options: { headRunning: boolean; signal?: NodeJS.Signals; platform?: NodeJS.Platform },
 ): "head" | "group" | null {
   const signal = options.signal ?? "SIGTERM";
+  if ((options.platform ?? process.platform) === "win32") {
+    // Signalling the head alone would orphan the rest of the tree (see above).
+    if (!options.headRunning) return null;
+    killWindowsProcessTree(tree.pid);
+    return "head";
+  }
   if (options.headRunning && sendSignal(tree.pid, signal)) return "head";
   if (tree.processGroupId !== null && isProcessGroupAlive(tree.processGroupId)) {
     return sendSignal(-tree.processGroupId, signal) ? "group" : null;

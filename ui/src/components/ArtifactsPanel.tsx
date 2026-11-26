@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { sentenceCaseLabel } from "../lib/task-status-labels";
+import { openSafeUrl } from "@/lib/safe-url";
 
 interface ArtifactsPanelProps {
   taskId: string;
@@ -186,8 +187,8 @@ export function ArtifactsPanel({ taskId, isAgentWorking, openDocKey, openDocTitl
                   onClick={() => {
                     if (wp.type === "document") {
                       setViewingDoc({ key: "plan", title: wp.title });
-                    } else if (wp.url) {
-                      window.open(wp.url, "_blank", "noopener,noreferrer");
+                    } else {
+                      openSafeUrl(wp.url);
                     }
                   }}
                 >

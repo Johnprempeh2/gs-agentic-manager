@@ -577,6 +577,15 @@ export async function terminateLocalService(
     return await targetIsGone();
   };
 
+  if (process.platform === "win32") {
+    // No signals or process groups on Windows: process.kill() would end only
+    // the shell that wraps the service and orphan the service itself. End the
+    // whole tree at once.
+    await execFileAsync("taskkill", ["/PID", String(record.pid), "/T", "/F"]).catch(() => undefined);
+    if (await waitUntilGone(opts?.verifyAfterMs ?? 2_000)) return;
+    throw new Error(`Failed to terminate local service process ${record.pid}${record.port ? ` and listener on port ${record.port}` : ""}`);
+  }
+
   try {
     if (targetProcessGroup) {
       process.kill(-record.processGroupId!, signal);

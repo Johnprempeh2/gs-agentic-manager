@@ -90,16 +90,39 @@ export async function claimBoardOwnership(
   const status = getChallengeStatus(opts.token, opts.code);
   if (status !== "available") return { status };
 
+  await handOverLocalBoard(db, opts.userId);
+
+  if (activeChallenge && activeChallenge.token === opts.token) {
+    activeChallenge.claimedAt = new Date();
+    activeChallenge.claimedByUserId = opts.userId;
+  }
+
+  return { status: "claimed", claimedByUserId: opts.userId };
+}
+
+/**
+ * Hand a former local_trusted instance from the local board to a real user:
+ * instance admin, owner of every company, and the personal connections made
+ * before sign-in. Used by the board claim and by a bootstrap invite accepted
+ * while the local board is the only admin (GSAM for Mac: an existing install
+ * moving to log-ins). `inTransaction` runs first, in the same transaction.
+ */
+export async function handOverLocalBoard(
+  db: Db,
+  userId: string,
+  inTransaction?: (tx: Parameters<Parameters<Db["transaction"]>[0]>[0]) => Promise<void>,
+): Promise<void> {
   const claimedCompanyIds: string[] = [];
   await db.transaction(async (tx) => {
+    await inTransaction?.(tx);
     const existingTargetAdmin = await tx
       .select({ id: instanceUserRoles.id })
       .from(instanceUserRoles)
-      .where(and(eq(instanceUserRoles.userId, opts.userId), eq(instanceUserRoles.role, "instance_admin")))
+      .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
       .then((rows) => rows[0] ?? null);
     if (!existingTargetAdmin) {
       await tx.insert(instanceUserRoles).values({
-        userId: opts.userId,
+        userId: userId,
         role: "instance_admin",
       });
     }
@@ -118,7 +141,7 @@ export async function claimBoardOwnership(
           and(
             eq(companyMemberships.companyId, company.id),
             eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, opts.userId),
+            eq(companyMemberships.principalId, userId),
           ),
         )
         .then((rows) => rows[0] ?? null);
@@ -127,7 +150,7 @@ export async function claimBoardOwnership(
         await tx.insert(companyMemberships).values({
           companyId: company.id,
           principalType: "user",
-          principalId: opts.userId,
+          principalId: userId,
           status: "active",
           membershipRole: "owner",
         });
@@ -147,47 +170,49 @@ export async function claimBoardOwnership(
     // its accounts connected again. A connection the claimer already holds
     // keeps theirs.
     await tx.execute(sql`
-      UPDATE connection_grants g SET subject_user_id = ${opts.userId}, updated_at = now()
+      UPDATE connection_grants g SET subject_user_id = ${userId}, updated_at = now()
       WHERE g.kind = 'user' AND g.subject_user_id = ${LOCAL_BOARD_USER_ID}
-        AND NOT EXISTS (SELECT 1 FROM connection_grants o WHERE o.connection_id = g.connection_id AND o.subject_user_id = ${opts.userId})`);
+        AND NOT EXISTS (SELECT 1 FROM connection_grants o WHERE o.connection_id = g.connection_id AND o.subject_user_id = ${userId})`);
     // The stored key belongs to whoever owns the grant (credential() checks
     // it), and the grant's creator is who may reconnect it: move both, or the
     // handed-over account stops resolving and cannot be repaired.
     await tx.execute(sql`
-      UPDATE company_secrets s SET owner_user_id = ${opts.userId}, updated_at = now()
+      UPDATE company_secrets s SET owner_user_id = ${userId}, updated_at = now()
       WHERE s.scope = 'user' AND s.owner_user_id = ${LOCAL_BOARD_USER_ID}
         AND EXISTS (
           SELECT 1 FROM connection_grants g, jsonb_array_elements(g.credential_secret_refs) r
-          WHERE g.kind = 'user' AND g.subject_user_id = ${opts.userId} AND (r->>'secretId')::uuid = s.id
+          WHERE g.kind = 'user' AND g.subject_user_id = ${userId} AND (r->>'secretId')::uuid = s.id
         )`);
     await tx.execute(sql`
-      UPDATE connection_grants SET created_by_user_id = ${opts.userId}, updated_at = now()
-      WHERE kind = 'user' AND subject_user_id = ${opts.userId} AND created_by_user_id = ${LOCAL_BOARD_USER_ID}`);
+      UPDATE connection_grants SET created_by_user_id = ${userId}, updated_at = now()
+      WHERE kind = 'user' AND subject_user_id = ${userId} AND created_by_user_id = ${LOCAL_BOARD_USER_ID}`);
     for (const [table, sameSlot] of [
       [sql`ai_provider_defaults`, sql`o.provider = d.provider`],
       [sql`ai_connection_defaults`, sql`o.provider = d.provider AND o.method = d.method`],
     ]) {
       await tx.execute(sql`
-        UPDATE ${table} d SET user_id = ${opts.userId}, updated_at = now()
+        UPDATE ${table} d SET user_id = ${userId}, updated_at = now()
         WHERE d.user_id = ${LOCAL_BOARD_USER_ID}
-          AND EXISTS (SELECT 1 FROM connection_grants g WHERE g.id = d.grant_id AND g.subject_user_id = ${opts.userId})
-          AND NOT EXISTS (SELECT 1 FROM ${table} o WHERE o.company_id = d.company_id AND o.user_id = ${opts.userId} AND ${sameSlot})`);
+          AND EXISTS (SELECT 1 FROM connection_grants g WHERE g.id = d.grant_id AND g.subject_user_id = ${userId})
+          AND NOT EXISTS (SELECT 1 FROM ${table} o WHERE o.company_id = d.company_id AND o.user_id = ${userId} AND ${sameSlot})`);
     }
   });
 
   for (const companyId of claimedCompanyIds) {
     await ensureHumanRoleDefaultGrants(db, {
       companyId,
-      principalId: opts.userId,
+      principalId: userId,
       membershipRole: "owner",
-      grantedByUserId: opts.userId,
+      grantedByUserId: userId,
     });
   }
+}
 
-  if (activeChallenge && activeChallenge.token === opts.token) {
-    activeChallenge.claimedAt = new Date();
-    activeChallenge.claimedByUserId = opts.userId;
-  }
-
-  return { status: "claimed", claimedByUserId: opts.userId };
+/** True when the local board is the only instance admin: a former local_trusted install nobody has claimed yet. */
+export async function onlyLocalBoardIsAdmin(db: Pick<Db, "select">): Promise<boolean> {
+  const admins = await db
+    .select({ userId: instanceUserRoles.userId })
+    .from(instanceUserRoles)
+    .where(eq(instanceUserRoles.role, "instance_admin"));
+  return admins.length === 1 && admins[0]?.userId === LOCAL_BOARD_USER_ID;
 }

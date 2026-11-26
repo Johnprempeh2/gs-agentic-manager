@@ -8,7 +8,18 @@ import type { FleetInstanceView } from "@greatstone/shared/fleet";
 import { ApiError } from "@/api/client";
 import { Fleet, formatAgeMinutes } from "./Fleet";
 
-const mockFleetApi = vi.hoisted(() => ({ listInstances: vi.fn() }));
+const mockFleetApi = vi.hoisted(() => ({
+  listInstances: vi.fn(),
+  createLicence: vi.fn(),
+  issueEntitlement: vi.fn(),
+  createOrder: vi.fn(),
+  operatorLogin: vi.fn(),
+  listCatalogue: vi.fn(),
+  createCatalogueItem: vi.fn(),
+  updateCatalogueItem: vi.fn(),
+  archiveCatalogueItem: vi.fn(),
+  linkBilling: vi.fn(),
+}));
 const mockAccessApi = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
 vi.mock("@/api/fleet", () => ({ fleetApi: mockFleetApi }));
 vi.mock("@/api/access", () => ({ accessApi: mockAccessApi }));
@@ -18,6 +29,8 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
 
 const NOW = new Date().toISOString();
 
@@ -76,6 +89,55 @@ const PENDING: FleetInstanceView = {
   latestCheckIn: null,
 };
 
+const IN_A_MONTH = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+/** A GSAM for Mac install: a signed document, an operator log-in, orders and a tailnet name. */
+const MAC: FleetInstanceView = {
+  ...OK,
+  id: "44444444-4444-4444-4444-444444444444",
+  code: "mac-1a2b3c4d",
+  state: "stopped",
+  lifecycle: "stopped",
+  lifecycleChangedAt: NOW,
+  entitlementVersion: 2,
+  operatorEmail: "operator+mac-1a2b3c4d@greatstone.invalid",
+  entitlement: {
+    version: 2,
+    features: { enablePipelines: true, enableStrategy: true, enableCases: false },
+    limits: { maxUsers: 5 },
+    validUntil: IN_A_MONTH,
+    grace: 0,
+    issuedAt: NOW,
+    issuedBy: "admin@hub.test",
+    reason: "Monthly plan",
+  },
+  orders: [
+    { id: "o2", seq: 2, kind: "stop", reason: "Contract ended", issuedBy: "admin@hub.test", createdAt: NOW, expiresAt: IN_A_MONTH, status: "done", resultCode: null, resultAt: NOW },
+    { id: "o1", seq: 1, kind: "update", reason: "Security fix", issuedBy: "admin@hub.test", createdAt: NOW, expiresAt: NOW, status: "failed", resultCode: "update_unavailable", resultAt: NOW },
+  ],
+  latestCheckIn: {
+    receivedAt: NOW,
+    checkIn: {
+      ...OK.latestCheckIn!.checkIn,
+      schema: "gsam-fleet-check-in/v3",
+      lifecycle: "stopped",
+      orders: [],
+      remote: { tailnetName: "gsam-mac-1a2b3c4d.tail1234.ts.net" },
+    } as FleetInstanceView["latestCheckIn"] extends infer T ? (T extends { checkIn: infer C } ? C : never) : never,
+  },
+};
+
+const ENDED: FleetInstanceView = {
+  ...MAC,
+  id: "55555555-5555-5555-5555-555555555555",
+  code: "mac-ended",
+  state: "ok",
+  lifecycle: "active",
+  orders: [],
+  entitlement: { ...MAC.entitlement!, validUntil: new Date(Date.now() - 60_000).toISOString() },
+  latestCheckIn: { ...OK.latestCheckIn! },
+};
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -96,6 +158,32 @@ async function render() {
   });
 }
 
+/** Dialogs render in a portal on document.body. */
+function dialog() {
+  return document.body.querySelector('[role="dialog"]') as HTMLElement | null;
+}
+
+async function click(element: Element | null | undefined) {
+  expect(element).toBeTruthy();
+  await act(async () => {
+    (element as HTMLElement).click();
+  });
+}
+
+function buttonByText(scope: ParentNode, text: string) {
+  return [...scope.querySelectorAll("button")].find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
+}
+
+async function type(element: Element | null | undefined, value: string) {
+  expect(element).toBeTruthy();
+  const input = element as HTMLInputElement | HTMLTextAreaElement;
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")!.set!;
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 function row(code: string) {
   return container.querySelector(`[data-testid="fleet-row-${code}"]`)?.textContent ?? "";
 }
@@ -113,6 +201,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mockAccessApi.getCurrentBoardAccess.mockResolvedValue({ isInstanceAdmin: true, source: "session" });
+  mockFleetApi.listCatalogue.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -164,10 +253,105 @@ describe("Fleet page", () => {
     expect(card("c003")).toContain("Never");
   });
 
-  it("is read-only: no button, link or form on the page", async () => {
+  it("has no controls on a host-script instance: only the New licence and catalogue buttons", async () => {
     mockFleetApi.listInstances.mockResolvedValue([OK, DOWN, PENDING]);
     await render();
-    expect(container.querySelectorAll("button, form, input, a")).toHaveLength(0);
+    expect([...container.querySelectorAll("button, form, input, a")].map((el) => el.textContent?.trim())).toEqual(["New licence", "Add to catalogue"]);
+  });
+
+  it("lists the catalogue with prices, a deal's one customer, and what Stripe says about each install", async () => {
+    const base = { description: null, limits: {}, moduleIds: [], features: [], currency: "gbp", stripeCustomerId: null, archivedAt: null, updatedAt: NOW, stripeProductId: "prod_1" };
+    mockFleetApi.listCatalogue.mockResolvedValue([
+      { ...base, id: "m1", kind: "module", name: "CRM", features: ["enablePipelines"], limits: { maxUsers: 5 }, monthlyAmount: 4900, annualAmount: null, prices: [{ stripePriceId: "price_1", interval: "month", amount: 4900, currency: "gbp", active: true }] },
+      { ...base, id: "d1", kind: "deal", name: "Launch deal", moduleIds: ["m1"], stripeCustomerId: "cus_test1", monthlyAmount: 1000, annualAmount: 10000, stripeProductId: null, prices: [] },
+    ]);
+    mockFleetApi.listInstances.mockResolvedValue([{ ...MAC, billing: { stripeCustomerId: "cus_test1", stripeSubscriptionId: "sub_1", subscriptionStatus: "past_due", cancelAtPeriodEnd: false } }]);
+    await render();
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="catalogue-table"]')).toBeTruthy());
+    const crm = container.querySelector('[data-testid="catalogue-row-m1"]')!.textContent!;
+    expect(crm).toContain("GBP 49 a month");
+    expect(crm).toContain("Not annual");
+    expect(crm).toContain("In Stripe");
+    const deal = container.querySelector('[data-testid="catalogue-row-d1"]')!.textContent!;
+    expect(deal).toContain("CRM");
+    expect(deal).toContain("Only for cus_test1");
+    expect(deal).toContain("Not in Stripe yet");
+    expect(row("mac-1a2b3c4d")).toContain("Stripe: past due");
+  });
+
+  it("shows a Mac install's state, paid-until, features and limits, and an ended subscription", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([MAC, ENDED]);
+    await render();
+    expect(row("mac-1a2b3c4d")).toContain("Stopped");
+    const subscription = container.querySelector('[data-testid="fleet-row-mac-1a2b3c4d"] [data-testid="fleet-subscription-mac-1a2b3c4d"]')!.textContent;
+    expect(subscription).toContain("Paid until");
+    expect(subscription).toContain("Pipelines, Strategy");
+    expect(subscription).not.toContain("Cases");
+    expect(subscription).toContain("Users 5");
+    expect(row("mac-ended")).toContain("Ended");
+  });
+
+  it("sends a signed order only with a reason, and stop needs a second click", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([MAC]);
+    mockFleetApi.createOrder.mockResolvedValue(MAC.orders![0]);
+    await render();
+    await click(container.querySelector('[data-testid="fleet-row-mac-1a2b3c4d"] [data-testid="fleet-manage-mac-1a2b3c4d"]'));
+    const modal = dialog()!;
+    expect(modal.textContent).toContain("Contract ended");
+    expect(modal.textContent).toContain("Failed (update unavailable)");
+    expect(buttonByText(modal, "Pause")!.disabled).toBe(true);
+    await type(modal.querySelector("textarea"), "Invoice overdue");
+    await click(buttonByText(modal, "Pause"));
+    expect(mockFleetApi.createOrder).toHaveBeenCalledWith(MAC.id, { kind: "pause", reason: "Invoice overdue" });
+
+    await type(modal.querySelector("textarea"), "Contract ended");
+    await click(buttonByText(modal, "Stop service"));
+    expect(mockFleetApi.createOrder).toHaveBeenCalledTimes(1);
+    expect(modal.textContent).toContain("Service stopped by Greatstone");
+    await click(buttonByText(modal, "Confirm: stop the service"));
+    expect(mockFleetApi.createOrder).toHaveBeenLastCalledWith(MAC.id, { kind: "stop", reason: "Contract ended" });
+  });
+
+  it("opens the install over the tailnet and reveals the operator log-in on request", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([MAC]);
+    mockFleetApi.operatorLogin.mockResolvedValue({ email: MAC.operatorEmail, password: "test-password-value" });
+    await render();
+    await click(container.querySelector('[data-testid="fleet-row-mac-1a2b3c4d"] [data-testid="fleet-manage-mac-1a2b3c4d"]'));
+    const modal = dialog()!;
+    expect(modal.querySelector('[data-testid="fleet-open-remote"]')!.getAttribute("href")).toBe("http://gsam-mac-1a2b3c4d.tail1234.ts.net:3100");
+    expect(mockFleetApi.operatorLogin).not.toHaveBeenCalled();
+    await click(modal.querySelector('[data-testid="fleet-reveal-operator"]'));
+    await vi.waitFor(() => expect(modal.querySelector('[data-testid="fleet-operator-password"]')?.textContent).toBe("test-password-value"));
+    expect(buttonByText(modal, "Copy")).toBeTruthy();
+  });
+
+  it("signs a new document with the changed features, limits and paid-until", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([MAC]);
+    mockFleetApi.issueEntitlement.mockResolvedValue({ ...MAC, entitlementVersion: 3 });
+    await render();
+    await click(container.querySelector('[data-testid="fleet-row-mac-1a2b3c4d"] [data-testid="fleet-manage-mac-1a2b3c4d"]'));
+    const modal = dialog()!;
+    await type(modal.querySelector("#limit-maxUsers"), "8");
+    await type(modal.querySelector("#paid-until"), "2027-01-31");
+    await click(buttonByText(modal, "Sign new version"));
+    const [id, body] = mockFleetApi.issueEntitlement.mock.calls[0]!;
+    expect(id).toBe(MAC.id);
+    expect(body).toMatchObject({ limits: { maxUsers: 8 }, validUntil: "2027-01-31T23:59:59Z", features: { enablePipelines: true, enableStrategy: true, enableCases: false } });
+    await vi.waitFor(() => expect(modal.textContent).toContain("Version 3 signed"));
+  });
+
+  it("makes a licence key and shows it once with a copy button", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([]);
+    mockFleetApi.createLicence.mockResolvedValue({ instance: { ...PENDING, code: "mac-new" }, licenceKey: "gsamlk_test-key-value", licenceKeyExpiresAt: IN_A_MONTH });
+    await render();
+    await click(container.querySelector('[data-testid="fleet-new-licence"]'));
+    const modal = dialog()!;
+    await click(modal.querySelector('[role="checkbox"]'));
+    await click(buttonByText(modal, "Make licence key"));
+    expect(mockFleetApi.createLicence.mock.calls[0]![0]).toMatchObject({ features: { enableAgentChat: true, enablePipelines: false } });
+    await vi.waitFor(() => expect(modal.querySelector('[data-testid="fleet-licence-key"]')?.textContent).toBe("gsamlk_test-key-value"));
+    expect(modal.textContent).toContain("it is not shown again");
+    expect(buttonByText(modal, "Copy")).toBeTruthy();
   });
 
   it("does not ask the hub when the user is not an instance admin", async () => {

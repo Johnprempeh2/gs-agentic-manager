@@ -17,6 +17,7 @@ import {
   resolveManagedGitHubCredential,
 } from "./git-credentials.js";
 import { secretService } from "./secrets.js";
+import { agentGitHubPolicy } from "./github-agent-policy.js";
 import { resolveCoreTrustPreset } from "./trust-preset-resolver.js";
 import { isLowTrustQuarantined } from "./source-trust.js";
 
@@ -116,6 +117,8 @@ export async function resolveGitHubOperationCredentials(
 ) {
   const { run, context } = await captureRunIdentity(db, input);
   if (!context) throw forbidden("This run predates managed GitHub credentials");
+  // The launcher enforces this policy for every git and gh command (GRE-6168).
+  const policy = agentGitHubPolicy(input.agentId);
   let summary: GitHubCredentialSummary;
   let env: Record<string, string> = {};
   // A sponsored guest's responsible person is an internal accountability field,
@@ -137,6 +140,7 @@ export async function resolveGitHubOperationCredentials(
       revision: context.revision,
       ...summary,
       env,
+      policy,
     };
   }
   try {
@@ -163,7 +167,7 @@ export async function resolveGitHubOperationCredentials(
         grantId: resolved.credential.grantId,
         authenticationMode: "managed",
       };
-      env = buildGitAuthInvocation(resolved.credential).env;
+      env = buildGitAuthInvocation(resolved.credential, { repositories: policy.repositories }).env;
     } else {
       summary = {
         status: resolved.configured ? "unavailable" : "absent",
@@ -188,5 +192,6 @@ export async function resolveGitHubOperationCredentials(
     revision: context?.revision ?? null,
     ...summary,
     env,
+    policy,
   };
 }

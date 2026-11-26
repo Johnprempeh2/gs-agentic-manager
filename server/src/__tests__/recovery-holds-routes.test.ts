@@ -57,7 +57,7 @@ describeEmbeddedPostgres("recovery holds route", () => {
     const foreign = randomUUID();
     await db.insert(issues).values([
       { id: active, companyId, title: "Push the booking branch", identifier: "GRE-1094", status: "blocked", assigneeAgentId: ridge },
-      { id: replayBlocked, companyId, title: "Send the Omni pack", identifier: "GRE-1190", status: "blocked", assigneeAgentId: ridge },
+      { id: replayBlocked, companyId, title: "Send the Northwind pack", identifier: "GRE-1190", status: "blocked", assigneeAgentId: ridge },
       { id: settled, companyId, title: "Settled", identifier: "GRE-3", status: "todo", assigneeAgentId: ridge },
       { id: otherCause, companyId, title: "Other cause", identifier: "GRE-4", status: "blocked", assigneeAgentId: ridge },
       { id: finished, companyId, title: "Finished", identifier: "GRE-5", status: "done", assigneeAgentId: ridge },

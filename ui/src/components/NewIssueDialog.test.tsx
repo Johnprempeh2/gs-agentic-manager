@@ -1503,7 +1503,7 @@ describe("NewIssueDialog", () => {
 
   it("lets you choose a priority when creating a task (PAP-411 flag on)", async () => {
     dialogState.newIssueDefaults = {
-      title: "Ship the Indago portal",
+      title: "Ship the Globex portal",
     };
     const { root } = renderDialog(container);
     await flush();
@@ -1535,7 +1535,7 @@ describe("NewIssueDialog", () => {
 
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
-      expect.objectContaining({ title: "Ship the Indago portal", priority: "high" }),
+      expect.objectContaining({ title: "Ship the Globex portal", priority: "high" }),
     );
 
     act(() => root.unmount());

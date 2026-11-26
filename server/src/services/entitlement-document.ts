@@ -22,6 +22,7 @@ import {
   type EntitlementState,
 } from "@greatstone/shared";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { readFleetSpokeConfig } from "./fleet-spoke-config.js";
 
 export const ENTITLEMENT_PUBLIC_KEY_ENV = "GSAM_ENTITLEMENT_PUBLIC_KEY";
 export const ENTITLEMENT_FILE_ENV = "GSAM_ENTITLEMENT_FILE";
@@ -31,7 +32,7 @@ export const ENTITLEMENT_CLIENT_ENV = "GSAM_ENTITLEMENT_CLIENT";
 /** Larger files are refused before parsing. */
 export const MAX_ENTITLEMENT_FILE_BYTES = 256 * 1024;
 
-const GRACE_MS = ENTITLEMENT_GRACE_DAYS * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 export interface EntitlementConfig {
@@ -69,12 +70,17 @@ export function parseEntitlementPublicKey(raw: string): KeyObject {
   return key;
 }
 
-/** Null when no hub key is configured (entitlements off). Throws on a malformed key. */
+/**
+ * Null when no hub key is configured (entitlements off). Throws on a malformed key.
+ * With no env key, a fleet spoke (the Mac app) uses the hub key it pinned at
+ * activation (`fleet/spoke.json`), and refuses documents for any other client.
+ */
 export function readEntitlementConfig(
   env: Record<string, string | undefined> = process.env,
   instanceRoot: string = resolvePaperclipInstanceRoot(),
 ): EntitlementConfig | null {
-  const rawKey = env[ENTITLEMENT_PUBLIC_KEY_ENV];
+  const spoke = env[ENTITLEMENT_PUBLIC_KEY_ENV] === undefined ? readFleetSpokeConfig(instanceRoot) : null;
+  const rawKey = env[ENTITLEMENT_PUBLIC_KEY_ENV] ?? spoke?.entitlementPublicKey;
   if (rawKey === undefined) return null;
   if (rawKey.trim().length === 0) {
     throw new Error(`${ENTITLEMENT_PUBLIC_KEY_ENV} is set but blank; unset it to turn entitlements off`);
@@ -85,7 +91,7 @@ export function readEntitlementConfig(
     publicKey: parseEntitlementPublicKey(rawKey),
     filePath: path.resolve(filePath),
     lastGoodPath: path.join(path.dirname(path.resolve(filePath)), "last-good.json"),
-    expectedClient: env[ENTITLEMENT_CLIENT_ENV]?.trim() || null,
+    expectedClient: env[ENTITLEMENT_CLIENT_ENV]?.trim() || spoke?.code || null,
   };
 }
 
@@ -142,7 +148,7 @@ export function verifyEntitlementEnvelope(
 }
 
 export function entitlementGraceEndsAt(document: EntitlementDocument): Date {
-  return new Date(Date.parse(document.validUntil) + GRACE_MS);
+  return new Date(Date.parse(document.validUntil) + (document.grace ?? ENTITLEMENT_GRACE_DAYS) * DAY_MS);
 }
 
 export function resolveEntitlementState(document: EntitlementDocument | null, now: Date): EntitlementState {

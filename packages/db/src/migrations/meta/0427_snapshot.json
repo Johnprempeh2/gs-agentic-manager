@@ -1,5 +1,5 @@
 {
-  "id": "87ef57af-ffab-4071-a521-c08c4a8efeda",
+  "id": "fd34c6f9-ba2d-43fa-82ef-297c3c0a302c",
   "prevId": "6446195c-4c9c-454c-8ef6-a0fb9d313204",
   "version": "7",
   "dialect": "postgresql",
@@ -37998,73 +37998,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.intelligence_settings": {
-      "name": "intelligence_settings",
-      "schema": "",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "topics": {
-          "name": "topics",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "section_titles": {
-          "name": "section_titles",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "updated_by_user_id": {
-          "name": "updated_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "intelligence_settings_company_id_companies_id_fk": {
-          "name": "intelligence_settings_company_id_companies_id_fk",
-          "tableFrom": "intelligence_settings",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.invites": {
       "name": "invites",
       "schema": "",
@@ -64406,6 +64339,12 @@
         },
         "correlation_id": {
           "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

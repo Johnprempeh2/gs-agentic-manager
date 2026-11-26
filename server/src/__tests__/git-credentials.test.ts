@@ -15,6 +15,7 @@ import {
   resolveManagedGitHubIdentitySelection,
   scrubGitCredentialText,
 } from "../services/git-credentials.ts";
+import { agentGitHubPolicy } from "../services/github-agent-policy.ts";
 
 const toolAccess = vi.hoisted(() => ({ refreshManagedGitHubGrantAccess: vi.fn() }));
 vi.mock("../services/tool-access.js", () => ({ toolAccessService: () => toolAccess }));
@@ -350,14 +351,14 @@ describe("credential helper execution (real git, no network)", () => {
       || path.basename(path.dirname(entry)) === "paperclip-github-runtime";
   }
 
-  async function runCredentialFill(description: string) {
+  async function runCredentialFill(description: string, options?: { repositories?: readonly string[] }) {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-cred-fill-"));
     try {
       const invocation = buildGitAuthInvocation({
         token: "abc123",
         source: "company_secret",
         secretName: "GITHUB_TOKEN",
-      });
+      }, options);
       return await new Promise<{ code: number | null; stdout: string; stderr: string }>(
         (resolve, reject) => {
           const child = spawn("git", [...invocation.configArgs, "credential", "fill"], {
@@ -411,6 +412,54 @@ describe("credential helper execution (real git, no network)", () => {
     const result = await runCredentialFill("protocol=http\nhost=github.com\n\n");
     expect(result.code).not.toBe(0);
     expect(result.stdout).not.toContain("abc123");
+  });
+
+  // GRE-6168: an agent's token reaches every repository its owner has; the
+  // scoped helper hands it out only for the policy's repositories.
+  const repositories = ["johnprempeh2/gs-agentic-manager", "johnprempeh2/greatstone-website"];
+
+  it.each([
+    "url=https://github.com/Johnprempeh2/gs-agentic-manager.git",
+    "url=https://github.com/johnprempeh2/greatstone-website",
+    "url=https://www.github.com/Johnprempeh2/gs-agentic-manager/",
+  ])("answers an allowed repository: %s", async (request) => {
+    const result = await runCredentialFill(`${request}\n\n`, { repositories });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("password=abc123");
+  });
+
+  it.each([
+    "url=https://github.com/Johnprempeh2/client-portal.git",
+    "url=https://github.com/Johnprempeh2/gs-agentic-manager-copy.git",
+    "url=https://github.com/attacker/gs-agentic-manager.git",
+    "protocol=https\nhost=github.com",
+  ])("refuses any other repository: %s", async (request) => {
+    const result = await runCredentialFill(`${request}\n\n`, { repositories });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).not.toContain("abc123");
+  });
+
+  it("fails closed with an empty repository list", async () => {
+    const result = await runCredentialFill("url=https://github.com/Johnprempeh2/gs-agentic-manager.git\n\n", { repositories: [] });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).not.toContain("abc123");
+  });
+});
+
+describe("agentGitHubPolicy", () => {
+  it("allows the platform and website repositories, and tags only for Keystone", () => {
+    expect(agentGitHubPolicy("some-agent", {})).toEqual({
+      repositories: ["johnprempeh2/gs-agentic-manager", "johnprempeh2/greatstone-website"],
+      allowTagPush: false,
+    });
+    expect(agentGitHubPolicy("003c68ec-ee61-4134-b748-01443997f802", {}).allowTagPush).toBe(true);
+  });
+
+  it("reads overrides from the server environment", () => {
+    expect(agentGitHubPolicy("a1", {
+      GSAM_GITHUB_AGENT_REPOSITORIES: "Owner/One, owner/two.git bad",
+      GSAM_GITHUB_TAG_PUSH_AGENT_IDS: "a1",
+    })).toEqual({ repositories: ["owner/one", "owner/two"], allowTagPush: true });
   });
 });
 

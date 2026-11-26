@@ -158,19 +158,19 @@ describe("decision push notifications", () => {
 describe("notification choices", () => {
   it("tells the user once about a task given to them, linking to their inbox", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    assignedTasks = [{ id: "i1", title: "Sign the Indago brief" }];
+    assignedTasks = [{ id: "i1", title: "Sign the Globex brief" }];
     expect(await service().notifyNewDecisions()).toBe(1);
-    expect(sent[0]!.message).toEqual({ title: "A task was given to you", body: "Sign the Indago brief", url: "/PSH/inbox/mine", tag: "assigned:i1", badge: 0 });
+    expect(sent[0]!.message).toEqual({ title: "A task was given to you", body: "Sign the Globex brief", url: "/PSH/inbox/mine", tag: "assigned:i1", badge: 0 });
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
   it("tells the user once when a task they asked for is done, opening that task", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    finishedTasks = [{ id: "i9", identifier: "PSH-9", title: "Draft the Indago one-pager" }];
+    finishedTasks = [{ id: "i9", identifier: "PSH-9", title: "Draft the Globex one-pager" }];
     expect(await service().notifyNewDecisions()).toBe(1);
     expect(sent[0]!.message).toEqual({
       title: "Done: a task you asked for",
-      body: "Draft the Indago one-pager",
+      body: "Draft the Globex one-pager",
       url: "/PSH/issues/PSH-9",
       tag: "finished:i9",
       badge: 0,
@@ -180,9 +180,9 @@ describe("notification choices", () => {
 
   it("tells the user once when a deal is won, opening that deal", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    closedDeals = [{ id: "c1", pipelineId: "p1", title: "Indago rollout", terminalKind: "done" }];
+    closedDeals = [{ id: "c1", pipelineId: "p1", title: "Globex rollout", terminalKind: "done" }];
     expect(await service().notifyNewDecisions()).toBe(1);
-    expect(sent[0]!.message).toEqual({ title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p1/cases/c1", tag: "deal:c1", badge: 0 });
+    expect(sent[0]!.message).toEqual({ title: "Deal won", body: "Globex rollout", url: "/PSH/pipelines/p1/cases/c1", tag: "deal:c1", badge: 0 });
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
@@ -232,11 +232,11 @@ describe("notification choices", () => {
 
   it("tells the user once when a client accepts, naming who accepted", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    acceptances = [{ id: "l1", caseId: "c1", pipelineId: "p1", title: "Indago rollout", acceptedName: "Ama Owusu" }];
+    acceptances = [{ id: "l1", caseId: "c1", pipelineId: "p1", title: "Globex rollout", acceptedName: "Ama Owusu" }];
     expect(await service().notifyNewDecisions()).toBe(1);
     expect(sent[0]!.message).toEqual({
       title: "A client accepted",
-      body: "Indago rollout, accepted by Ama Owusu",
+      body: "Globex rollout, accepted by Ama Owusu",
       url: "/PSH/pipelines/p1/cases/c1",
       tag: "accepted:l1",
       badge: 0,
@@ -251,7 +251,7 @@ describe("notification choices", () => {
     const caseId = randomUUID();
     await db.insert(pipelines).values({ id: pipelineId, companyId, key: "accept", name: "Accept", requiresOrganisation: true });
     await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 });
-    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "ind", title: "Indago" });
+    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "ind", title: "Globex" });
     const expires = new Date(clock.getTime() + 86_400_000);
     await db.insert(clientAcceptanceLinks).values([
       { companyId, caseId, tokenHash: randomUUID(), expiresAt: expires, acceptedAt: new Date(clock.getTime() - 60_000), acceptedName: "Ama" },
@@ -270,7 +270,7 @@ describe("notification choices", () => {
     await spy.subscribe(companyId, "john", phone(9));
     await db.delete(pushNotifiedDecisions);
     await spy.notifyNewDecisions();
-    expect(sent.map((entry) => entry.message.body)).toEqual(["Indago, accepted by Ama"]);
+    expect(sent.map((entry) => entry.message.body)).toEqual(["Globex, accepted by Ama"]);
     await db.delete(pipelines).where(eq(pipelines.id, pipelineId));
   });
 
@@ -379,7 +379,7 @@ describe("notification choices", () => {
 describe("recent notifications", () => {
   it("keeps what reached a phone, newest first, and only for that user", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Globex rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
     clock = new Date(clock.getTime() + 60_000);
     await service().deliver(companyId, "john", { title: "A decision needs you", body: "Approve the brief", url: "/PSH/decisions", tag: "task:a" });
     await service().sendTest(companyId, "john", "PSH");
@@ -392,7 +392,7 @@ describe("recent notifications", () => {
 
   it("tells the phone which company sent it, so it can offer a pause, except on the test message", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Globex rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
     await service().sendTest(companyId, "john", "PSH");
     expect(sentCompanyIds).toEqual([companyId, undefined]);
   });

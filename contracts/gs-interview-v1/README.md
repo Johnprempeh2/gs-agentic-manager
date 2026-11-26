@@ -71,7 +71,7 @@ version: invites stop again until an admin accepts it. Read the state with `GET 
   key; the user id wins when both are present.
   Each save makes a new approved context-pack version and points the round at it: a live interview keeps the version
   it started with only for its current turn; the next turn reads the new one.
-- `voice: false` takes voice away from this round at once (typed only, the Indago fallback); `true` or absent offers
+- `voice: false` takes voice away from this round at once (typed only); `true` or absent offers
   it when the site has voice on. The site-wide `VOICE_ENABLED=0` still wins.
 - `retentionDays` (0 to 3650, default 90) and `readoutAt` set the retention delete date (see "What the website owns").
   They come with GRE-2653 (website PR #134).
@@ -250,7 +250,7 @@ record and then the agreement text exactly as accepted. The company admin downlo
 
 ## What the website does on its own
 
-- Voice can be turned off (`VOICE_ENABLED=0`): the typed interview is complete on its own (the Indago fallback).
+- Voice can be turned off (`VOICE_ENABLED=0`): the typed interview is complete on its own (the typed-only fallback).
 - The join page, account sign-up (Better Auth, email verified), enrolment checks (token, domain, seats), the
   interview, consent, sign-off read-back, memory opt-in and hard-delete opt-out.
 - Abandonment close-out (scheduled, hourly). Retention delete (scheduled, daily, GRE-2653): on the deletion date,

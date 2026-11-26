@@ -39,7 +39,7 @@ describe("morningSummarySpeech", () => {
     dueToday: { count: 1, items: [{ id: "c", identifier: "GRE-3", title: "Send the invoice", dueDate: "2026-10-14" }] },
     finished: { count: 1, items: [{ id: "d", identifier: "GRE-4", title: "Write the one-pager" }] },
     stuck: { count: 0, items: [] },
-    deals: { won: 1, lost: 1, items: [{ id: "e", pipelineId: "p", title: "Indago rollout", outcome: "won" }, { id: "f", pipelineId: "p", title: "Acme", outcome: "lost" }] },
+    deals: { won: 1, lost: 1, items: [{ id: "e", pipelineId: "p", title: "Globex rollout", outcome: "won" }, { id: "f", pipelineId: "p", title: "Acme", outcome: "lost" }] },
   };
 
   it("reads the day section by section, without task numbers", () => {
@@ -48,7 +48,7 @@ describe("morningSummarySpeech", () => {
       "Needs you: Approve the brief, Pick a date and 1 more.",
       "Due today: Send the invoice, which is late.",
       "1 task finished since yesterday: Write the one-pager.",
-      "1 deal won and 1 deal lost since yesterday. Won: Indago rollout.",
+      "1 deal won and 1 deal lost since yesterday. Won: Globex rollout.",
       "Nothing is stuck.",
     ]);
   });
@@ -56,7 +56,7 @@ describe("morningSummarySpeech", () => {
   it("says today instead of since yesterday for today so far", () => {
     const parts = morningSummarySpeech(base, "2026-10-16", "Good evening", "today");
     expect(parts).toContain("1 task finished today: Write the one-pager.");
-    expect(parts).toContain("1 deal won and 1 deal lost today. Won: Indago rollout.");
+    expect(parts).toContain("1 deal won and 1 deal lost today. Won: Globex rollout.");
     expect(morningSummaryText(base, "2026-10-16", "today")).toContain("Finished today (1)");
   });
 

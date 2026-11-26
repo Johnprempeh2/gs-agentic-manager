@@ -130,11 +130,11 @@ describeEmbeddedPostgres("pipeline case project links", () => {
 
   it("links a project to a case, lists its goals, and shows the case on the project", async () => {
     const company = await seedCompany("Greatstone");
-    const project = await seedProjectWithGoals(company.id, "OMNI Group", [
+    const project = await seedProjectWithGoals(company.id, "NORTHWIND Group", [
       "First client install",
       "Ghana: three clients on signed terms",
     ]);
-    const { pipelineId, caseId } = await seedClientCase(company.id, "OMNI");
+    const { pipelineId, caseId } = await seedClientCase(company.id, "NORTHWIND");
     const http = request(app());
 
     const link = await http.post(`/api/cases/${caseId}/project-links`).send({ projectId: project.id }).expect(201);
@@ -142,7 +142,7 @@ describeEmbeddedPostgres("pipeline case project links", () => {
 
     const listed = await http.get(`/api/cases/${caseId}/project-links`).expect(200);
     expect(listed.body).toHaveLength(1);
-    expect(listed.body[0].project).toMatchObject({ id: project.id, name: "OMNI Group", status: "in_progress" });
+    expect(listed.body[0].project).toMatchObject({ id: project.id, name: "NORTHWIND Group", status: "in_progress" });
     expect(listed.body[0].goals.map((goal: { title: string }) => goal.title)).toEqual([
       "First client install",
       "Ghana: three clients on signed terms",
@@ -151,7 +151,7 @@ describeEmbeddedPostgres("pipeline case project links", () => {
     const onProject = await http.get(`/api/projects/${project.id}/pipeline-cases`).expect(200);
     expect(onProject.body).toEqual([
       expect.objectContaining({
-        case: expect.objectContaining({ id: caseId, title: "OMNI", pipelineId }),
+        case: expect.objectContaining({ id: caseId, title: "NORTHWIND", pipelineId }),
         pipeline: { id: pipelineId, name: "Client journey" },
         stage: expect.objectContaining({ key: "lead", name: "Lead" }),
       }),
@@ -166,8 +166,8 @@ describeEmbeddedPostgres("pipeline case project links", () => {
 
   it("unlinks a project from a case", async () => {
     const company = await seedCompany("Greatstone");
-    const project = await seedProjectWithGoals(company.id, "OMNI Group", ["First client install"]);
-    const { caseId } = await seedClientCase(company.id, "OMNI");
+    const project = await seedProjectWithGoals(company.id, "NORTHWIND Group", ["First client install"]);
+    const { caseId } = await seedClientCase(company.id, "NORTHWIND");
     const http = request(app());
 
     await http.post(`/api/cases/${caseId}/project-links`).send({ projectId: project.id }).expect(201);

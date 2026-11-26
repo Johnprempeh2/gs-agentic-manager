@@ -44,6 +44,16 @@ export const GIT_CREDENTIAL_TOKEN_ENV_KEY = "GSAM_GIT_TOKEN";
 const GIT_CREDENTIAL_HELPER =
   `!f() { ok=; proto=; while IFS= read -r l && [ -n "$l" ]; do case "$l" in host=github.com|host=www.github.com) ok=1;; protocol=https) proto=1;; esac; done; if [ "$1" = get ] && [ -n "$ok" ] && [ -n "$proto" ]; then printf 'username=x-access-token\\npassword=%s\\n' "$GSAM_GIT_TOKEN"; fi; }; f`;
 
+/** Env var listing the lower-case `owner/name` repositories the scoped helper answers for. */
+export const GIT_CREDENTIAL_REPOSITORIES_ENV_KEY = "GSAM_GIT_REPOSITORIES";
+
+// The same helper, narrowed to named repositories (GRE-6168). With
+// `credential.useHttpPath`, git sends the repository path; the helper answers
+// only when it is on the list, so a push to any other repository gets no token.
+// An empty or missing list answers nothing: it fails closed.
+const SCOPED_GIT_CREDENTIAL_HELPER =
+  `!f() { ok=; proto=; repo=; while IFS= read -r l && [ -n "$l" ]; do case "$l" in host=github.com|host=www.github.com) ok=1;; protocol=https) proto=1;; path=*) repo=$(printf '%s' "\${l#path=}" | tr '[:upper:]' '[:lower:]'); repo=\${repo#/}; repo=\${repo%/}; repo=\${repo%.git};; esac; done; if [ "$1" = get ] && [ -n "$ok" ] && [ -n "$proto" ] && [ -n "$repo" ]; then case " $GSAM_GIT_REPOSITORIES " in *" $repo "*) printf 'username=x-access-token\\npassword=%s\\n' "$GSAM_GIT_TOKEN";; esac; fi; }; f`;
+
 export type GitCredential = {
   token: string;
   source: "managed_connection" | "company_secret" | "server_env" | "anonymous";
@@ -112,13 +122,22 @@ export function scrubGitCredentialText(text: string): string {
     .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s"'?]*)\?[^\s"']*/gi, "$1?***");
 }
 
-export function buildGitAuthInvocation(credential: GitCredential): GitAuthInvocation {
+export function buildGitAuthInvocation(
+  credential: GitCredential,
+  options?: { repositories?: readonly string[] },
+): GitAuthInvocation {
   const identity = credential.githubIdentity;
   const noreplyEmail = identity ? `${identity.userId}+${identity.login}@users.noreply.github.com` : null;
+  const scoped = options?.repositories !== undefined;
+  const helper = scoped ? SCOPED_GIT_CREDENTIAL_HELPER : GIT_CREDENTIAL_HELPER;
   const configEntries = [
     ["credential.helper", ""],
-    ["credential.https://github.com.helper", GIT_CREDENTIAL_HELPER],
-    ["credential.https://www.github.com.helper", GIT_CREDENTIAL_HELPER],
+    ["credential.https://github.com.helper", helper],
+    ["credential.https://www.github.com.helper", helper],
+    ...(scoped ? [
+      ["credential.https://github.com.useHttpPath", "true"],
+      ["credential.https://www.github.com.useHttpPath", "true"],
+    ] : []),
     ["url.https://github.com/.insteadOf", "git@github.com:"],
     ["url.https://github.com/.insteadOf", "ssh://git@github.com/"],
     ["url.https://github.com/.insteadOf", "git@www.github.com:"],
@@ -136,11 +155,16 @@ export function buildGitAuthInvocation(credential: GitCredential): GitAuthInvoca
     // reaches it (and the helper itself re-checks the request host — see above).
     configArgs: [
       "-c", "credential.helper=",
-      "-c", `credential.https://github.com.helper=${GIT_CREDENTIAL_HELPER}`,
-      "-c", `credential.https://www.github.com.helper=${GIT_CREDENTIAL_HELPER}`,
+      "-c", `credential.https://github.com.helper=${helper}`,
+      "-c", `credential.https://www.github.com.helper=${helper}`,
+      ...(scoped ? [
+        "-c", "credential.https://github.com.useHttpPath=true",
+        "-c", "credential.https://www.github.com.useHttpPath=true",
+      ] : []),
     ],
     env: {
       [GIT_CREDENTIAL_TOKEN_ENV_KEY]: credential.token,
+      ...(scoped ? { [GIT_CREDENTIAL_REPOSITORIES_ENV_KEY]: options!.repositories!.join(" ") } : {}),
       GH_TOKEN: credential.token,
       GITHUB_TOKEN: credential.token,
       GIT_TERMINAL_PROMPT: "0",
@@ -340,7 +364,10 @@ export function createGitRemoteAuthProvider(
           const credential = await resolveCredential();
           return credential ? buildGitAuthInvocation(credential) : null;
         }
-        const anonymous = buildGitAuthInvocation({ token: "", source: "managed_connection", secretName: null });
+        const anonymous = buildGitAuthInvocation(
+          { token: "", source: "managed_connection", secretName: null },
+          { repositories: result.policy.repositories },
+        );
         return { ...anonymous, env: {
           ...anonymous.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null",
           GIT_AUTHOR_NAME: "", GIT_AUTHOR_EMAIL: "", GIT_COMMITTER_NAME: "", GIT_COMMITTER_EMAIL: "",

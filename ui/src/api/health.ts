@@ -49,6 +49,18 @@ export type HealthStatus = {
    * (`lib/partner-branding`) so it is known on first paint.
    */
   branding?: PartnerBranding;
+  /**
+   * GSAM for Mac (P2): the service state of a licensed install. Absent on any
+   * other instance. `stopped` (a signed order from Greatstone) and `ended`
+   * (the paid period is over) show a full-page screen; `paused` a banner.
+   */
+  service?: ServiceHoldStatus;
+};
+
+export type ServiceHoldStatus = {
+  state: "active" | "paused" | "stopped" | "ended";
+  renewUrl: string;
+  validUntil: string | null;
 };
 
 /**

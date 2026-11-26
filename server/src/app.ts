@@ -51,6 +51,7 @@ import {
 import { companyTransferRunService } from "./services/company-transfer-runs.js";
 import { healthRoutes } from "./routes/health.js";
 import { fleetHubRoutes, fleetSpokeRoutes } from "./routes/fleet.js";
+import { fleetBillingEventRoutes, fleetBillingHubRoutes } from "./routes/fleet-billing.js";
 import {
   connectivityProbeUrlsFromEnv,
   connectivityWatcher,
@@ -715,6 +716,8 @@ export async function createApp(
   app.use(emailWebhookRoutes(emailChannels));
   // Fleet spokes sign each message with their own key (GRE-1082); no session.
   app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
+  // Stripe events for GSAM for Mac (P3), signed with the shared billing secret; no session.
+  app.use(fleetBillingEventRoutes(db));
   app.use(chatWebhookRoutes(chatChannels));
   // The website pings when an enquiry arrives (no data, no key); the pull itself uses GSAM's signed bridge.
   let websitePing = (_siteId: string) => {};
@@ -783,6 +786,7 @@ export async function createApp(
   api.use("/cloud", cloudRoutes());
   api.use(releasesFloorRoutes());
   api.use(fleetHubRoutes(db));
+  api.use(fleetBillingHubRoutes(db));
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(llmRoutes(db));
   api.use(folderRoutes(db));

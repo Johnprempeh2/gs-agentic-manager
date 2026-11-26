@@ -19,22 +19,22 @@ const agents = storybookAgents.map((agent) => {
   return agent;
 });
 
-const indagoStuck = [
+const acmeStuck = [
   {
     ...storybookIssues[1]!,
-    id: "issue-indago-2",
+    id: "issue-acme-2",
     identifier: "GRE-1361",
-    title: "Indago deep dive kick-off pack",
+    title: "Acme deep dive kick-off pack",
     status: "blocked",
     assigneeAgentId: "agent-codex",
     updatedAt: iso(180),
-    blockedBy: [{ id: "issue-fee", identifier: "GRE-1354", title: "Agree the Indago fee model", status: "in_review", priority: "high", assigneeAgentId: null, assigneeUserId: "user-board" }],
+    blockedBy: [{ id: "issue-fee", identifier: "GRE-1354", title: "Agree the Acme fee model", status: "in_review", priority: "high", assigneeAgentId: null, assigneeUserId: "user-board" }],
   },
   {
     ...storybookIssues[0]!,
-    id: "issue-indago-4",
+    id: "issue-acme-4",
     identifier: "GRE-1372",
-    title: "Indago data room access",
+    title: "Acme data room access",
     status: "blocked",
     assigneeAgentId: "agent-qa",
     blockedBy: [],
@@ -55,7 +55,7 @@ const awayDigest = {
     agentName: "Mason",
     counts: { tasksFinished: 3, tasksStarted: 2, decisionsRaised: 1, failures: 0 },
     items: [
-      { kind: "task_finished", label: "Finished GRE-1349: Indago pricing page", at: iso(60), issueId: "issue-a", issueIdentifier: "GRE-1349", runId: null },
+      { kind: "task_finished", label: "Finished GRE-1349: Acme pricing page", at: iso(60), issueId: "issue-a", issueIdentifier: "GRE-1349", runId: null },
       { kind: "task_finished", label: "Finished GRE-1350: Ben's onboarding checklist", at: iso(200), issueId: "issue-b", issueIdentifier: "GRE-1350", runId: null },
     ],
   }],
@@ -67,14 +67,14 @@ const awayNeedsMe = {
   assignedTaskCount: 0,
   overdueWaits: [],
   assignedTasks: [],
-  decisions: [{ id: "task:issue-fee", title: "Agree the Indago fee model", reason: "Fixed fee or day rate", task: { id: "issue-fee", identifier: "GRE-1354" } }],
+  decisions: [{ id: "task:issue-fee", title: "Agree the Acme fee model", reason: "Fixed fee or day rate", task: { id: "issue-fee", identifier: "GRE-1354" } }],
 };
 
 const responses: Array<[string, RegExp, (url: URL) => unknown]> = [
   ["GET", /\/api\/companies\/[^/]+\/agent-work-digest$/, () => awayDigest],
   ["GET", /\/api\/companies\/[^/]+\/needs-me$/, () => awayNeedsMe],
   ["GET", /\/api\/companies\/[^/]+\/agents$/, () => agents],
-  ["GET", /\/api\/companies\/[^/]+\/issues$/, (url) => (url.searchParams.get("status") === "blocked" ? indagoStuck : [])],
+  ["GET", /\/api\/companies\/[^/]+\/issues$/, (url) => (url.searchParams.get("status") === "blocked" ? acmeStuck : [])],
   ["POST", /\/api\/companies\/[^/]+\/chats\/[^/]+$/, () => ({ ...storybookIssues[0]!, id: CHAT_ID })],
   ["POST", new RegExp(`/api/issues/${CHAT_ID}/comments$`), () => {
     askedAt = iso(0);
@@ -86,7 +86,7 @@ const responses: Array<[string, RegExp, (url: URL) => unknown]> = [
       issueId: CHAT_ID,
       authorType: "agent",
       authorAgentId: "agent-cto",
-      body: "Both Indago tasks wait on one thing: **your call on the fee model** (GRE-1354). Once you pick fixed fee or day rate, Mason can send the kick-off pack the same day. Data room access is with QAChecker and needs a login from Indago, which I have chased.",
+      body: "Both Acme tasks wait on one thing: **your call on the fee model** (GRE-1354). Once you pick fixed fee or day rate, Mason can send the kick-off pack the same day. Data room access is with QAChecker and needs a login from Acme, which I have chased.",
       createdAt: new Date(new Date(askedAt).getTime() + 1000).toISOString(),
     }]
     : [])],
@@ -142,9 +142,9 @@ const meta: Meta<typeof OpenPanel> = {
 export default meta;
 type Story = StoryObj<typeof OpenPanel>;
 
-export const StuckOnIndago: Story = { args: { question: "What is stuck on the Indago work?" } };
+export const StuckOnAcme: Story = { args: { question: "What is stuck on the Acme work?" } };
 
-export const EverestReplies: Story = { args: { question: "What is stuck on the Indago work?", askLive: true } };
+export const EverestReplies: Story = { args: { question: "What is stuck on the Acme work?", askLive: true } };
 
 /** The first suggested question: what finished, what got stuck, what needs you. */
 export const SinceYouWereAway: Story = { args: { question: "What happened since I was last here?" } };

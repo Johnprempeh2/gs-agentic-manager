@@ -193,7 +193,7 @@ describeEmbeddedPostgres("memory import from Claude and ChatGPT", () => {
       via: "paste",
       entries: [
         { sourceId: "paste:aaaa0001", content: "Greatstone prices discovery workshops per day." },
-        { sourceId: "paste:aaaa0004", content: "Indago kick-off is the top priority." },
+        { sourceId: "paste:aaaa0004", content: "Acme kick-off is the top priority." },
       ],
     });
     expect(again.status).toBe(201);

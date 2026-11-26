@@ -7,6 +7,7 @@ import {
   isMemoryContentHttpRequest,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
+  isPrivateToolCallHttpRequest,
   shouldSilenceHttpSuccessLog,
 } from "./http-log-policy.js";
 import {
@@ -191,6 +192,7 @@ export function createHttpLogger(baseLogger: Logger) {
           req.method,
           requestClassificationUrl(req),
         );
+        const toolCall = isPrivateToolCallHttpRequest(requestClassificationUrl(req));
         if (ctx) {
           const secretSensitiveRoute = isSecretSensitiveHttpRequest(
             req.method,
@@ -203,15 +205,18 @@ export function createHttpLogger(baseLogger: Logger) {
             errorContext: secretSensitiveRoute
               ? { name: "Error" }
               : redactSensitive(ctx.error),
-            reqBody: memoryContentRoute
+            reqBody: memoryContentRoute || toolCall
               ? "[REDACTED]"
               : redactSensitive(ctx.reqBody),
             reqParams: redactSensitive(ctx.reqParams),
+            ...(toolCall && (req as any).route?.path ? { routePath: (req as any).route.path } : {}),
           };
         }
         const props: Record<string, unknown> = {};
         const { body, params } = req as any;
-        if (body && typeof body === "object" && Object.keys(body).length > 0) {
+        if (toolCall) {
+          props.reqBody = "[REDACTED]";
+        } else if (body && typeof body === "object" && Object.keys(body).length > 0) {
           props.reqBody = memoryContentRoute
             ? "[REDACTED]"
             : redactSensitive(body);

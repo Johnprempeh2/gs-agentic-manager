@@ -116,7 +116,9 @@ import {
 import { assertAuthenticated, assertCompanyAccess } from "./authz.js";
 import {
   claimBoardOwnership,
-  inspectBoardClaimChallenge
+  handOverLocalBoard,
+  inspectBoardClaimChallenge,
+  onlyLocalBoardIsAdmin
 } from "../board-claim.js";
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
@@ -3711,6 +3713,22 @@ export function accessRoutes(
           );
         }
         const userId = req.actor.userId ?? "local-board";
+        // A former local_trusted install (GSAM for Mac moving an existing
+        // install to log-ins): the local board is the only admin, so the
+        // bootstrap invite hands the instance and its companies to this user,
+        // exactly as the board claim does.
+        if (userId !== "local-board" && (await onlyLocalBoardIsAdmin(db))) {
+          await handOverLocalBoard(db, userId, async (tx) => {
+            const accepted = await tx
+              .update(invites)
+              .set({ acceptedAt: new Date(), updatedAt: new Date() })
+              .where(and(eq(invites.id, invite.id), isNull(invites.acceptedAt), isNull(invites.revokedAt)))
+              .returning({ id: invites.id });
+            if (accepted.length === 0) throw conflict("Bootstrap invite is no longer available");
+          });
+          res.status(202).json({ inviteId: invite.id, inviteType: invite.inviteType, bootstrapAccepted: true, userId });
+          return;
+        }
         const claimed = await claimFirstInstanceAdmin(db, {
           userId,
           onClaim: async (tx) => {

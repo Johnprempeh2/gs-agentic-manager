@@ -28,3 +28,29 @@ diff --git a/dist/index.js b/dist/index.js
                  // Connect to stderr, as that is where the messages get sent
                  (_a = this.process.stderr) === null || _a === void 0 ? void 0 : _a.on('data', (chunk) => {
                      // Parse the data as a string and log it
+@@ -207,6 +207,7 @@
+             if (!this.process) {
+                 return;
+             }
++            const { pg_ctl } = yield bin;
+             // Kill the existing postgres process
+             yield new Promise((resolve) => {
+                 var _a, _b, _c;
+@@ -218,8 +219,15 @@
+                     if (!((_b = this.process) === null || _b === void 0 ? void 0 : _b.pid)) {
+                         throw new Error('Could not find process PID');
+                     }
+-                    // Actually kill the process using the Windows taskkill command
+-                    spawn('taskkill', ['/pid', this.process.pid.toString(), '/f', '/t']);
++                    // Ask the postmaster to shut down with pg_ctl (Windows has no
++                    // SIGINT): taskkill ends the postmaster before its workers
++                    // and leaves them holding the data folder. Kill only if that fails.
++                    const pid = this.process.pid.toString();
++                    const stopper = spawn(pg_ctl, ['stop', '-D', this.options.databaseDir, '-m', 'fast', '-w', '-t', '60'], { windowsHide: true });
++                    stopper.on('error', () => spawn('taskkill', ['/pid', pid, '/f', '/t']));
++                    stopper.on('exit', (code) => {
++                        if (code !== 0) spawn('taskkill', ['/pid', pid, '/f', '/t']);
++                    });
+                 }
+                 else {
+                     // If on a sane OS, simply kill using SIGINT

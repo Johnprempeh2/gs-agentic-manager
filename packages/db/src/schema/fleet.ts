@@ -33,6 +33,16 @@ export const fleetInstances = pgTable(
     lastAppHealth: text("last_app_health"),
     /** The support queue this instance's "Get help" tickets land in (GRE-1084). Null: the hub refuses its tickets. */
     supportQueueId: uuid("support_queue_id").references(() => supportQueues.id, { onDelete: "set null" }),
+    /**
+     * GSAM for Mac (P1): the newest signed entitlement document for this
+     * instance, as the envelope the instance reads. Sent with every check-in
+     * answer. Null for an instance with no document from the hub.
+     */
+    entitlementDocument: jsonb("entitlement_document").$type<{ v: 1; document: string; signature: string }>(),
+    entitlementVersion: integer("entitlement_version"),
+    /** The Greatstone operator log-in made at licence activation. The password is in `operatorSecret`, encrypted by the hub's secrets store. */
+    operatorEmail: text("operator_email"),
+    operatorSecret: jsonb("operator_secret").$type<Record<string, unknown>>(),
     registeredAt: timestamp("registered_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedBy: text("revoked_by"),
@@ -60,6 +70,38 @@ export const fleetCheckIns = pgTable(
   },
   (table) => ({
     instanceReceivedIdx: index("fleet_check_ins_instance_received_idx").on(table.fleetInstanceId, table.receivedAt),
+  }),
+);
+
+/**
+ * Signed operator orders to a GSAM for Mac install (P2): pause, resume,
+ * stop, update. `seq` grows per instance; `message` is the compact JWS the
+ * hub signed with its entitlement key and sends with each check-in answer
+ * until the install reports a result. Who and why stay here (and in the
+ * activity log); only kind, seq and expiry travel.
+ */
+export const fleetOrders = pgTable(
+  "fleet_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fleetInstanceId: uuid("fleet_instance_id")
+      .notNull()
+      .references(() => fleetInstances.id, { onDelete: "cascade" }),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    kind: text("kind").notNull(),
+    reason: text("reason").notNull(),
+    issuedBy: text("issued_by").notNull(),
+    issuedByUserId: text("issued_by_user_id"),
+    message: text("message").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** done, failed or refused, as the install reported it. Null until then. */
+    result: text("result"),
+    resultCode: text("result_code"),
+    resultAt: timestamp("result_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    instanceSeqUq: uniqueIndex("fleet_orders_instance_seq_uq").on(table.fleetInstanceId, table.seq),
   }),
 );
 

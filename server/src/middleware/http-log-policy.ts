@@ -50,6 +50,24 @@ const SECRET_SENSITIVE_HTTP_PATHS = [
 ];
 const SECRET_SENSITIVE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
+const TOOL_CALL_HTTP_PATHS = [
+  /^\/api\/tool-gateway\/tools\/call\/?$/i,
+  /^\/api\/tool-gateway\/gateways\/[^/]+\/mcp\/?$/i,
+  /^\/mcp\/gateways\/[^/]+\/?$/i,
+  /^\/mcp\/native-runs\/[^/]+\/?$/i,
+  /^\/mcp\/runtime-tools\/?$/i,
+  /^\/mcp\/runner\/?$/i,
+  /^\/api\/mcp\/project-tools\/?$/i,
+  /^\/api\/issues\/[^/]+\/mcp-app-views\/[^/]+\/tool-calls\/?$/i,
+  /^\/api\/tool-connections\/[^/]+\/test-calls\/?$/i,
+];
+
+export function isPrivateToolCallHttpRequest(url: string | undefined): boolean {
+  if (!url) return false;
+  const pathname = normalizePath(url).replace(/^https?:\/\/[^/]*/i, "");
+  return TOOL_CALL_HTTP_PATHS.some((pattern) => pattern.test(pathname));
+}
+
 /** Provider payloads are private even when a method/signature is rejected. */
 export function isPrivateWebhookHttpRequest(
   method: string | undefined,

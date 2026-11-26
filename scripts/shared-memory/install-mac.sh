@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the shared memory sync on John's Mac (GRE-2668). Run from a checkout of main:
-#   scripts/shared-memory/install-mac.sh --company-id <GSAM company id> [--gsam-url https://gsam.<tailnet>.ts.net:3100]
+#   scripts/shared-memory/install-mac.sh --company-id <GSAM company id> --gsam-url https://<host>.<tailnet>.ts.net:3100
 #   scripts/shared-memory/install-mac.sh --uninstall
 # It copies three files, writes the config (no tokens) and loads a launchd job that runs every 30 minutes.
 # Tokens stay in the macOS Keychain; this script never reads or prints them.
@@ -24,7 +24,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 COMPANY_ID=""
-GSAM_URL="https://gsam.tail83d26c.ts.net:3100"
+GSAM_URL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --company-id) COMPANY_ID="$2"; shift 2 ;;
@@ -43,6 +43,7 @@ install -m 644 "$HERE/gs-memory-sync.mjs" "$HERE/redact.mjs" "$HERE/extract.mjs"
 
 if [ ! -f "$CONF/config.json" ]; then
   [ -n "$COMPANY_ID" ] || { echo "First install needs --company-id." >&2; exit 1; }
+  [ -n "$GSAM_URL" ] || { echo "First install needs --gsam-url (the tailnet address of GSAM, port 3100)." >&2; exit 1; }
   "$NODE" -e '
     const [file, companyId, gsamUrl] = process.argv.slice(1);
     require("fs").writeFileSync(file, JSON.stringify({ gsamUrl, companyId }, null, 2) + "\n", { mode: 0o600 });

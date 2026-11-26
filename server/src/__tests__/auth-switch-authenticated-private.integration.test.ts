@@ -1,6 +1,6 @@
 /**
  * GRE-125: moving an install that ran `local_trusted` to `authenticated` +
- * `private`, as `doc/AUTH-SWITCH-RUNBOOK.md` does it. Runs the real Better Auth
+ * `private`, the way the auth switch does it. Runs the real Better Auth
  * mount and the real actor middleware against a migrated Postgres that was
  * seeded the way a `local_trusted` install leaves it (local-board owns every
  * company and every agent key), and proves:

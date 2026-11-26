@@ -1350,7 +1350,7 @@ hf-xet==1.6.0 \
 hindsight-api-slim==0.10.2 \
     --hash=sha256:5f05c1017813000e8c46da941ad5cdd7b3d288d864bd985690f8c4f9555f7f64 \
     --hash=sha256:f666167f1c83144a129e06431f46b86ee27c8e028c9b82eadc9860a7a6b437d4
-    # via -r /Users/johnprempeh/Desktop/Code/gs-clip/.gsam/worktrees/GRE-646-plan-and-delegate-the-greatstone-organization-memory-build/scripts/gs-memory/requirements.in
+    # via -r requirements.in
 hpack==4.2.0 \
     --hash=sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0 \
     --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986
@@ -4176,7 +4176,7 @@ torch==2.14.1+cpu \
     --hash=sha256:f56cd23a3bf003bfbed3da0645ba09b3ccc66c0a2f2ac726a9b98f34e0e4926f \
     --hash=sha256:f67ee1fe9c9f7c6ad3785d150bc3cecda442a5880a6d40816e13fee475d97dd8
     # via
-    #   -r /Users/johnprempeh/Desktop/Code/gs-clip/.gsam/worktrees/GRE-646-plan-and-delegate-the-greatstone-organization-memory-build/scripts/gs-memory/requirements.in
+    #   -r requirements.in
     #   hindsight-api-slim
     #   sentence-transformers
 tqdm==4.70.1 \
