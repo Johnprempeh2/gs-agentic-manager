@@ -1,7 +1,7 @@
 # GSAM for Windows: the engine behind the installer, step for step the same as
 # packaging/macos/src/gsam.sh. Each step is safe to run again. No administrator
 # rights: everything lives in the user's own folders and runs as the user.
-#   gsam.ps1 setup | status | node | git | activate | code | runner | deps | tools | config | service
+#   gsam.ps1 setup | setup-run | status | node | git | activate | code | runner | deps | tools | config | service
 #            | wait | tailscale | owner | owner-done | open | newer | update | log | run | stop | uninstall
 #
 # A step's answer for the installer is printed on stdout; everything else goes
@@ -123,6 +123,26 @@ function LockDataFolder {
   Run "icacls.exe" @($Data, "/inheritance:r", "/grant:r", "${env:USERNAME}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "/Q") "GSAM could not make its data folder private ($Data). Choose a folder inside your user folder."
 }
 
+# Whether Windows' Redirection Guard (which refuses junctions a non-administrator made) is on
+# for this process: "on", "audit", "off", or "unknown" where Windows cannot say.
+function RedirectionGuard {
+  try {
+    if (-not ("GsamMitigation" -as [type])) {
+      Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class GsamMitigation {
+  [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetProcessMitigationPolicy(IntPtr h, int policy, out uint flags, IntPtr size);
+}
+"@
+    }
+    $flags = [uint32]0
+    # ProcessRedirectionTrustPolicy = 16: bit 0 enforce, bit 1 audit.
+    if (-not [GsamMitigation]::GetProcessMitigationPolicy([GsamMitigation]::GetCurrentProcess(), 16, [ref]$flags, [IntPtr]4)) { return "unknown" }
+    if ($flags -band 1) { "on" } elseif ($flags -band 2) { "audit" } else { "off" }
+  } catch { "unknown" }
+}
+
 function ServiceEnvFile { Join-Path $AppHome "service.json" }
 
 # Starts GSAM's log-on task. Tests: a task with an interactive log-on runs only for a
@@ -221,17 +241,26 @@ switch ($Step) {
   }
 
   "deps" {
-    # Once more on failure: antivirus scanning thousands of new files can lock one for a moment,
-    # and a second install only fills in what the first missed.
+    # Only GSAM's own settings: no npm or pnpm setting inherited from wherever the installer
+    # was started, and GSAM's own package store beside the app (same drive, so pnpm can link
+    # from it). On failure once more, copying files instead of linking them.
+    Get-ChildItem Env: | Where-Object { $_.Name -match '^(npm_config_|NPM_CONFIG_|PNPM_|pnpm_)' } |
+      ForEach-Object { Say "deps: ignoring inherited $($_.Name)"; Remove-Item "Env:$($_.Name)" }
+    $store = Join-Path $AppHome "pnpm-store"
+    $longPaths = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -ErrorAction SilentlyContinue).LongPathsEnabled
+    Say "deps: store $store, LongPathsEnabled $longPaths, Redirection Guard $(RedirectionGuard)"
     Push-Location $Code
     try {
       $pnpm = Join-Path $NodeDir "corepack.cmd"
-      $first = Start-Process -FilePath $pnpm -ArgumentList "pnpm install --frozen-lockfile" -NoNewWindow -Wait -PassThru `
+      Say ("deps: pnpm config: " + ((Capture $pnpm @("pnpm", "config", "list")) -replace "`n", "; "))
+      $first = Start-Process -FilePath $pnpm -ArgumentList "pnpm install --frozen-lockfile --store-dir `"$store`"" -NoNewWindow -Wait -PassThru `
         -RedirectStandardOutput "$Log.out" -RedirectStandardError "$Log.err"
       foreach ($f in "$Log.out", "$Log.err") { if (Test-Path $f) { Get-Content $f | Add-Content -Path $Log; Remove-Item $f } }
+      Say ("deps: store path " + (Capture $pnpm @("pnpm", "store", "path", "--store-dir", $store)))
       if ($first.ExitCode -ne 0) {
-        Say "deps: pnpm install failed ($($first.ExitCode)); once more"
-        Run $pnpm @("pnpm", "install", "--frozen-lockfile") "GSAM's components could not be installed. Check the internet connection and try again."
+        Say "deps: pnpm install failed ($($first.ExitCode)); once more, copying files instead of linking them"
+        Run $pnpm @("pnpm", "install", "--frozen-lockfile", "--store-dir", $store, "--package-import-method", "copy") `
+          "GSAM's components could not be installed. Check the internet connection and try again."
       }
     }
     finally { Pop-Location }
@@ -446,8 +475,64 @@ switch ($Step) {
   }
 
   "setup" {
-    # The whole first install, as the Mac app's progress bar: each step in turn, in the console
-    # window the installer opens. A wrong licence key asks again (never in a silent install).
+    # The whole first install, as the Mac app's progress bar, in the console window the
+    # installer opens. The work itself runs outside the installer's process tree: Inno Setup
+    # turns on Windows' Redirection Guard, which processes it starts inherit, and under it
+    # Node cannot follow the folder junctions pnpm makes for a standard user. A process made
+    # through WMI (Win32_Process.Create) is the same user without that inheritance. This window
+    # follows its progress, and asks again for a wrong licence key (never in a silent install).
+    Say "setup: Redirection Guard here: $(RedirectionGuard)"
+    $interactive = [Environment]::UserInteractive -and -not $env:GSAM_NONINTERACTIVE
+    $setupResult = Join-Path $AppHome "setup-result.txt"
+    $progress = Join-Path $AppHome "setup-progress.txt"
+    $envFile = Join-Path $AppHome "setup-env.json"
+    $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    while ($true) {
+      # GSAM's settings for the detached run (the licence key among them), in this user's own
+      # folder, read and deleted by that run at once.
+      $vars = @{}
+      Get-ChildItem Env: | Where-Object { $_.Name -like "GSAM_*" } | ForEach-Object { $vars[$_.Name] = $_.Value }
+      $vars | ConvertTo-Json | Set-Content -Path $envFile
+      Set-Content -Path $progress -Value "" -NoNewline
+      Set-Content -Path $setupResult -Value "running"
+      $made = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine = "`"$ps`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`" setup-run"
+        CurrentDirectory = $AppHome
+      }
+      if ($made.ReturnValue -ne 0) { Remove-Item $envFile -Force -ErrorAction SilentlyContinue; Fail "Setup could not start (Win32_Process.Create $($made.ReturnValue))." }
+      $shown = 0
+      do {
+        Start-Sleep -Seconds 2
+        $lines = @(Get-Content $progress -ErrorAction SilentlyContinue)
+        for (; $shown -lt $lines.Count; $shown++) { Write-Host $lines[$shown] }
+      } while (Get-Process -Id $made.ProcessId -ErrorAction SilentlyContinue)
+      $lines = @(Get-Content $progress -ErrorAction SilentlyContinue)
+      for (; $shown -lt $lines.Count; $shown++) { Write-Host $lines[$shown] }
+      Remove-Item $envFile -Force -ErrorAction SilentlyContinue
+      $result = "$(Get-Content $setupResult -Raw -ErrorAction SilentlyContinue)".Trim()
+      if ($result -eq "ok") { break }
+      if ($result -eq "failed: activate" -and $interactive) {
+        $env:GSAM_LICENCE_KEY = (Read-Host "  Licence key (starts with gsamlk_)").Trim()
+        continue
+      }
+      if ($interactive) { Write-Host "The setup log is $Log."; Read-Host "Press Enter to close" | Out-Null }
+      exit 1
+    }
+    Remove-Item Env:GSAM_LICENCE_KEY -ErrorAction SilentlyContinue
+    Write-Host "GSAM is ready. It starts when you sign in to Windows, and updates itself at night."
+  }
+
+  "setup-run" {
+    # The steps of setup, started by it through WMI (see setup). Progress lines go to a file it follows.
+    $envFile = Join-Path $AppHome "setup-env.json"
+    if (Test-Path $envFile) {
+      $vars = Get-Content $envFile -Raw | ConvertFrom-Json
+      Remove-Item $envFile -Force
+      foreach ($p in $vars.PSObject.Properties) { [Environment]::SetEnvironmentVariable($p.Name, [string]$p.Value) }
+    }
+    Say "setup-run: Redirection Guard here: $(RedirectionGuard)"
+    $progress = Join-Path $AppHome "setup-progress.txt"
+    $setupResult = Join-Path $AppHome "setup-result.txt"
     $steps = @(
       @("node", "Installing Node.js"),
       @("activate", "Checking your licence key"),
@@ -461,33 +546,21 @@ switch ($Step) {
       @("wait", "Starting GSAM for the first time (up to 10 minutes)"),
       @("tailscale", "Setting up remote help from Greatstone"),
       @("owner", "Opening GSAM so you can make your log-in"))
-    $interactive = [Environment]::UserInteractive -and -not $env:GSAM_NONINTERACTIVE
-    $setupResult = Join-Path $AppHome "setup-result.txt"
-    Set-Content -Path $setupResult -Value "running"
     for ($i = 0; $i -lt $steps.Count; $i++) {
       $name = $steps[$i][0]
       if ($name -eq "activate" -and (Test-Path (Join-Path $Inst "fleet\spoke.json"))) { continue }
-      Write-Host ("[{0}/{1}] {2}" -f ($i + 1), $steps.Count, $steps[$i][1])
-      while ($true) {
-        Remove-Item $ErrorFile -ErrorAction SilentlyContinue
-        & $PSCommandPath $name | Out-Null
-        if ($LASTEXITCODE -eq 0) { break }
-        $why = if (Test-Path $ErrorFile) { (Get-Content $ErrorFile -Raw).Trim() } else { "Step $name failed." }
-        Write-Host "  $why" -ForegroundColor Yellow
-        # Remote help is optional: everything else works without it.
-        if ($name -eq "tailscale") { break }
-        if ($name -eq "activate" -and $interactive) {
-          $env:GSAM_LICENCE_KEY = (Read-Host "  Licence key (starts with gsamlk_)").Trim()
-          continue
-        }
-        Set-Content -Path $setupResult -Value "failed: $name"
-        if ($interactive) { Write-Host "The setup log is $Log."; Read-Host "Press Enter to close" | Out-Null }
-        exit 1
-      }
+      Add-Content -Path $progress -Value ("[{0}/{1}] {2}" -f ($i + 1), $steps.Count, $steps[$i][1])
+      Remove-Item $ErrorFile -ErrorAction SilentlyContinue
+      & $PSCommandPath $name | Out-Null
+      if ($LASTEXITCODE -eq 0) { continue }
+      $why = if (Test-Path $ErrorFile) { (Get-Content $ErrorFile -Raw).Trim() } else { "Step $name failed." }
+      Add-Content -Path $progress -Value "  $why"
+      # Remote help is optional: everything else works without it.
+      if ($name -eq "tailscale") { continue }
+      Set-Content -Path $setupResult -Value "failed: $name"
+      exit 1
     }
-    Remove-Item Env:GSAM_LICENCE_KEY -ErrorAction SilentlyContinue
     Set-Content -Path $setupResult -Value "ok"
-    Write-Host "GSAM is ready. It starts when you sign in to Windows, and updates itself at night."
   }
 
   "uninstall" {
