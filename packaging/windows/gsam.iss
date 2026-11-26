@@ -33,6 +33,12 @@ OutputBaseFilename=GSAM-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Inno Setup turns on Windows' Redirection Guard by default, and the processes it starts
+; inherit it: they then refuse to follow folder junctions a non-administrator made, which is
+; every junction pnpm makes in a per-user install (Node fails with "unknown error" reading
+; node_modules). The mitigation guards elevated installers against junction tricks; this
+; installer is never elevated (PrivilegesRequired=lowest), so it is off.
+RedirectionGuard=no
 UninstallDisplayName=GSAM
 UninstallDisplayIcon={sys}\WindowsPowerShell\v1.0\powershell.exe
 #ifdef SignTool
