@@ -803,11 +803,11 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(await summary()).toEqual([["create_insight", "allowed"], ["list_insights", "allowed"]]);
   });
 
-  it("keeps the unscoped tools:use grant for agents the connection's profile does not cover", async () => {
+  it("denies agents without an install on a connection installed for another agent, even with the default unscoped tools:use grant", async () => {
     const { company, summary } = await setUpGovernedTwoActionConnection({ enabled: "read" });
     const [other] = await db.insert(agents).values({ companyId: company.id, name: "Riley", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
     await db.insert(principalPermissionGrants).values({ companyId: company.id, principalType: "agent", principalId: other!.id, permissionKey: "tools:use", scope: null });
-    expect(await summary(other!.id)).toEqual([["create_insight", "allowed"], ["list_insights", "allowed"]]);
+    expect(await summary(other!.id)).toEqual([["create_insight", "off"], ["list_insights", "off"]]);
   });
 
   it("does not let the unscoped tools:use grant override a profile entry that excludes the application", async () => {

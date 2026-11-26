@@ -22,6 +22,7 @@ import {
   toolProfiles,
   toolRateLimitCounters,
 } from "@greatstone/db";
+import { readConnectionAccessBoundary } from "./tool-access-connection-boundary.js";
 import type {
   ToolAccessDecision,
   ToolAccessDecisionInput,
@@ -1228,9 +1229,15 @@ export function toolAccessPolicyService(db: Db) {
     const loaded = await loadContext(input);
     if (!loaded.ok) return loaded.decision;
     const { ctx, redaction } = loaded;
+    const connectionBoundary = ctx.actorType === "agent" && ctx.connectionId
+      ? await readConnectionAccessBoundary(db, { companyId: ctx.companyId, agentId: ctx.agentId, connectionId: ctx.connectionId })
+      : null;
+    // Only explicit block/allow policies and tool-targeted grants may reach an
+    // install-governed connection from an agent it is not installed for.
+    const blockedByConnectionInstall = Boolean(connectionBoundary?.requiresInstall && !connectionBoundary.installedForAgent);
     const profileState = await effectiveProfiles(ctx);
     const effectiveProfileIds = profileState.profiles.map((profile) => profile.id);
-    const permittedByProfile = profileState.profiles.some((profile) => {
+    const permittedByProfile = !blockedByConnectionInstall && profileState.profiles.some((profile) => {
       const matchingEntries = profileState.entries.filter((entry) => entry.profileId === profile.id && profileEntryMatches(entry, ctx));
       return !matchingEntries.some((entry) => entry.effect === "exclude")
         && (profile.defaultAction === "allow" || matchingEntries.some((entry) => entry.effect === "include"));
@@ -1305,6 +1312,7 @@ export function toolAccessPolicyService(db: Db) {
         continue;
       }
       if (policy.policyType === "trust_rule") {
+        if (blockedByConnectionInstall) continue;
         const rule = trustRuleConfig(policy);
         if (!rule || !trustRuleIsActive(policy)) continue;
         if (!argumentFiltersMatch(rule.argumentFilters, ctx)) continue;
@@ -1331,6 +1339,13 @@ export function toolAccessPolicyService(db: Db) {
         // The connection's Ask first control restricts an existing action grant;
         // it must never grant access to agents outside that connection's profile.
         if (policy.config?.source === "app_gallery_finish" && !permittedByProfile) continue;
+        if (blockedByConnectionInstall) {
+          if (explicitBlock) {
+            return decision("deny", "deny_policy_block", explicitBlock.policy.description ?? "Tool access is blocked by policy.", effectiveProfileIds, [explicitBlock.policy.id], { redactionPlan: redaction.redactionPlan });
+          }
+          return decision("deny", "deny_connection_not_installed",
+            "This connection is not installed for this agent.", effectiveProfileIds, [], { redactionPlan: redaction.redactionPlan });
+        }
         return decision("require_approval", "requires_approval_policy", policy.description ?? "Tool access requires approval.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
       }
       if (policy.policyType === "allow") {
@@ -1346,11 +1361,16 @@ export function toolAccessPolicyService(db: Db) {
     // application. A grant that names the action, connection or application
     // still applies. Board users keep their operator grants.
     const governedByConnectionProfile = ctx.actorType === "agent" && !!ctx.connectionId && (
-      profileState.profiles.some((profile) => isConnectionAccessProfile(profile, ctx.connectionId))
+      Boolean(connectionBoundary?.requiresInstall || connectionBoundary?.hasManagedProfile)
+      || profileState.profiles.some((profile) => isConnectionAccessProfile(profile, ctx.connectionId))
       || profileState.entries.some((entry) => entry.connectionId === ctx.connectionId || profileEntryMatches(entry, ctx))
     );
     if (await explicitGrant(ctx, { toolTargetedOnly: governedByConnectionProfile })) {
       return decision("allow", "allow_explicit_grant", "Tool access allowed by explicit grant.", effectiveProfileIds, [], { redactionPlan: redaction.redactionPlan });
+    }
+    if (blockedByConnectionInstall) {
+      return decision("deny", "deny_connection_not_installed",
+        "This connection is not installed for this agent.", effectiveProfileIds, [], { redactionPlan: redaction.redactionPlan });
     }
 
     const entriesByProfile = new Map<string, Array<typeof toolProfileEntries.$inferSelect>>();

@@ -16,6 +16,7 @@ import {
   toolApplications,
   toolCatalogEntries,
   toolCallEvents,
+  toolConnectionInstalls,
   toolConnections,
   toolInvocations,
   toolPolicies,
@@ -169,6 +170,7 @@ describeEmbeddedPostgres("tool access policy service", () => {
     await db.delete(toolProfileBindings);
     await db.delete(toolProfiles);
     await db.delete(toolCatalogEntries);
+    await db.delete(toolConnectionInstalls);
     await db.delete(toolConnections);
     await db.delete(toolApplications);
     await db.delete(companySecrets);
@@ -1666,5 +1668,137 @@ describeEmbeddedPostgres("tool access policy service", () => {
         configPath: "headers.Authorization",
       }],
     })).rejects.toThrow(/same company/);
+  });
+  describe("connection install boundary", () => {
+    async function installedOnlyForAgentA() {
+      const company = await createCompany(db);
+      const agentA = await createAgent(db, company.id);
+      const agentB = await createAgent(db, company.id);
+      const { connection, catalogEntry } = await createTool(db, company.id);
+      await db.insert(toolConnectionInstalls).values({
+        companyId: company.id,
+        connectionId: connection.id,
+        targetType: "agent",
+        targetId: agentA.id,
+      });
+      const decideFor = (agentId: string) => toolAccessPolicyService(db).decide({
+        companyId: company.id,
+        actor: { actorType: "agent", actorId: agentId, agentId },
+        request: { connectionId: connection.id, catalogEntryId: catalogEntry.id, toolName: "send_email" },
+      });
+      return { company, agentA, agentB, connection, decideFor };
+    }
+
+    async function bindAllowProfile(companyId: string, targetType: "company" | "agent", targetId: string) {
+      const profile = await db.insert(toolProfiles).values({
+        companyId,
+        profileKey: `profile-${randomUUID()}`,
+        name: "Everything",
+        defaultAction: "allow",
+      }).returning().then((rows) => rows[0]!);
+      await db.insert(toolProfileBindings).values({ companyId, profileId: profile.id, targetType, targetId });
+      return profile;
+    }
+
+    it("denies an uninstalled agent holding an unscoped tools:use grant", async () => {
+      const { company, agentB, decideFor } = await installedOnlyForAgentA();
+      await db.insert(principalPermissionGrants).values({
+        companyId: company.id,
+        principalType: "agent",
+        principalId: agentB.id,
+        permissionKey: "tools:use",
+        scope: null,
+      });
+
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({
+        allowed: false,
+        decision: "deny",
+        reasonCode: "deny_connection_not_installed",
+      });
+    });
+
+    it("denies an uninstalled agent allowed only by a company-wide profile", async () => {
+      const { company, agentB, decideFor } = await installedOnlyForAgentA();
+      await bindAllowProfile(company.id, "company", company.id);
+
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({
+        allowed: false,
+        decision: "deny",
+        reasonCode: "deny_connection_not_installed",
+      });
+    });
+
+    it("denies an uninstalled agent matched by a generic require_approval policy", async () => {
+      const { company, agentB, connection, decideFor } = await installedOnlyForAgentA();
+      await db.insert(toolPolicies).values({
+        companyId: company.id,
+        policyType: "require_approval",
+        name: "Ask first",
+        selectors: { connectionId: connection.id },
+        priority: 10,
+      });
+
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({
+        allowed: false,
+        decision: "deny",
+        reasonCode: "deny_connection_not_installed",
+      });
+    });
+
+    it("still allows the installed agent and a company-wide install", async () => {
+      const { company, agentA, agentB, connection, decideFor } = await installedOnlyForAgentA();
+      await bindAllowProfile(company.id, "company", company.id);
+
+      await expect(decideFor(agentA.id)).resolves.toMatchObject({ allowed: true, reasonCode: "allow_profile" });
+
+      await db.insert(toolConnectionInstalls).values({
+        companyId: company.id,
+        connectionId: connection.id,
+        targetType: "company",
+        targetId: company.id,
+      });
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({ allowed: true, reasonCode: "allow_profile" });
+    });
+
+    it("keeps explicit allow policies and connection-targeted grants working", async () => {
+      const { company, agentB, connection, decideFor } = await installedOnlyForAgentA();
+      await db.insert(principalPermissionGrants).values({
+        companyId: company.id,
+        principalType: "agent",
+        principalId: agentB.id,
+        permissionKey: "tools:use",
+        scope: { connectionId: connection.id },
+      });
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({ allowed: true, reasonCode: "allow_explicit_grant" });
+
+      await db.delete(principalPermissionGrants);
+      await db.insert(toolPolicies).values({
+        companyId: company.id,
+        policyType: "allow",
+        name: "Allow B",
+        selectors: { connectionId: connection.id, agentId: agentB.id },
+        priority: 10,
+      });
+      await expect(decideFor(agentB.id)).resolves.toMatchObject({ allowed: true, reasonCode: "allow_policy" });
+    });
+
+    it("leaves legacy connections without installs unchanged", async () => {
+      const company = await createCompany(db);
+      const agent = await createAgent(db, company.id);
+      const { connection, catalogEntry } = await createTool(db, company.id);
+      await db.insert(principalPermissionGrants).values({
+        companyId: company.id,
+        principalType: "agent",
+        principalId: agent.id,
+        permissionKey: "tools:use",
+        scope: null,
+      });
+
+      await expect(toolAccessPolicyService(db).decide({
+        companyId: company.id,
+        actor: { actorType: "agent", actorId: agent.id, agentId: agent.id },
+        request: { connectionId: connection.id, catalogEntryId: catalogEntry.id, toolName: "send_email" },
+      })).resolves.toMatchObject({ allowed: true, reasonCode: "allow_explicit_grant" });
+    });
   });
 });
