@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { linkDirectory } from "@greatstone/adapter-utils/server-utils";
 import { seedManagedCodexHome } from "./codex-home.js";
 
 // Windows without the symlink privilege (a standard user, Developer Mode off:
@@ -39,6 +40,22 @@ describe.runIf(onWindows)("Codex managed home on Windows without the symlink pri
     try {
       await fs.writeFile(sharedAuth, "{}", "utf8");
       await expect(fs.symlink(sharedAuth, path.join(root, "link.json"))).rejects.toMatchObject({ code: "EPERM" });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("links a skill folder with a junction, which needs no Developer Mode", async () => {
+    const { root } = await fixture();
+    try {
+      const skill = path.join(root, "skills-source", "demo");
+      await fs.mkdir(skill, { recursive: true });
+      await fs.writeFile(path.join(skill, "SKILL.md"), "# demo\n", "utf8");
+      const home = path.join(root, "agent-home", "skills");
+      await fs.mkdir(home, { recursive: true });
+      await linkDirectory(skill, path.join(home, "demo"));
+      expect(await fs.readFile(path.join(home, "demo", "SKILL.md"), "utf8")).toBe("# demo\n");
+      expect((await fs.lstat(path.join(home, "demo"))).isSymbolicLink()).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

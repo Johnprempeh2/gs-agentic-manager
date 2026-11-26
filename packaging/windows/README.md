@@ -13,6 +13,8 @@ Needs Inno Setup 6. Makes `packaging\windows\dist\GSAM-Setup.exe` and its `.sha2
 
 The installer is **not signed** yet. Windows SmartScreen then shows "Windows protected your PC". Tell customers: choose **More info**, then **Run anyway**. To sign it later (Azure Trusted Signing, or any code-signing certificate), set `GSAM_SIGN_COMMAND` to the signing command with `$f` where the file goes, for example `signtool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib Azure.CodeSigning.Dlib.dll /dmdf metadata.json $f`; the installer and its uninstaller are then signed as they are built.
 
+Every `live-*` release gets `GSAM-Setup.exe` built by `.github/workflows/release-assets.yml` (hub address from the repository variable `GSAM_HUB_URL`) and attached to the GitHub release, so `https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/GSAM-Setup.exe` is always the newest.
+
 ## What the installer does
 
 The wizard asks for the licence key (`gsamlk_...`), then runs `gsam.ps1 setup`, which shows each step in a window. Every step lives in `src/gsam.ps1` and is safe to run again.

@@ -4488,13 +4488,22 @@ export function writePaperclipSkillSyncPreference(
   return next;
 }
 
+/**
+ * Links a directory (a skill folder, a workspace package). On Windows a junction,
+ * which a standard user may make without Developer Mode (a symlink needs it, and
+ * a customer's PC does not have it); a junction's target is absolute. Elsewhere
+ * a symlink, as before.
+ */
+export function linkDirectory(source: string, target: string): Promise<void> {
+  return process.platform === "win32"
+    ? fs.symlink(path.resolve(path.dirname(target), source), target, "junction")
+    : fs.symlink(source, target);
+}
+
 export async function ensurePaperclipSkillSymlink(
   source: string,
   target: string,
-  linkSkill: (source: string, target: string) => Promise<void> = (
-    linkSource,
-    linkTarget,
-  ) => fs.symlink(linkSource, linkTarget),
+  linkSkill: (source: string, target: string) => Promise<void> = linkDirectory,
 ): Promise<"created" | "repaired" | "skipped"> {
   const existing = await fs.lstat(target).catch(() => null);
   if (!existing) {

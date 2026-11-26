@@ -4,7 +4,7 @@
  *
  * Downloads the prebuilt native runner (paperclip-runnerd) for a GSAM release
  * and checks it against the release's SHA256SUMS, so an install never needs
- * Rust or a C toolchain. .github/workflows/runner-binaries.yml attaches the
+ * Rust or a C toolchain. .github/workflows/release-assets.yml attaches the
  * binaries to every live-* release. No dependencies: it runs right after
  * Node.js is installed.
  *

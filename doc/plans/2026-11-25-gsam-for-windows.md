@@ -9,7 +9,7 @@ known gaps are in #1224.
 | --- | --- | --- |
 | W1 | Windows CI that proves GSAM runs natively | done (`.github/workflows/windows-ci.yml`) |
 | W2 | Porting fixes the CI found | done for the install path, remaining items below |
-| W3 | Prebuilt runner binaries on `live-*` releases | built (`runner-binaries.yml`) |
+| W3 | Prebuilt runner binaries on `live-*` releases | built (`release-assets.yml`) |
 | W4 | Windows installer | built (`packaging/windows`), see the proof below |
 | W5 | Cross-platform fleet orders, OS column, download picker | built (hub, Fleet page, website #330) |
 
@@ -260,7 +260,7 @@ full test suite). Added by W3 to W5:
 
 ## W3: prebuilt runner binaries (built)
 
-`.github/workflows/runner-binaries.yml` builds `paperclip-runnerd` with the
+`.github/workflows/release-assets.yml` builds `paperclip-runnerd` with the
 pinned toolchain and locked dependencies for Windows x64 (MSVC), macOS arm64
 and macOS x64 (cross-built on the Apple silicon runner). On a `live-*` tag it
 attaches the three binaries and `SHA256SUMS` to that tag's GitHub release

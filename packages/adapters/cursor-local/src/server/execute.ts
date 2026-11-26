@@ -26,6 +26,7 @@ import {
   startAdapterExecutionTargetPaperclipBridge,
 } from "@greatstone/adapter-utils/execution-target";
 import {
+  linkDirectory,
   asString,
   asNumber,
   asStringArray,
@@ -130,7 +131,7 @@ async function buildCursorSkillsDir(config: Record<string, unknown>): Promise<st
   for (const entry of availableEntries) {
     if (!desiredNames.has(entry.key)) continue;
     if (isPaperclipSkillSourceMissing(entry)) continue;
-    await fs.symlink(entry.source, path.join(target, entry.runtimeName));
+    await linkDirectory(entry.source, path.join(target, entry.runtimeName));
   }
   return target;
 }
@@ -178,7 +179,7 @@ export async function ensureCursorSkillsInjected(
       `[gsam] Removed maintainer-only Cursor skill "${skillName}" from ${skillsHome}\n`,
     );
   }
-  const linkSkill = options.linkSkill ?? ((source: string, target: string) => fs.symlink(source, target));
+  const linkSkill = options.linkSkill ?? linkDirectory;
   for (const entry of skillsEntries) {
     const target = path.join(skillsHome, entry.runtimeName);
     try {

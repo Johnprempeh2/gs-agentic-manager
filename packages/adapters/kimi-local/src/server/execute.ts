@@ -22,6 +22,7 @@ import {
   startAdapterExecutionTargetPaperclipBridge,
 } from "@greatstone/adapter-utils/execution-target";
 import {
+  linkDirectory,
   asNumber,
   asString,
   asStringArray,
@@ -180,7 +181,7 @@ async function buildKimiSkillsDir(
   for (const entry of availableEntries) {
     if (!desiredNames.has(entry.key)) continue;
     if (isPaperclipSkillSourceMissing(entry)) continue;
-    await fs.symlink(entry.source, path.join(target, entry.runtimeName));
+    await linkDirectory(entry.source, path.join(target, entry.runtimeName));
   }
   return target;
 }

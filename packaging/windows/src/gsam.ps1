@@ -73,6 +73,7 @@ function Run([string]$File, [string[]]$Arguments, [string]$Message = "") {
 # errors in the log. Windows PowerShell turns a program's stderr into errors, so not "Stop" here.
 function Capture([string]$File, [string[]]$Arguments, [switch]$EvenOnFailure) {
   $ErrorActionPreference = "Continue"
+  if (-not (Get-Command $File -ErrorAction SilentlyContinue)) { $script:CaptureExit = 127; return $null }
   $out = & $File @Arguments 2>> $Log
   $script:CaptureExit = $LASTEXITCODE
   if ($LASTEXITCODE -ne 0 -and -not $EvenOnFailure) { return $null }

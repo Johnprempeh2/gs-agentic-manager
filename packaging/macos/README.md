@@ -9,7 +9,13 @@ cd packaging/macos
 GSAM_HUB_URL=https://<Greatstone hub> ./build.sh
 ```
 
-`GSAM_HUB_URL` is where licence keys are checked; it is built into the app. Without it the app cannot activate a licence. This makes `dist/GSAM.app` and `dist/GSAM-Installer.dmg`. Hand out the `.dmg`. It is signed ad hoc, not notarised, so the first open is right-click, then Open.
+`GSAM_HUB_URL` is where licence keys are checked; it is built into the app. Without it the app cannot activate a licence. This makes `dist/GSAM.app` and `dist/GSAM-Installer.dmg` (with its `.sha256`). It needs Python 3.11 or newer (`brew install python`): the disk image is laid out by [dmgbuild](https://pypi.org/project/dmgbuild/), installed into `build/venv` at a pinned version with its hashes checked (`assets/dmgbuild-requirements.txt`).
+
+- **One download for every Mac**: `GSAM.app` is an AppleScript applet, which is universal (Apple silicon and Intel); the build stops if that ever changes.
+- **The disk image**: a branded window (Greatstone void `#121212`, the wordmark, a lime arrow) with GSAM on the left and an Applications alias on the right, and the GSAM stone as the volume icon. The background is `assets/dmg-background.png` (and `@2x`), drawn by `assets/make-dmg-background.py`; the window is exactly the 1x image's size (`assets/dmg-settings.py` reads it). Finder draws the icon labels black or white depending on the Mac, so each sits on a `#767676` pill that both pass AA on.
+- **Signing**: ad hoc, not notarised (no Apple Developer Program yet). **The first time, right-click GSAM in Applications and choose Open**, then Open again in the dialog. The disk image window says so too.
+
+Every `live-*` release gets `GSAM-Installer.dmg` built by `.github/workflows/release-assets.yml` (with the hub address from the repository variable `GSAM_HUB_URL`) and attached to the GitHub release, so `https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/GSAM-Installer.dmg` is always the newest.
 
 ## What the app does
 
@@ -21,7 +27,7 @@ The first time the user opens it, the app asks for their licence key (`gsamlk_..
 | `node` | Downloads Node.js 24 from nodejs.org, checks its SHA-256, and keeps it in `~/Library/Application Support/GSAM/runtime`. |
 | `activate` | Checks the licence key with the hub (`src/mac-setup.mjs`, no dependencies). A wrong, used or expired key asks again. Writes `~/GSAM-data/instances/default/fleet/` (the install's key, the hub's pinned key, the operator log-in until it is made) and the first signed entitlement document. |
 | `code` | Clones this repository into `~/GSAM` and checks out the newest `live-*` release tag, never unreleased work on `main`. |
-| `runner` | Downloads the prebuilt native runner for that release (`paperclip-runnerd`, attached to every live release by `.github/workflows/runner-binaries.yml`), checks it against the release's `SHA256SUMS`, and keeps it in `runtime/runner/<tag>`; the service hands it to GSAM as `GSAM_RUNNER_BINARY`. Only when there is none (a test build) does it fall back to `rust`: a minimal Rust toolchain with rustup in the same folder, so the first start builds the runner from source. |
+| `runner` | Downloads the prebuilt native runner for that release (`paperclip-runnerd`, attached to every live release by `.github/workflows/release-assets.yml`), checks it against the release's `SHA256SUMS`, and keeps it in `runtime/runner/<tag>`; the service hands it to GSAM as `GSAM_RUNNER_BINARY`. Only when there is none (a test build) does it fall back to `rust`: a minimal Rust toolchain with rustup in the same folder, so the first start builds the runner from source. |
 | `deps` | `pnpm install --frozen-lockfile`. |
 | `tools` | Installs the Claude Code and Codex command line apps, which agents use to sign in with the user's own subscription. |
 | `config` | Log-ins on: authenticated mode, this Mac only (loopback), sign-up closed (invites still work). Backups every hour, kept 30 days. An existing config keeps every other value and is saved as `config.json.before-licence`. |

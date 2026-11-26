@@ -32,9 +32,22 @@ rm -f dist/GSAM.app/Contents/Resources/Assets.car
 /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string GSAM opens Terminal once so you can sign in to Claude or ChatGPT." "$plist" 2>/dev/null || true
 codesign --force --deep --sign - dist/GSAM.app   # ad-hoc signature so macOS treats it as one app
 
-# Disk image: drag GSAM into Applications.
-stage=build/dmg; mkdir -p "$stage"
-cp -R dist/GSAM.app "$stage/"
-ln -s /Applications "$stage/Applications"
-hdiutil create -volname "GSAM" -srcfolder "$stage" -ov -format UDZO dist/GSAM-Installer.dmg >/dev/null
-echo "Built: $(pwd)/dist/GSAM.app and $(pwd)/dist/GSAM-Installer.dmg"
+# One app for Apple silicon and Intel: the AppleScript applet is universal. Check it stays so.
+archs=$(lipo -archs dist/GSAM.app/Contents/MacOS/applet)
+case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "GSAM.app is not universal ($archs)" >&2; exit 1 ;; esac
+
+# Disk image: branded window (Greatstone void, lime arrow, the first-open step), GSAM on the
+# left, Applications on the right, the GSAM icon as the volume icon. dmgbuild (pinned, hashes
+# checked) writes the layout without Finder. It needs Python 3.11 or newer.
+py=""
+for c in "${PYTHON:-}" python3.13 python3.12 python3.11 python3; do
+  [ -n "$c" ] && command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null && { py=$c; break; }
+done
+[ -n "$py" ] || { echo "Python 3.11 or newer is needed to build the disk image (brew install python)" >&2; exit 1; }
+"$py" -m venv build/venv
+build/venv/bin/pip install -q --disable-pip-version-check --require-hashes -r assets/dmgbuild-requirements.txt
+build/venv/bin/dmgbuild -s assets/dmg-settings.py \
+  -D app=dist/GSAM.app -D icon=build/GSAM.icns -D background=assets/dmg-background.png \
+  "GSAM" dist/GSAM-Installer.dmg >/dev/null
+shasum -a 256 dist/GSAM-Installer.dmg | sed 's#dist/##' > dist/GSAM-Installer.dmg.sha256
+echo "Built: $(pwd)/dist/GSAM.app and $(pwd)/dist/GSAM-Installer.dmg ($archs)"

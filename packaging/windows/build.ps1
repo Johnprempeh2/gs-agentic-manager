@@ -5,9 +5,11 @@
 # Signing's signtool line with $f for the file; unset, the installer is unsigned.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-if (-not $env:GSAM_HUB_URL) { throw "Set GSAM_HUB_URL to the hub's address." }
+# Unset: it still builds (as the Mac build.sh does), and activation then says the
+# installer does not know where Greatstone's service is.
+if (-not $env:GSAM_HUB_URL) { Write-Warning "GSAM_HUB_URL is not set; this installer cannot activate a licence until the hub address is built in." }
 New-Item -ItemType Directory -Force -Path build | Out-Null
-Set-Content -Path build\hub-url -Value $env:GSAM_HUB_URL -NoNewline
+Set-Content -Path build\hub-url -Value "$env:GSAM_HUB_URL" -NoNewline
 
 $iscc = @(
   (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source,
