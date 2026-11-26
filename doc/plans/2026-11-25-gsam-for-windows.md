@@ -382,10 +382,19 @@ Found on the way, by running it as a standard user with Developer Mode off:
 
 ## Needs John
 
-- The hub's public address for the release build of the installer
-  (`GSAM_HUB_URL`, as for the Mac `build.sh`), and where to host
-  `GSAM-Setup.exe` (then set `GSAM_WINDOWS_INSTALLER_URL` on the website).
-- Later: an Azure Trusted Signing account (or another code-signing
-  certificate) to remove the SmartScreen warning.
+- Set the repository variable `GSAM_HUB_URL` (the hub's public https
+  address; Settings, Secrets and variables, Actions, Variables), so release
+  installers can activate a licence.
+- Then back-fill the current live tag once: Actions, Release assets, Run
+  workflow, with the tag. It publishes to the public repository, so it is
+  done with John. From then on every new `live-*` tag publishes itself, and
+  the website's links (`releases/latest/download/GSAM-Installer.dmg` and
+  `GSAM-Setup.exe`) serve the newest.
+- Later: Azure Trusted Signing (or another code-signing certificate) to
+  remove the SmartScreen warning, and the Apple Developer Program to notarise
+  the Mac app (no more right-click, then Open).
+- A one-hour check on a real Windows 11 PC: the start at sign-in through Task
+  Scheduler, "update now" through `schtasks /Run`, and Tailscale remote help,
+  which CI cannot sign in to prove.
 - When the Windows jobs have been green for a week: whether to make them
   required checks.
