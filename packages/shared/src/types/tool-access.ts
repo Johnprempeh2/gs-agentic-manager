@@ -1404,6 +1404,7 @@ export type ToolAccessReasonCode =
   | "deny_default"
   | "deny_company_boundary"
   | "deny_disabled_connection"
+  | "deny_connection_not_installed"
   | "deny_disabled_application"
   | "deny_archived_application"
   | "deny_missing_tool"
