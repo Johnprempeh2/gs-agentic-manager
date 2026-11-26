@@ -40,7 +40,9 @@ WizardStyle=modern
 ; installer is never elevated (PrivilegesRequired=lowest), so it is off.
 RedirectionGuard=no
 UninstallDisplayName=GSAM
-UninstallDisplayIcon={sys}\WindowsPowerShell\v1.0\powershell.exe
+SetupIconFile=assets\gsam.ico
+WizardSmallImageFile=assets\wizard-small-58.png,assets\wizard-small-116.png
+UninstallDisplayIcon={app}\gsam.ico
 #ifdef SignTool
 SignTool=gsamsign
 SignedUninstaller=yes
@@ -50,11 +52,12 @@ SignedUninstaller=yes
 Source: "src\gsam.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\macos\src\mac-setup.mjs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "build\hub-url"; DestDir: "{app}"; Flags: ignoreversion
+Source: "assets\gsam.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\GSAM"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\gsam.ps1"" open"; \
-  Comment: "Open GSAM"
+  IconFilename: "{app}\gsam.ico"; Comment: "Open GSAM"
 Name: "{userprograms}\GSAM log"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\gsam.ps1"" log"
 

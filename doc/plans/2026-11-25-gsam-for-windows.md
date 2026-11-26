@@ -255,8 +255,8 @@ full test suite). Added by W3 to W5:
 | Run the installer on a real Windows 11 PC | CI cannot sign a user in, so the scheduled task's start at sign-in (Interactive log-on) and "update now" through `schtasks /Run` are proven only up to registration; the CI test starts what the task runs directly (`GSAM_SERVICE_DIRECT`). | S (an hour on a clean VM) |
 | Tailscale remote help on Windows | The step is written (tailscaled built from source, userspace networking, its own sign-in task), but userspace networking as a standard user on Windows is not proven, and CI cannot join a tailnet. | M |
 | Installer progress UI | The wizard waits while a console window shows each step; a native progress page would look better. | S |
+| Release back-fill | `release-assets.yml` publishes on each new `live-*` tag. The current live tag needs one run by hand (Actions, Release assets, Run workflow, tag) before `releases/latest/download/...` serves anything; to be done with John (it publishes to the public repository). Set the repository variable `GSAM_HUB_URL` first. | S |
 | Code signing | Unsigned: SmartScreen warns (More info, then Run anyway). The hook is in place (`GSAM_SIGN_COMMAND`, Inno's `SignTool`). | S once a certificate exists |
-| Publish the runner binaries for the current live tag | The workflow publishes on each new `live-*` tag. A tag made before it needs one manual run (Actions, Runner binaries, Run workflow, tag). Until then, a new Windows install of that tag has no runner to download and stops with a clear message. | S |
 
 ## Release assets: both installers on every live release
 
@@ -338,7 +338,30 @@ as a sandbox artifact, hub 127.0.0.1, never to be handed out), then as a
 freshly made standard user with Developer Mode off: a sandbox hub makes a
 licence, the installer runs silently with it, and the test checks:
 
-<!-- INSTALLER-RESULT -->
+all green (run 45753443815, about 45 minutes): setup finished every step;
+GSAM answers in authenticated mode; both scheduled tasks exist and run
+without administrator rights; the updater runs at 03:30; the owner's set-up
+link was made; status says licensed and waiting for the owner; the install
+checked in with the hub as a Windows install (check-in v4); the uninstaller
+removed the tasks, kept the data folder, and GSAM stopped.
+
+Found on the way, by running it as a standard user with Developer Mode off:
+
+- **Inno Setup's Redirection Guard.** Setup enables Windows' Redirection
+  Guard by default and the processes it starts inherit it; under it Node
+  refuses the folder junctions pnpm makes for a standard user, so
+  `pnpm install` failed with "unknown error" reading `node_modules`. The
+  logged policy confirmed it. `gsam.iss` sets `RedirectionGuard=no`: the
+  mitigation guards elevated installers, and this one is never elevated.
+- **Directory symlinks.** The repository's own `postinstall`
+  (`link-plugin-dev-sdk`) made a directory symlink, which a standard user
+  cannot. Directory links now go through one helper, `linkDirectory`
+  (`adapter-utils/server-utils`): a junction on Windows, a symlink elsewhere.
+  It serves the plugin SDK link, workspace package links and every adapter's
+  skill links. POSIX unchanged.
+- The engine also runs in 64-bit PowerShell whatever starts it, ignores npm
+  and pnpm settings it inherits, keeps its own package store beside the app,
+  and retries an install by copying files.
 
 ## W5: cross-platform fleet and website (built)
 
