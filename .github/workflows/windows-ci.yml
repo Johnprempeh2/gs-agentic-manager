@@ -213,3 +213,57 @@ jobs:
           & scripts/windows/run-as-standard-user.ps1 -Name installer -TimeoutMinutes 90 `
             -Command "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\installer-smoke.ps1 -Installer ""$installer"" -RunnerBinary ""$runner"" -CodeRef gsam-installer-smoke"
           exit $LASTEXITCODE
+
+  # Temporary: why pnpm install fails for a standard user in the installer test.
+  pnpm-diagnose:
+    name: pnpm install as a standard user (diagnostics)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Compare
+        shell: powershell
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
+          corepack enable
+          git branch -f diag HEAD
+          $probe = @'
+          @echo off
+          set "GIT_CONFIG_COUNT=1"
+          set "GIT_CONFIG_KEY_0=safe.directory"
+          set "GIT_CONFIG_VALUE_0=*"
+          set "D=%LOCALAPPDATA%\diag-%1"
+          git clone -q --no-checkout "%GITHUB_WORKSPACE%" "%D%"
+          git -C "%D%" checkout -q diag
+          cd /d "%D%"
+          echo === whoami & whoami
+          call corepack pnpm --version
+          call corepack pnpm install --frozen-lockfile --ignore-scripts > "%D%\install.log" 2>&1
+          echo install exit %ERRORLEVEL%
+          findstr /i "WARN ERR EPERM symlink junction" "%D%\install.log"
+          echo === links in cpu-features
+          dir /AL "node_modules\.pnpm\cpu-features@0.0.10\node_modules"
+          fsutil reparsepoint query "node_modules\.pnpm\cpu-features@0.0.10\node_modules\buildcheck"
+          echo === read through it
+          node -e "try{console.log(require('fs').readFileSync('node_modules/.pnpm/cpu-features@0.0.10/node_modules/buildcheck/package.json','utf8').length,'bytes')}catch(e){console.log('READ FAILED',e.code,e.message)}"
+          echo === esbuild platform package
+          dir /AL "node_modules\.pnpm\esbuild@0.28.2\node_modules\@esbuild"
+          dir "node_modules\.pnpm" | findstr /i "esbuild+win32"
+          '@
+          Set-Content -Path "$env:RUNNER_TEMP\probe.cmd" -Value $probe -Encoding Ascii
+          icacls "$env:RUNNER_TEMP\probe.cmd" /grant "Users:RX" /Q | Out-Null
+          Write-Output "########## as the runner's administrator"
+          cmd /d /c "$env:RUNNER_TEMP\probe.cmd" admin
+          Write-Output "########## as a standard user"
+          & scripts/windows/run-as-standard-user.ps1 -Name diag -TimeoutMinutes 25 -Command "call ""$env:RUNNER_TEMP\probe.cmd"" std"
+          exit 0

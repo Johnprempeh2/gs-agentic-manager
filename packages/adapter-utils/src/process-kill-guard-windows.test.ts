@@ -76,8 +76,11 @@ describe.runIf(onWindows)("Windows process kill guard against real processes", (
   it("is first on the run's PATH for cmd.exe and Git Bash", async () => {
     const { env } = await stage();
     const where = spawnSync("where.exe", ["taskkill"], { env: { ...process.env, PATH: env.PATH }, encoding: "utf8" });
-    // Compared as real paths: Windows may spell the temp folder in its short 8.3 form.
-    const first = realpathSync.native(where.stdout.trim().split(/\r?\n/)[0]);
+    // cmd.exe runs only names with a PATHEXT extension (where.exe also lists the
+    // extensionless Git Bash shim). Compared as real paths: Windows may spell the
+    // temp folder in its short 8.3 form.
+    const runnable = where.stdout.trim().split(/\r?\n/).find((line) => /\.(cmd|exe|bat|com)$/i.test(line))!;
+    const first = realpathSync.native(runnable);
     expect(first.toLowerCase()).toBe(realpathSync.native(path.join(env.GSAM_GITHUB_LAUNCHER_DIR, "taskkill.cmd")).toLowerCase());
   });
 
