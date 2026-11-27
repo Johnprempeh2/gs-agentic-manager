@@ -793,12 +793,9 @@ export function Intelligence() {
   return (
     <div className="w-full max-w-7xl space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-bold">Intelligence</h1>
-          <p className="text-sm text-muted-foreground">
-            The Daily Pulse and the AI leaderboards, written by your intelligence agent from real sources.
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 basis-72 text-sm text-muted-foreground">
+          The Daily Pulse and the AI leaderboards, written by your intelligence agent from real sources.
+        </p>
         <div className="flex items-center gap-2">
           <Input
             type="date"

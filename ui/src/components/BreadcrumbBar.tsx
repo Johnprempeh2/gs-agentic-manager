@@ -1,3 +1,4 @@
+import { Kbd } from "@/components/ui/kbd";
 import { Link, useNavigate } from "@/lib/router";
 import { ChevronLeft, Menu, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -85,7 +86,7 @@ function GlobalSearchButton() {
     >
       <Search className="h-4 w-4" aria-hidden="true" />
       <span className="@max-4xl/bar:sr-only">Search</span>
-      <kbd className="rounded border border-border bg-muted px-1 font-sans text-(length:--text-nano) @max-4xl/bar:hidden">{shortcut}</kbd>
+      <Kbd className="@max-4xl/bar:hidden">{shortcut}</Kbd>
     </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">Search everything ({shortcut})</TooltipContent>

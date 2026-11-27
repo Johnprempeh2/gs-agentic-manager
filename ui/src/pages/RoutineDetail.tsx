@@ -665,7 +665,7 @@ export function RoutineDetail() {
   }
 
   if (isLoading) {
-    return <PageSkeleton variant="issues-list" />;
+    return <PageSkeleton variant="issues-list" toolbar />;
   }
 
   if (error || !routine || !routineDefaults) {

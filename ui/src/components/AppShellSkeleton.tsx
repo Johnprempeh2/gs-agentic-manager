@@ -40,7 +40,8 @@ export function AppShellSkeleton({ pathname }: { pathname?: string }) {
   const collapsed = sidebar?.collapsed ?? false;
   const sidebarOpen = sidebar?.sidebarOpen ?? !isMobile;
   const path = pathname ?? (typeof window === "undefined" ? "/" : window.location.pathname);
-  const page = <PageSkeleton variant={shellSkeletonVariant(path)} />;
+  // Nothing real is on screen yet, so the task list skeleton brings its own toolbar.
+  const page = <PageSkeleton variant={shellSkeletonVariant(path)} toolbar />;
 
   if (isMobile) {
     return (

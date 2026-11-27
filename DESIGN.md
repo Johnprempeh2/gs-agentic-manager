@@ -80,6 +80,38 @@ Full findings: `doc/ui-audit-2026-11-27.md`.
   `toolbarPresentation="collection"` to `IssuesList`, so Tasks, the Desk and a
   project's tasks share the glass capsule.
 
+## Craft rules, second pass (27 Nov)
+
+- **The page bar names the page, once.** No `h1` under the bar repeating its
+  words. The page opens with the sentence that says what it is for, then its
+  actions. Twelve pages lost their second heading (Adapters, Billing, Cases,
+  Deep Dive, Experimental, Fleet, Get help, Integrations, Intelligence,
+  Notifications, Pipelines, Pipelines access).
+- **Tabular figures everywhere.** `body` sets `tabular-nums`; rendered
+  markdown opts back out. "1h ago" sits exactly over "11h ago".
+- **One height for a one-line task row: 40px**, on Tasks, the Inbox, the
+  Dashboard and a project alike (`sm:min-h-10` on `IssueRow`).
+- **One keycap.** `Kbd` (`ui/kbd.tsx`) for every shortcut hint.
+- **The command palette does not move.** Pinned at `--sz-palette-top` from
+  `md` up; its list is capped by `--sz-palette-list` so it always fits. One
+  row looks selected (the lit `gs-row`), keys share a column, and a footer
+  carries the key hints.
+- **Skeletons match what lands.** Task lists load as `SkeletonRows` under
+  their real toolbar (the old skeleton drew a second toolbar, then dropped
+  it). The default list skeleton is drawn as entity rows in a card.
+- **Lists settle, pages rise.** `useSettleMotion` (160ms, 4px,
+  `--motion-list-settle`) when a list's contents change; `useRouteEnterMotion`
+  (`--motion-route-enter`) when the section changes. Neither delays input;
+  reduced motion zeroes both tokens.
+- **Dashboard band.** The void with the tide arcs and the lime stone on the
+  right. John kept the arcs on 27 Nov 2026: do not remove them. The tide is
+  masked out of the copy zone, so lime never sits behind the greeting.
+- **Server words are translated at the edge.** `errorStateMessage` turns the
+  server's "Issue not found" into "Task not found"; people never see "issue".
+- **Counts on a tinted chip use the status tokens.** The Approvals "Pending"
+  count was yellow on a yellow wash (1.45:1 by day); it is now
+  `bg-status-warning-soft text-status-warning-foreground`.
+
 ## One "needs you" count
 
 John, 22 Oct: "one count everywhere". Every number that says something

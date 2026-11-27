@@ -185,6 +185,22 @@ const copy = useCopyAction();
 </Button>
 ```
 
+### Kbd
+
+**File:** `ui/kbd.tsx`
+**Usage:** The one keycap. Use it for every shortcut hint (command palette rows and footer, the search button, a field's `/` hint). Never hand-style a `<kbd>`. A two-key sequence is two keycaps: `<Kbd>g</Kbd><Kbd>f</Kbd>`.
+
+### SkeletonRows
+
+**File:** `PageSkeleton.tsx`
+**Props:** `count`
+**Usage:** Loading rows shaped like task rows (ring, title, key, time) at the real row height. `PageSkeleton variant="issues-list"` and `"inbox"` use it. Pass `toolbar` to `PageSkeleton` only where no real toolbar is on screen yet (the app shell, a page that returns the skeleton alone).
+
+### useSettleMotion
+
+**File:** `hooks/useSettleMotion.ts`
+**Usage:** `useSettleMotion(ref, key)` lets a list settle in (160ms, 4px) when `key` changes: a filter, a sort, a grouping, or data replacing the skeleton. No remount, nothing waits on it, off under reduced motion. The task list uses it; use it for any list whose contents swap in place.
+
 ### FilterBar
 
 **File:** `FilterBar.tsx`

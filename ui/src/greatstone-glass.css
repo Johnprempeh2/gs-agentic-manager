@@ -80,6 +80,8 @@
   --motion-route-enter: 380ms;
   --motion-route-travel: 8px;
   --motion-route-travel-x: 24px; /* phone: page slides sideways on push/back */
+  --motion-list-settle: 160ms; /* a list after its filter, sort or first data changes */
+  --motion-list-settle-travel: 4px;
   --motion-float-enter: 220ms;
   --motion-hover-lift: 180ms;
   --motion-press: 90ms;
@@ -998,6 +1000,7 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-route-enter: 0ms;
+    --motion-list-settle: 0ms;
     --motion-float-enter: 0ms;
     --motion-hover-lift: 0ms;
     --motion-stagger-step: 0ms;

@@ -763,7 +763,7 @@ export function Routines() {
   }
 
   if (isLoading) {
-    return <PageSkeleton variant="issues-list" />;
+    return <PageSkeleton variant="issues-list" toolbar />;
   }
 
   return (

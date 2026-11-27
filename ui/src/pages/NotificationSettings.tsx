@@ -193,8 +193,7 @@ export function NotificationSettings() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold">Notifications</h1>
+      <header>
         <p className="text-sm text-muted-foreground">
           Choose what GSAM tells you about. Everything still shows in Decisions and your Inbox; this only decides what reaches your phone.
         </p>

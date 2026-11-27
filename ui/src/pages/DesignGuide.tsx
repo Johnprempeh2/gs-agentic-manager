@@ -186,7 +186,8 @@ import { SidebarBrandSignature } from "@/components/SidebarBrandSignature";
 import { MetricCard } from "@/components/MetricCard";
 import { FilterBar, type FilterValue } from "@/components/FilterBar";
 import { InlineEditor } from "@/components/InlineEditor";
-import { PageSkeleton } from "@/components/PageSkeleton";
+import { PageSkeleton, SkeletonRows } from "@/components/PageSkeleton";
+import { Kbd } from "@/components/ui/kbd";
 import { Identity } from "@/components/Identity";
 import { AppLogo } from "@/pages/apps/AppLogo";
 import { IssueReferencePill } from "@/components/IssueReferencePill";
@@ -725,12 +726,17 @@ export function DesignGuide() {
         </SubSection>
         <SubSection title="Tide of time">
           <p className="max-w-prose text-sm text-muted-foreground">
-            Always on the void, never behind copy: BrandTideHero carries no text, and
-            DashboardHero masks the tide out of its copy zone.
+            Always on the void, never behind copy: BrandTideHero carries no text.
           </p>
           <div className="h-56 overflow-hidden rounded-xl border">
             <BrandTideHero />
           </div>
+        </SubSection>
+        <SubSection title="Dashboard welcome band">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            The void, a soft emerald glow behind the stone and a little static grain. No arcs and
+            nothing moving; the glow has faded out before the copy, which stays at 7:1 or better.
+          </p>
           <DashboardHero companyName="Northwind Labs" />
         </SubSection>
         <SubSection title="Confirmations">
@@ -1869,6 +1875,30 @@ export function DesignGuide() {
           and keeps the resting width, so nothing beside the button moves.
         </p>
         <CopyActionDemo />
+      </Section>
+
+      <Section title="Keycaps">
+        <p className="text-sm text-muted-foreground">
+          <code className="font-mono text-xs">Kbd</code> is the one keycap: the command palette, the search
+          button and every shortcut hint use it, so a key looks the same everywhere.
+        </p>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> Move</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>↵</Kbd> Open</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>Tab</Kbd> Task actions</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>⌘K</Kbd> Search</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>Esc</Kbd> Close</span>
+        </div>
+      </Section>
+
+      <Section title="Skeleton rows">
+        <p className="text-sm text-muted-foreground">
+          <code className="font-mono text-xs">SkeletonRows</code> stands in for task rows at their real height,
+          under the real toolbar, so nothing moves when the tasks land. A skeleton never draws a second toolbar.
+        </p>
+        <div className="max-w-3xl">
+          <SkeletonRows count={4} />
+        </div>
       </Section>
 
       <Section title="Scroll edge fade">

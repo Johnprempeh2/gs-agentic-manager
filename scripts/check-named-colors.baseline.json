@@ -1702,10 +1702,6 @@
     "text-green-700": 1,
     "text-green-800": 2
   },
-  "ui/src/pages/Approvals.tsx": {
-    "bg-yellow-500/20": 1,
-    "text-yellow-500": 1
-  },
   "ui/src/pages/BoardChat.tsx": {
     "bg-blue-600": 2
   },

@@ -1,3 +1,4 @@
+import { Kbd } from "@/components/ui/kbd";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowUpRight, AudioLines, Loader2, Mic, Pause, Play } from "lucide-react";
@@ -544,9 +545,7 @@ function FocusFooter({
 
 function Key({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-      {children}
-    </kbd>
+    <Kbd>{children}</Kbd>
   );
 }
 

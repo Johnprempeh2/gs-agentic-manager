@@ -1,3 +1,4 @@
+import { Kbd } from "@/components/ui/kbd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { groupDeliverableDocuments, type DeliverableAudience, type Project } from "@greatstone/shared";
@@ -411,9 +412,7 @@ export function Deliverables() {
                 <X className="h-4 w-4" />
               </button>
             ) : (
-              <kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground">
-                /
-              </kbd>
+              <Kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">/</Kbd>
             )}
           </div>
           <button

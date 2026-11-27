@@ -360,13 +360,10 @@ export function Fleet() {
   return (
     <div className="space-y-4" data-testid="fleet-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Fleet</h1>
-          <p className="text-sm text-muted-foreground">
-            Each client install and what its last check-in said. Licences, documents and orders are signed with the hub
-            key and reach a Mac install at its next check-in, within 5 minutes.
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 basis-72 text-sm text-muted-foreground">
+          Each client install and what its last check-in said. Licences, documents and orders are signed with the hub
+          key and reach a Mac install at its next check-in, within 5 minutes.
+        </p>
         <NewLicenceButton />
       </div>
 

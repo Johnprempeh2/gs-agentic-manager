@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plug } from "lucide-react";
 import type { ActivityEvent, InboundTaskHookSummary, MailboxSummary, OutboundWebhookSummary, ToolConnection } from "@greatstone/shared";
 import { isToolConnectionAttentionHealth } from "@greatstone/shared";
 import { activityApi } from "@/api/activity";
@@ -386,10 +385,6 @@ export function Integrations() {
   return (
     <div className="flex max-w-5xl flex-col gap-6">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Plug className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Integrations</h1>
-        </div>
         <p className="text-sm text-foreground" data-testid="integrations-purpose">
           Integrations move your work in and out of GSAM: bring clients and notes in, send updates out, and see deadlines
           in your own calendar.

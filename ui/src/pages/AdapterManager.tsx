@@ -410,13 +410,10 @@ export function AdapterManager() {
     <div className="max-w-6xl space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Cpu className="h-6 w-6 text-muted-foreground" />
-          <h1 className="text-xl font-semibold">Adapters</h1>
-          <Badge variant="outline" className="text-amber-600 border-amber-400">
-            Alpha
-          </Badge>
-        </div>
+        {/* The page bar says "Adapters"; the page keeps only what it adds. */}
+        <Badge variant="outline" className="text-amber-600 border-amber-400">
+          Alpha
+        </Badge>
 
         <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
           <DialogTrigger asChild>

@@ -81,6 +81,7 @@ import { agentTeamsApi } from "../api/agentTeams";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
 import { PageSkeleton } from "./PageSkeleton";
+import { useSettleMotion } from "../hooks/useSettleMotion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -1504,6 +1505,12 @@ export function IssuesList({
     enableRoutineVisibilityFilter,
   );
   // The status segment already shows its preset, so no chip repeats it (GRE-5832).
+  // The rows settle in when the set on screen changes, or first arrives.
+  const listSettleRef = useRef<HTMLDivElement>(null);
+  useSettleMotion(
+    listSettleRef,
+    `${activeFilterCount}:${viewState.statuses.join(",")}:${viewState.sortField}:${viewState.sortDir}:${viewState.groupBy}:${isLoading ? 0 : 1}`,
+  );
   const chipFilters = showStatusChips && statusChipPresetFor(viewState.statuses)
     ? activeFilters.filter((filter) => filter.key !== "statuses")
     : activeFilters;
@@ -2414,7 +2421,7 @@ export function IssuesList({
           onUpdateIssue={onUpdateIssue}
         />
       ) : (
-        <div className="-mx-2 sm:mx-0">
+        <div ref={listSettleRef} className="-mx-2 sm:mx-0">
           {groupedContent.map((group) => {
           if (remainingRowsToRender <= 0) return null;
           return (
