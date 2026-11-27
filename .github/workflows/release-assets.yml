@@ -5,9 +5,8 @@
 #                      and macOS x64 (cross-built on the Apple silicon runner),
 #                      which installs download instead of compiling Rust
 #   mac-installer      GSAM-Installer.dmg: the universal GSAM.app in a branded
-#                      disk image (packaging/macos/build.sh), ad hoc signed, not
-#                      notarised; plus Light and Dark Mode screenshots of the
-#                      mounted window
+#                      disk image (packaging/macos/build.sh); plus Light and
+#                      Dark Mode screenshots of the mounted window
 #   windows-installer  GSAM-Setup.exe (packaging/windows/build.ps1), unsigned;
 #                      plus screenshots of the wizard pages
 #   publish            on a live-* tag only: SHA256SUMS over all of them, and
@@ -23,8 +22,17 @@
 # Pull requests that touch any of it build everything and keep it as workflow
 # artifacts; nothing is published. A run by hand with a tag builds that tag and
 # publishes it (back-fill for a tag made before this workflow). Plan:
-# doc/plans/2026-11-25-gsam-for-windows.md (W3, W4). No secrets; publish alone
-# gets contents: write.
+# doc/plans/2026-11-25-gsam-for-windows.md (W3, W4). Publish alone gets
+# contents: write.
+#
+# Mac signing (packaging/macos/README.md, "Signing"). When these repository
+# secrets exist, a tag build or a run by hand signs GSAM.app, the disk image
+# and the two Mac runner binaries with Greatstone's Developer ID, and Apple
+# notarises the disk image. Without them everything is ad hoc signed as before.
+# Pull requests never see the secrets and never sign.
+#   MACOS_CERT_P12, MACOS_CERT_PASSWORD      the Developer ID Application certificate
+#   MACOS_NOTARY_KEY_P8 (base64), MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER_ID
+#                                            the App Store Connect API key
 
 name: Release assets
 
@@ -63,6 +71,8 @@ jobs:
     name: Runner (${{ matrix.asset }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    env:
+      SIGNING: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERT_P12 != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +112,21 @@ jobs:
           mkdir -p out
           cp "packages/paperclip-runner/runner/target/${{ matrix.target }}/release/${{ matrix.exe }}" "out/${{ matrix.asset }}"
 
+      # Installs download this file with curl, so Gatekeeper never checks it; the signature is
+      # there so macOS and security tools can tell whose binary it is. Not under the hardened
+      # runtime and not notarised.
+      - name: Sign the Mac binary with the Developer ID
+        if: runner.os == 'macOS' && env.SIGNING == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/gsam-signing.keychain-db"
+          id=$(bash scripts/release/macos-signing-keychain.sh "$keychain")
+          codesign --force --timestamp --keychain "$keychain" --sign "$id" "out/${{ matrix.asset }}"
+          codesign --verify --strict --verbose=2 "out/${{ matrix.asset }}"
+          security delete-keychain "$keychain"
+
       - name: Keep the binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -112,7 +137,12 @@ jobs:
   mac-installer:
     name: Mac installer (GSAM-Installer.dmg)
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      SIGNING: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERT_P12 != '' }}
+      NOTARISING: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERT_P12 != '' && secrets.MACOS_NOTARY_KEY_P8 != '' }}
+    outputs:
+      notarised: ${{ steps.build.outputs.notarised }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,10 +150,38 @@ jobs:
           persist-credentials: false
           ref: ${{ env.BUILD_REF }}
 
+      - name: Developer ID certificate into a throwaway keychain
+        if: env.SIGNING == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/gsam-signing.keychain-db"
+          id=$(bash scripts/release/macos-signing-keychain.sh "$keychain")
+          echo "GSAM_SIGN_IDENTITY=$id" >> "$GITHUB_ENV"
+          echo "GSAM_SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: App Store Connect key for notarising
+        if: env.NOTARISING == 'true'
+        env:
+          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          key="$RUNNER_TEMP/gsam-notary-key.p8"
+          (umask 077; printf '%s' "$MACOS_NOTARY_KEY_P8" | base64 --decode > "$key")
+          echo "GSAM_NOTARY_KEY=$key" >> "$GITHUB_ENV"
+          echo "GSAM_NOTARY_KEY_ID=$MACOS_NOTARY_KEY_ID" >> "$GITHUB_ENV"
+          echo "GSAM_NOTARY_ISSUER=$MACOS_NOTARY_ISSUER_ID" >> "$GITHUB_ENV"
+
       - name: Build GSAM-Installer.dmg
+        id: build
         env:
           GSAM_HUB_URL: ${{ vars.GSAM_HUB_URL }}
         run: |
+          if [ "$SIGNING" != true ] && [ "${{ github.event_name }}" != pull_request ]; then
+            echo "::warning title=Not signed by Greatstone::The Developer ID secrets are unset, so this GSAM-Installer.dmg is ad hoc signed: the first open needs right-click, Open."
+          fi
           if [ -z "$GSAM_HUB_URL" ]; then
             echo "::warning title=No hub address::The repository variable GSAM_HUB_URL is unset, so this GSAM-Installer.dmg cannot activate a licence. Set it and run again."
           fi
@@ -131,7 +189,19 @@ jobs:
           lipo -archs packaging/macos/dist/GSAM.app/Contents/MacOS/applet
           codesign --verify --deep packaging/macos/dist/GSAM.app
           hdiutil verify packaging/macos/dist/GSAM-Installer.dmg
+          if [ "$NOTARISING" = true ]; then
+            # What a customer's Mac does on first open: Gatekeeper must accept both.
+            spctl --assess --type open --context context:primary-signature -vv packaging/macos/dist/GSAM-Installer.dmg
+            spctl --assess --type execute -vv packaging/macos/dist/GSAM.app
+            echo "notarised=true" >> "$GITHUB_OUTPUT"
+          fi
           ls -la packaging/macos/dist
+
+      - name: Remove the keychain and the key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/gsam-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/gsam-notary-key.p8"
 
       - name: Screenshots of the mounted window (Light and Dark Mode)
         continue-on-error: true
@@ -223,6 +293,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
+          MAC_NOTARISED: ${{ needs.mac-installer.outputs.notarised }}
         run: |
           cd out
           ls -la
@@ -231,10 +302,12 @@ jobs:
           # Latest only when this is the newest live-* tag (a back-fill of an older one is not).
           newest=$(git ls-remote --tags --refs "https://github.com/$GH_REPO.git" 'live-*' | sed 's#.*refs/tags/##' | sort -V | tail -1)
           latest=$([ "$newest" = "$TAG" ] && echo true || echo false)
+          mac_note="Mac, Apple silicon and Intel: the first time, right-click GSAM in Applications and choose Open"
+          [ "$MAC_NOTARISED" != true ] || mac_note="Mac, Apple silicon and Intel, signed by Greatstone and checked by Apple"
           if gh release view "$TAG" >/dev/null 2>&1; then
             [ "$latest" = false ] || gh release edit "$TAG" --latest
           else
             gh release create "$TAG" --verify-tag --latest="$latest" --title "GSAM $TAG" \
-              --notes "GSAM release $TAG. GSAM-Installer.dmg (Mac, Apple silicon and Intel: the first time, right-click GSAM in Applications and choose Open) and GSAM-Setup.exe (Windows 10 and 11: if Windows says it protected your PC, choose More info, then Run anyway). Installs download the runner binaries below. Check any file against SHA256SUMS."
+              --notes "GSAM release $TAG. GSAM-Installer.dmg ($mac_note) and GSAM-Setup.exe (Windows 10 and 11: if Windows says it protected your PC, choose More info, then Run anyway). Installs download the runner binaries below. Check any file against SHA256SUMS."
           fi
           gh release upload "$TAG" paperclip-runnerd-* GSAM-Installer.dmg GSAM-Setup.exe SHA256SUMS --clobber
