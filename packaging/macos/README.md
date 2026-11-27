@@ -13,9 +13,34 @@ GSAM_HUB_URL=https://<Greatstone hub> ./build.sh
 
 - **One download for every Mac**: `GSAM.app` is an AppleScript applet, which is universal (Apple silicon and Intel); the build stops if that ever changes.
 - **The disk image**: a branded window (Greatstone void `#121212`, the wordmark, a lime arrow) with GSAM on the left and an Applications alias on the right, and the GSAM stone as the volume icon. The background is `assets/dmg-background.png` (and `@2x`), drawn by `assets/make-dmg-background.py`; the window is exactly the 1x image's size (`assets/dmg-settings.py` reads it). Finder draws the icon labels black or white depending on the Mac, so each sits on a `#767676` pill that both pass AA on.
-- **Signing**: ad hoc, not notarised (no Apple Developer Program yet). **The first time, right-click GSAM in Applications and choose Open**, then Open again in the dialog. The disk image window says so too.
+- **Signing**: see "Signing" below. Until Greatstone's Developer ID is set up the app is ad hoc signed, so **the first time, right-click GSAM in Applications and choose Open**, then Open again in the dialog. The disk image window says so too.
 
 Every `live-*` release gets `GSAM-Installer.dmg` built by `.github/workflows/release-assets.yml` (with the hub address from the repository variable `GSAM_HUB_URL`) and attached to the GitHub release, so `https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/GSAM-Installer.dmg` is always the newest.
+
+## Signing
+
+`build.sh` signs with whatever it is given:
+
+| Set | Result |
+|---|---|
+| nothing | Ad hoc signature. The first open needs right-click, Open. |
+| `GSAM_SIGN_IDENTITY` (and `GSAM_SIGN_KEYCHAIN`) | `GSAM.app` is signed with that "Developer ID Application" identity under the hardened runtime (`assets/entitlements.plist`: Apple events only, for the Terminal sign-in window), and the disk image is signed too. |
+| also `GSAM_NOTARY_KEY`, `GSAM_NOTARY_KEY_ID`, `GSAM_NOTARY_ISSUER` | Apple notarises the disk image (one submission covers the app inside) and the ticket is stapled to it. A double-click then opens GSAM with no warning. |
+
+In CI (`.github/workflows/release-assets.yml`) these come from repository secrets, on tag builds and runs by hand only. Pull requests never sign.
+
+| Secret | What it is |
+|---|---|
+| `MACOS_CERT_P12` | base64 of a `.p12` holding the Developer ID Application certificate, its private key and Apple's "Developer ID Certification Authority" (G2) intermediate |
+| `MACOS_CERT_PASSWORD` | the `.p12` password |
+| `MACOS_NOTARY_KEY_P8` | base64 of the App Store Connect API key (`AuthKey_<id>.p8`, role Developer) |
+| `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID` | that key's ID and the team's issuer ID |
+
+Make the `.p12` with the system OpenSSL (`/usr/bin/openssl pkcs12 -export -inkey developer-id.key -in developer_id.pem -certfile DeveloperIDG2CA.pem`): the keychain cannot read the newer encryption Homebrew's OpenSSL 3 writes by default. `scripts/release/macos-signing-keychain.sh` imports it into a throwaway keychain and prints the identity.
+
+The two Mac runner binaries are signed with the same identity (no hardened runtime, not notarised): installs download them with `curl`, which Gatekeeper does not check.
+
+Once the first notarised release is out, redraw the disk image background (`assets/make-dmg-background.py`) without the "right-click, Open" step, and drop it from the website's download page.
 
 ## What the app does
 
