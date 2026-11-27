@@ -103,9 +103,9 @@ Full findings: `doc/ui-audit-2026-11-27.md`.
   `--motion-list-settle`) when a list's contents change; `useRouteEnterMotion`
   (`--motion-route-enter`) when the section changes. Neither delays input;
   reduced motion zeroes both tokens.
-- **Dashboard band.** The void, a soft emerald glow seated behind the stone,
-  static grain. No arcs or waves, nothing animated. Copy stays at 7:1 or
-  better on the real pixels (measured 7.55:1 worst case).
+- **Dashboard band.** The void with the tide arcs and the lime stone on the
+  right. John kept the arcs on 27 Nov 2026: do not remove them. The tide is
+  masked out of the copy zone, so lime never sits behind the greeting.
 - **Server words are translated at the edge.** `errorStateMessage` turns the
   server's "Issue not found" into "Task not found"; people never see "issue".
 - **Counts on a tinted chip use the status tokens.** The Approvals "Pending"
