@@ -171,7 +171,7 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
         <span>{formatPercent(usage.usedPercent)} of your included AI usage used this month</span>
         {over ? null : <span className="shrink-0">{formatPercent(100 - usage.usedPercent)} left</span>}
       </div>
-      <div className="relative h-2 rounded-full bg-muted">
+      <div className="relative h-2 rounded-full bg-track">
         <div
           role="progressbar"
           aria-label="Included AI usage used"

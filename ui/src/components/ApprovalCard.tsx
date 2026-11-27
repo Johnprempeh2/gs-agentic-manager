@@ -59,8 +59,8 @@ export function ApprovalCard({
 
   return (
     <Card className="block border-border/70 p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col-reverse items-start gap-3 sm:flex-row sm:justify-between sm:gap-4">
+        <div className="w-full min-w-0 flex-1">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80">
               <Icon className="h-4 w-4 text-muted-foreground" />
@@ -123,15 +123,15 @@ export function ApprovalCard({
               <>
                 <Button
                   size="sm"
-                  className="bg-green-700 hover:bg-green-600 text-white"
                   onClick={onApprove}
                   disabled={isPending}
                 >
                   {pendingAction === "approve" ? labels.approving : labels.approve}
                 </Button>
                 <Button
-                  variant="destructive"
+                  variant="outline"
                   size="sm"
+                  className="text-destructive hover:text-destructive"
                   onClick={onReject}
                   disabled={isPending}
                 >

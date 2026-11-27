@@ -48,6 +48,38 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
   lines get; it does not centre the page (`mx-auto` is for dialogs and
   single-column reading views, not app pages).
 
+## Craft rules (27 Nov audit)
+
+Full findings: `doc/ui-audit-2026-11-27.md`.
+
+- **One filled button per decision.** The yes (Approve, Grant) is the primary
+  `Button`. The no (Reject, Deny, Cancel the task) is an outline button with
+  `text-destructive`. The Desk, the Inbox, Approvals and an approval page all
+  follow this; a raw green fill beside a filled red one is gone.
+- **Progress tracks.** The empty part of a bar, ring or meter is `bg-track`
+  (`stroke-track`), never `bg-muted`. At night `--muted` is 1.09:1 on a card,
+  so an empty bar disappeared; `--track` is 1.5:1.
+- **A control never changes size when it answers.** A copy button that turns
+  into "Copied" uses `CopyActionLabel`, which keeps the resting width. On
+  Agents the shrink let the toolbar jump a row for a second and a half.
+- **Titles wrap before they truncate.** A card title gets two lines
+  (`line-clamp-2`) before an ellipsis. One line with an ellipsis is for rows
+  in a dense list, where the full title is one click away.
+- **Machine keys never wrap.** A task key such as `NOR-14` is
+  `whitespace-nowrap shrink-0`; the title beside it gives way.
+- **Header actions keep their row.** Beside a sentence, the action group is
+  `shrink-0` and does not wrap; the sentence wraps first. Below `lg` the
+  actions drop under the sentence as one group.
+- **Scroll edges.** A scrolling column cut by fixed chrome (the navigation
+  rail above its footer) carries `gs-scroll-fade-y`, so a row is never sliced
+  in half by the edge.
+- **Card headers stack on a phone.** A status pill sits above the title below
+  `sm`, not beside it: side by side, the pill and an uppercase kind chip
+  pushed the Approvals card 17px past a 390px screen.
+- **One toolbar shape for task lists.** A task list passes
+  `toolbarPresentation="collection"` to `IssuesList`, so Tasks, the Desk and a
+  project's tasks share the glass capsule.
+
 ## One "needs you" count
 
 John, 22 Oct: "one count everywhere". Every number that says something

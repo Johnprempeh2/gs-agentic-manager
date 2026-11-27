@@ -69,7 +69,7 @@ function ServerInfoRow({
             {value}
           </time>
         ) : (
-          <span className="block break-words text-xs text-muted-foreground">{value}</span>
+          <span className="line-clamp-2 break-words text-xs text-muted-foreground" title={value}>{value}</span>
         )}
       </span>
     </div>

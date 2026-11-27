@@ -613,16 +613,16 @@ function ApprovalInboxRow({
               <>
                 <Button
                   size="sm"
-                  className="h-8 min-w-(--sz-64px) justify-center bg-green-700 px-3 text-white hover:bg-green-600"
+                  className="h-8 min-w-(--sz-64px) justify-center px-3"
                   onClick={onApprove}
                   disabled={isPending}
                 >
                   {isPermissionGrant ? "Grant" : "Approve"}
                 </Button>
                 <Button
-                  variant="destructive"
+                  variant="outline"
                   size="sm"
-                  className="h-8 min-w-(--sz-64px) justify-center px-3"
+                  className="h-8 min-w-(--sz-64px) justify-center px-3 text-destructive hover:text-destructive"
                   onClick={onReject}
                   disabled={isPending}
                 >
@@ -637,16 +637,16 @@ function ApprovalInboxRow({
         <div className="mt-3 flex gap-2 sm:hidden">
           <Button
             size="sm"
-            className="h-8 min-w-(--sz-64px) justify-center bg-green-700 px-3 text-white hover:bg-green-600"
+            className="h-8 min-w-(--sz-64px) justify-center px-3"
             onClick={onApprove}
             disabled={isPending}
           >
             {isPermissionGrant ? "Grant" : "Approve"}
           </Button>
           <Button
-            variant="destructive"
+            variant="outline"
             size="sm"
-            className="h-8 min-w-(--sz-64px) justify-center px-3"
+            className="h-8 min-w-(--sz-64px) justify-center px-3 text-destructive hover:text-destructive"
             onClick={onReject}
             disabled={isPending}
           >
@@ -737,16 +737,16 @@ function JoinRequestInboxRow({
           ) : null}
           <Button
             size="sm"
-            className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+            className="h-8 px-3"
             onClick={onApprove}
             disabled={isPending}
           >
             Approve
           </Button>
           <Button
-            variant="destructive"
+            variant="outline"
             size="sm"
-            className="h-8 px-3"
+            className="h-8 px-3 text-destructive hover:text-destructive"
             onClick={onReject}
             disabled={isPending}
           >
@@ -757,16 +757,16 @@ function JoinRequestInboxRow({
       <div className="mt-3 flex gap-2 sm:hidden">
         <Button
           size="sm"
-          className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+          className="h-8 px-3"
           onClick={onApprove}
           disabled={isPending}
         >
           Approve
         </Button>
         <Button
-          variant="destructive"
+          variant="outline"
           size="sm"
-          className="h-8 px-3"
+          className="h-8 px-3 text-destructive hover:text-destructive"
           onClick={onReject}
           disabled={isPending}
         >

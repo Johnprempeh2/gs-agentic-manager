@@ -51,6 +51,7 @@ import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
 import { DashboardDealsCards } from "../components/DashboardDealsCards";
 import { ErrorState } from "../components/ErrorState";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
 /** The phone home lists fewer open tasks; "View all tasks" has the rest (GRE-364). */
@@ -553,7 +554,7 @@ export function Dashboard() {
                   onClick={() => void numbersCopy.copy(dashboardNumbersText(data))}
                 >
                   {numbersCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-                  {numbersCopy.copied ? "Copied" : numbersCopy.failed ? "Could not copy" : "Copy the numbers"}
+                  <CopyActionLabel copy={numbersCopy}>Copy the numbers</CopyActionLabel>
                 </Button>
               </div>
               <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">

@@ -26,6 +26,7 @@ import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
 import { BoardPeriodCard } from "@/components/strategy-board/BoardPeriodCard";
 import { FeatureTour } from "@/components/FeatureTour";
 import { STRATEGY_BOARD_TOUR } from "@/lib/feature-tours";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 function SectionHeading({ id, children }: { id: string; children: string }) {
   return (
@@ -183,7 +184,7 @@ export function StrategyBoard() {
             onClick={() => void updateCopy.copy(boardUpdateText(board, boardLede(board.counts, board.kpis)))}
           >
             {updateCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-            {updateCopy.copied ? "Copied" : updateCopy.failed ? "Could not copy" : "Copy as an update"}
+            <CopyActionLabel copy={updateCopy}>Copy as an update</CopyActionLabel>
           </Button>
           <Button size="sm" variant="outline" asChild>
             <Link to="/goals">

@@ -1103,7 +1103,7 @@ export function RunnerInspector({
                       {Object.entries(dispositionCounts).length ? Object.entries(dispositionCounts).map(([label, count]) => (
                         <div key={label} className="flex items-center gap-3 text-sm">
                           <Badge variant="outline" className="w-24 justify-center capitalize">{label}</Badge>
-                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (count / Math.max(1, interpretations.length)) * 100)}%` }} /></div>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-track"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (count / Math.max(1, interpretations.length)) * 100)}%` }} /></div>
                           <span className="w-8 text-right font-mono text-xs">{count}</span>
                         </div>
                       )) : <p className="text-sm text-muted-foreground">No interpretation records were persisted.</p>}

@@ -245,10 +245,10 @@ Dashboard metrics in a responsive grid:
 
 ### Progress Bar (Budget)
 
-Color by threshold: green (<60%), yellow (60-85%), red (>85%):
+The track is `bg-track` (`stroke-track` for a ring), never `bg-muted`, which vanishes on a dark card. Color by threshold: green (<60%), yellow (60-85%), red (>85%):
 
 ```tsx
-<div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+<div className="w-full h-2 bg-track rounded-full overflow-hidden">
   <div className="h-full rounded-full bg-green-400" style={{ width: `${pct}%` }} />
 </div>
 ```
@@ -289,6 +289,18 @@ light mode. The same rule applies to any de-emphasised text.
 ### Reduced Motion
 
 Under `prefers-reduced-motion: reduce`, one global block in `index.css` stops `animate-pulse` and `animate-bounce` and hides the `animate-ping` ring (so always pair a ping ring with a solid dot); `animate-spin` keeps spinning. Any new looping animation needs its own reduced-motion rule.
+
+### Decision Buttons
+
+One filled button per decision. The yes ("Approve", "Grant") is the default `Button`; the no ("Reject", "Deny", "Cancel the task") is `variant="outline"` with `text-destructive hover:text-destructive`. Never a raw green fill beside a filled red one.
+
+### Copy That Answers In Place
+
+Use `CopyActionLabel` with `useCopyAction()`. The label keeps its resting width while it reads "Copied", so a toolbar never re-wraps on click.
+
+### Scroll Edge Fade
+
+`gs-scroll-fade-y` on a scrolling column fades whichever edge still hides content (CSS scroll timeline, no script). Use it where a list is cut by fixed chrome, as the navigation rail is by its footer.
 
 ### Inline Editing
 

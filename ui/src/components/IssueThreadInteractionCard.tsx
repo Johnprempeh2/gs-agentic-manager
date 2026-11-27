@@ -3694,7 +3694,7 @@ function VerdictProgressBadge({
         aria-valuenow={progress.decided}
         aria-label={`${progress.decided} of ${progress.total} decided`}
       >
-        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-track">
           <div
             className="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none"
             style={{ width: `${pct}%` }}

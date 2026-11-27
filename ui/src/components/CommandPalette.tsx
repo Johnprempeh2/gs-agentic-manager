@@ -553,7 +553,7 @@ export function CommandPalette() {
                   >
                     <Icon className="mr-2 h-4 w-4 shrink-0" />
                     {destination.kind === "task" && destination.key ? (
-                      <span className="mr-2 font-mono text-xs text-muted-foreground">{destination.key}</span>
+                      <span className="mr-2 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{destination.key}</span>
                     ) : null}
                     <span className="min-w-0 truncate">{destination.label}</span>
                     {destination.kind === "project" && destination.detail ? (
@@ -584,7 +584,7 @@ export function CommandPalette() {
                 >
                   <Clock className="mr-2 h-4 w-4 shrink-0" />
                   {issue.identifier ? (
-                    <span className="mr-2 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+                    <span className="mr-2 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{issue.identifier}</span>
                   ) : null}
                   <span className="min-w-0 flex-1 truncate">{issue.title}</span>
                   <span className="ml-2 hidden shrink-0 text-xs text-muted-foreground sm:inline">
@@ -785,7 +785,7 @@ export function CommandPalette() {
                   className="group/task"
                 >
                   <CircleDot className="mr-2 h-4 w-4" />
-                  <span className="text-muted-foreground mr-2 font-mono text-xs">
+                  <span className="text-muted-foreground mr-2 shrink-0 whitespace-nowrap font-mono text-xs">
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate">{issue.title}</span>

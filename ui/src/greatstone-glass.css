@@ -1280,6 +1280,54 @@
   .gs-sidebar-glass .gs-side-reveal { animation: none; }
 }
 
+/* A label that swaps for a shorter answer in place ("Copy as an update" to
+   "Copied") keeps the width of its resting words, named in data-reserve, so
+   the button and everything beside it stay where they are. The reserve is a
+   zero-height ghost: it is never read out and never counted as text. */
+.gs-stable-label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.gs-stable-label::after {
+  content: attr(data-reserve);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Scroll edge fade: a scrolling column (the navigation rail) melts into its
+   edge while more content lies beyond it, instead of a row sliced in half by
+   the footer. Driven by the scroll position itself, so it is clear at rest:
+   no fade at the top when at the top, none at the bottom at the end, and none
+   at all when everything fits. Browsers without scroll timelines keep the hard
+   edge they have today. Unlayered: it must beat nothing, but stays out of the
+   utilities' way. */
+@property --gs-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --gs-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@supports (animation-timeline: scroll()) {
+  .gs-scroll-fade-y {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--gs-fade-start), #000 calc(100% - var(--gs-fade-end)), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--gs-fade-start), #000 calc(100% - var(--gs-fade-end)), transparent 100%);
+    animation: gs-scroll-fade-y linear both;
+    animation-timeline: scroll(self block);
+  }
+}
+@keyframes gs-scroll-fade-y {
+  0% { --gs-fade-start: 0px; --gs-fade-end: 2rem; }
+  6%, 94% { --gs-fade-start: 2rem; --gs-fade-end: 2rem; }
+  100% { --gs-fade-start: 2rem; --gs-fade-end: 0px; }
+}
+
 /* Phone drawer: the same panel, clear of the notch and the home indicator. */
 .gs-sidebar-drawer {
   padding:

@@ -184,7 +184,7 @@ export function DeepDiveOverview() {
                 <div
                   role="img"
                   aria-label={`${stream.label}: ${stream.cells.known} Known, ${stream.cells.indicated} Indicated, ${stream.cells.unknown} Unknown`}
-                  className="flex h-1.5 overflow-hidden rounded-full bg-muted"
+                  className="flex h-1.5 overflow-hidden rounded-full bg-track"
                 >
                   <span className="bg-status-success" style={{ width: `${(stream.cells.known / 5) * 100}%` }} />
                   <span className="bg-status-warning" style={{ width: `${(stream.cells.indicated / 5) * 100}%` }} />

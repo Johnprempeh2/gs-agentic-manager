@@ -62,6 +62,7 @@ import {
   type FolderSelection,
 } from "../components/folders/FolderControls";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
@@ -767,14 +768,14 @@ export function Routines() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-bold">Routines</h1>
-          <p className="text-sm text-muted-foreground">
-            Work that repeats on a schedule, such as a weekly report. Each <HelpTerm term="run" /> makes a <HelpTerm term="task" /> you can follow.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* The page bar already says "Routines". The actions keep their row:
+          the sentence gives way first, so Create routine never drops under
+          the other two (it did at 1440 beside the sidebar). */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <p className="min-w-0 text-sm text-muted-foreground">
+          Work that repeats on a schedule, such as a weekly report. Each <HelpTerm term="run" /> makes a <HelpTerm term="task" /> you can follow.
+        </p>
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:flex-nowrap">
           {(routines?.length ?? 0) > 0 ? (
             <Button
               variant="outline"
@@ -784,7 +785,7 @@ export function Routines() {
               title="Copy every routine, when it runs next and who does it, ready to paste"
             >
               {scheduleCopy.copied ? <Check className="mr-2 h-4 w-4" /> : <ClipboardList className="mr-2 h-4 w-4" />}
-              {scheduleCopy.copied ? "Copied" : scheduleCopy.failed ? "Could not copy" : "Copy the schedule"}
+              <CopyActionLabel copy={scheduleCopy}>Copy the schedule</CopyActionLabel>
             </Button>
           ) : null}
           <Button variant="outline" asChild>

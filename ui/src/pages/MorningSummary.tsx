@@ -19,6 +19,7 @@ import { ListenButton } from "../components/ListenButton";
 import { ShareTextButton } from "../components/ShareTextButton";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 /** "Good morning", "Good afternoon" or "Good evening" by the person's own clock. */
 export function greeting(now: Date) {
@@ -264,7 +265,7 @@ export function MorningSummary() {
               onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now), since))}
             >
               {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-              {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
+              <CopyActionLabel copy={dayCopy}>Copy as an update</CopyActionLabel>
             </Button>
             <ShareTextButton title={`Today, ${formatCalendarDay(localToday(now))}`} getText={() => morningSummaryText(data, localToday(now), since)} />
           </div>

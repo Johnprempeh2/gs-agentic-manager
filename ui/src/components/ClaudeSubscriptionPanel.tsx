@@ -125,7 +125,7 @@ export function ClaudeSubscriptionPanel({
                 ) : null}
               </div>
 
-              <div className="mt-3 h-2 overflow-hidden bg-muted">
+              <div className="mt-3 h-2 overflow-hidden bg-track">
                 <div
                   className={cn("h-full transition-(--tp-width) duration-200", fillClass(window.usedPercent))}
                   style={{ width: `${width}%` }}

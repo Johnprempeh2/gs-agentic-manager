@@ -336,15 +336,15 @@ export function ApprovalDetail() {
             <>
               <Button
                 size="sm"
-                className="bg-green-700 hover:bg-green-600 text-white"
                 onClick={() => approveMutation.mutate()}
                 disabled={approveMutation.isPending}
               >
                 {approvalActionLabels(approval.type).approve}
               </Button>
               <Button
-                variant="destructive"
+                variant="outline"
                 size="sm"
+                className="text-destructive hover:text-destructive"
                 onClick={() => setNoteAction("reject")}
                 disabled={rejectMutation.isPending}
               >

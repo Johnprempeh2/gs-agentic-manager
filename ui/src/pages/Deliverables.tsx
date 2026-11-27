@@ -40,6 +40,7 @@ import {
 import { cn } from "@/lib/utils";
 import { deliverablesListText } from "@/lib/deliverables-text";
 import { useCopyAction } from "@/lib/use-copy-action";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const PAGE_SIZE = 60;
 const SEARCH_DEBOUNCE_MS = 150;
@@ -656,7 +657,7 @@ export function Deliverables() {
             >
               {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
               <span className="hidden sm:inline">
-                {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+                <CopyActionLabel copy={listCopy}>Copy as a list</CopyActionLabel>
               </span>
             </Button>
           </div>

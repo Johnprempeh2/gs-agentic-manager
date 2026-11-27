@@ -25,6 +25,7 @@ import { useCopyAction } from "../lib/use-copy-action";
 import { applyCompanyPrefix } from "../lib/company-routes";
 import { approvalLabel } from "../components/ApprovalPayload";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 type StatusFilter = "pending" | "all";
 
@@ -224,7 +225,7 @@ export function Approvals() {
             }
           >
             {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-            {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+            <CopyActionLabel copy={listCopy}>Copy as a list</CopyActionLabel>
           </Button>
         </div>
       ) : null}

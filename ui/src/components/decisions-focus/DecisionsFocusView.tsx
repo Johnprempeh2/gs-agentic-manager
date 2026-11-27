@@ -193,7 +193,7 @@ export function DecisionsFocusView({
             {progress.answered} of {progress.total} done
           </span>
           <div
-            className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
+            className="h-1.5 flex-1 overflow-hidden rounded-full bg-track"
             role="progressbar"
             aria-label="Decisions done"
             aria-valuemin={0}

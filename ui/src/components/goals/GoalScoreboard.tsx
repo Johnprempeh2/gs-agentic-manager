@@ -58,9 +58,9 @@ function SubGoalTile({
       className="relative z-raised grid gap-2 rounded-md border border-border p-3 text-inherit no-underline transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="goal-sub-tile"
     >
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate text-sm font-semibold">{goal.title}</span>
-        <GoalHealthPill health={health} className="ml-auto" />
+      <span className="flex min-w-0 items-start gap-2">
+        <span className="line-clamp-2 min-w-0 text-sm font-semibold">{goal.title}</span>
+        <GoalHealthPill health={health} className="ml-auto shrink-0" />
       </span>
       <GoalProgressBar percent={goal.progress.percent} health={health} />
       <span className="truncate text-xs text-muted-foreground">{detail.join(" · ")}</span>
@@ -86,12 +86,12 @@ export function GoalScoreCard({
 
   const summary = (
     <div className="grid min-w-0 gap-4">
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 items-start gap-2.5">
         <AgentAvatar agent={owner} name={ownerName ?? undefined} size={32} />
         <div className="min-w-0">
           <Link
             to={goalHref(goal)}
-            className="block truncate text-sm font-semibold text-inherit no-underline after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+            className="line-clamp-2 text-sm font-semibold text-inherit no-underline after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
           >
             {goal.title}
           </Link>
@@ -99,7 +99,7 @@ export function GoalScoreCard({
             {ownerName ?? "No owner"} · {LEVEL_LABEL[goal.level] ?? "goal"}
           </p>
         </div>
-        <GoalHealthPill health={health} className="ml-auto" />
+        <GoalHealthPill health={health} className="ml-auto shrink-0" />
       </div>
 
       <div className="flex items-center gap-4">
