@@ -33109,6 +33109,8 @@ export function heartbeatService(
 
     resumeQueuedRuns,
     startNextQueuedRunForAgent,
+    // Re-run the start gate now, e.g. after the run cap changes in Settings (GRE-6094).
+    recheckRunAdmission: () => scheduleRunAdmissionRecheck(0),
 
     scheduleBoundedRetry: async (
       runId: string,

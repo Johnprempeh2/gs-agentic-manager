@@ -1,65 +1,53 @@
 # Installing GS Agentic Manager
 
-GS Agentic Manager supports a managed installation, an ephemeral `npx` tryout, a
-traditional global npm installation, and development from a source checkout.
-The managed installation is recommended because it provides atomic updates,
-rollback, git-ref installs, and a stable entrypoint for the background service.
+There are two ways to run GS Agentic Manager: the macOS installer from a GitHub
+Release of this repo, or a source checkout (see the README).
 
-## Recommended Install
+The npm package, `npx` tryout and managed-install sections further down come
+from the upstream project. GS Agentic Manager is not published to npm, so those
+commands do not work for it yet.
 
-On macOS, Linux, or WSL2:
+## Install on a Mac
 
-```sh
-curl -fsSLO https://paperclip.ing/install.sh
-curl -fsSLO https://paperclip.ing/install.sh.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c install.sh.sha256
-else
-  shasum -a 256 -c install.sh.sha256
-fi
-bash install.sh
-```
+Releases live at <https://github.com/Johnprempeh2/gs-agentic-manager/releases>.
+Each release carries:
 
-The bootstrap script:
+- `gsam-aura-macos-arm64.tar.gz` and its `.sha256`: the prebuilt package.
+- `install.sh`: the same file as `scripts/install.sh`. It downloads the
+  package, checks its SHA-256 and runs the package's own `install.sh`.
 
-1. verifies that the platform is supported;
-2. ensures Node.js 24.11 or newer is available;
-3. delegates installation to `gsam install`;
-4. starts interactive onboarding when stdin and stdout are terminals.
+The package ships its own Node runtime, built server and prebuilt agent runner,
+so the Mac needs no Node, pnpm or Rust. Only git comes from Apple: if the
+Command Line Tools are missing, macOS asks to install them. The install goes
+into `~/GSAM-Aura`, adds a log-in item that starts GSAM, puts `GSAM.app` in
+`~/Applications` and the Dock, and opens the first-run screen. No
+administrator password is needed. Full detail: [AURA-MAC-INSTALL.md](AURA-MAC-INSTALL.md).
 
-The script prints and confirms any command that requires elevated privileges.
-Third-party Node.js bootstrap scripts are pinned and SHA-256 verified before
-execution; the installer stops if a published script changes unexpectedly.
-The `paperclip.ing` checksum detects transfer or publishing mistakes, but it is
-served from the same origin as the script and is not an independent
-authenticity proof. For an independently hosted source, download a release-tag
-or commit-pinned copy from GitHub, review it, and run that local file.
-
-Use `--no-prompt` for automation and `--no-onboard` to stop after installing.
-The piped form only proceeds when supported Node.js, npm, and npx are already
-installed; if Node.js bootstrap is required, download the script first so the
-privileged commands are inspectable before execution:
+In Terminal:
 
 ```sh
-curl -fsSL https://paperclip.ing/install.sh | bash -s -- --no-prompt --no-onboard
-gsam onboard --yes
+curl -fsSLO https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/install.sh
+bash install.sh                    # latest release
+bash install.sh --version <tag>    # one release
+bash install.sh --file ~/Downloads/gsam-aura-macos-arm64.tar.gz
 ```
 
-If the vanity installer endpoint is unavailable, fetch the same
-release-controlled source from GitHub raw content:
+With `--file`, put the `.sha256` next to the package so the check runs.
+Apple silicon only for now.
+
+## Uninstall on a Mac
+
+In Terminal:
 
 ```sh
-raw_base=https://raw.githubusercontent.com/paperclipai/paperclip
-curl -fsSL "$raw_base/master/scripts/install.sh" | bash
+bash ~/GSAM-Aura/app/bin/uninstall.sh
 ```
 
-For audits or incident response, pin the raw URL to a release tag or commit SHA
-instead of `master` and download it first. That immutable GitHub URL provides a
-separate delivery path from `paperclip.ing`; do not treat a checksum served by
-the same origin as the artifact as an independent trust anchor.
+Type `DELETE` when it asks. It stops GSAM and removes the log-in item,
+`GSAM.app` and its Dock icon, and `~/GSAM-Aura` with all data and backups.
+`--keep-backups` copies the backups to `~/GSAM-Aura-backups-<date>` first.
 
-Each installer flag also has a `GSAM_INSTALL_*` environment-variable
-equivalent. This helps where passing arguments through a pipe is awkward.
+## Agent runtime notes
 
 Codex ACP workspace sessions enable networking so agents can report task outcomes.
 To disable it explicitly, set `extraArgs` to

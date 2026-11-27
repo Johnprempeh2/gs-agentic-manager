@@ -1,13 +1,15 @@
 import os from "node:os";
-import { and, gte, isNotNull, isNull, lte, or } from "drizzle-orm";
-import { heartbeatRuns, type Db } from "@greatstone/db";
+import { and, eq, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { companies, heartbeatRuns, type Db } from "@greatstone/db";
 import {
   createSystemMemoryReader,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   resolveRunAdmissionSettings,
+  resolveRunCap,
   type MemoryReader,
   type RunAdmissionHoldReason,
   type RunAdmissionSettings,
+  type RunCapSource,
 } from "./run-admission.js";
 import { instanceSettingsService } from "./instance-settings.js";
 
@@ -390,6 +392,42 @@ export function runAdmissionRecommendationService(
           perRunMemoryRecorded: false,
         },
       };
+    },
+  };
+}
+
+/** GET /instance/run-admission/status: the run cap in force and the queue now (GRE-6094). */
+export interface RunAdmissionStatus {
+  maxConcurrentRuns: number;
+  /** "saved" in Settings, the client "install" value, or the built-in "default". */
+  source: RunCapSource;
+  /** The cap used while nothing is saved: the install value, else the built-in default. */
+  defaultMaxConcurrentRuns: number;
+  running: number;
+  /** Queued runs the start gate would consider (active companies only). */
+  queued: number;
+}
+
+export function runAdmissionStatusService(db: Db) {
+  const settings = instanceSettingsService(db);
+  return {
+    async get(): Promise<RunAdmissionStatus> {
+      const [general, rows] = await Promise.all([
+        settings.getGeneral(),
+        db
+          .select({ status: heartbeatRuns.status, count: sql<number>`count(*)::int` })
+          .from(heartbeatRuns)
+          .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
+          .where(
+            or(
+              eq(heartbeatRuns.status, "running"),
+              and(eq(heartbeatRuns.status, "queued"), eq(companies.status, "active")),
+            ),
+          )
+          .groupBy(heartbeatRuns.status),
+      ]);
+      const countOf = (status: string) => rows.find((row) => row.status === status)?.count ?? 0;
+      return { ...resolveRunCap(general), running: countOf("running"), queued: countOf("queued") };
     },
   };
 }

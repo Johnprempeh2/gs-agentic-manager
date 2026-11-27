@@ -17,6 +17,7 @@ const mockHeartbeatService = vi.hoisted(() => ({
   applyTaskDrain: vi.fn(),
   stopTaskDrain: vi.fn(),
   getTaskDrainStatus: vi.fn(),
+  recheckRunAdmission: vi.fn(),
 }));
 const mockEnvironmentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -106,6 +107,7 @@ describe("instance settings routes", () => {
     mockHeartbeatService.applyTaskDrain.mockReset();
     mockHeartbeatService.stopTaskDrain.mockReset();
     mockHeartbeatService.getTaskDrainStatus.mockReset();
+    mockHeartbeatService.recheckRunAdmission.mockReset();
     mockEnvironmentService.getById.mockReset();
     mockEnvironmentService.findManagedSandboxEnvironment.mockReset();
     mockEnvironmentService.findManagedSandboxEnvironment.mockResolvedValue(null);
@@ -663,6 +665,27 @@ describe("instance settings routes", () => {
       feedbackDataSharingPreference: "allowed",
     });
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-checks waiting runs at once when the run cap changes, and not for other settings (GRE-6094)", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "local-board",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+    });
+
+    await request(app).patch("/api/instance/settings/general").send({ censorUsernameInLogs: true });
+    expect(mockHeartbeatService.recheckRunAdmission).not.toHaveBeenCalled();
+
+    const patchRes = await request(app)
+      .patch("/api/instance/settings/general")
+      .send({ runAdmission: { maxConcurrentRuns: 3, minAvailableMemoryMb: 2048, minFreeDiskGb: 20 } });
+    expect(patchRes.status).toBe(200);
+    expect(mockInstanceSettingsService.updateGeneral).toHaveBeenLastCalledWith({
+      runAdmission: { maxConcurrentRuns: 3, minAvailableMemoryMb: 2048, minFreeDiskGb: 20 },
+    });
+    expect(mockHeartbeatService.recheckRunAdmission).toHaveBeenCalledTimes(1);
   });
 
   it("allows non-admin board users to read general settings", async () => {

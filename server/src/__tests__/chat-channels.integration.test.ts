@@ -12604,6 +12604,119 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await context.service.shutdown();
   });
 
+  it("long-polls Telegram through the webhook entry point when the install has no public URL (GRE-6102)", async () => {
+    const fixture = await seedCompany();
+    const telegram = fakeTelegramFetch();
+    const update = {
+      update_id: 9001,
+      message: {
+        message_id: 1,
+        date: 1_764_000_000,
+        chat: { id: 4242, type: "private" },
+        from: { id: 4242, is_bot: false, first_name: "Will" },
+        text: "Hello from a laptop",
+      },
+    };
+    const polls: Array<Record<string, unknown>> = [];
+    const deleteWebhookBodies: Array<Record<string, unknown>> = [];
+    let served = false;
+    const providerFetch = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/setWebhook") || url.endsWith("/getWebhookInfo"))
+          throw new Error("Webhook calls must not happen without a public URL");
+        if (url.endsWith("/deleteWebhook"))
+          deleteWebhookBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        if (url.endsWith("/getUpdates")) {
+          polls.push(JSON.parse(String(init?.body ?? "{}")));
+          if (!served) {
+            served = true;
+            return Response.json({ ok: true, result: [update] });
+          }
+          return await new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(init.signal!.reason),
+              { once: true },
+            );
+          });
+        }
+        return telegram(input);
+      },
+    ) as unknown as typeof globalThis.fetch;
+    const { runtime, service } = createService(
+      new FakeChatSdkRuntime(),
+      providerFetch,
+      { publicBaseUrl: "http://localhost:3100" },
+    );
+    const endpoint = await service.create(
+      fixture.companyId,
+      { provider: "telegram", assignedAgentId: fixture.assignedAgentId },
+      "owner-user",
+    );
+    expect(endpoint.setup).toMatchObject({
+      telegramDelivery: "long_poll",
+      webhookUrl: null,
+    });
+
+    await service.configure(
+      endpoint.id,
+      {
+        action: "configure",
+        credentials: { botToken: "123456:telegram-long-poll-test" },
+      },
+      "owner-user",
+    );
+
+    // A first connection clears the old webhook and its stale backlog; the
+    // poller then clears it again without dropping anything.
+    expect(deleteWebhookBodies[0]).toEqual({ drop_pending_updates: true });
+    await vi.waitFor(() =>
+      expect(runtime.get(endpoint.id)?.webhookRequest).not.toBeNull(),
+    );
+    expect(deleteWebhookBodies.slice(1)).toEqual([
+      { drop_pending_updates: false },
+    ]);
+    const request = runtime.get(endpoint.id)!.webhookRequest!;
+    const [credentialRow] = await db
+      .select({ refs: toolConnections.credentialSecretRefs })
+      .from(toolConnections)
+      .where(eq(toolConnections.id, endpoint.connectionId));
+    expect(credentialRow?.refs).toHaveLength(2);
+    expect(request.headers.get("x-telegram-bot-api-secret-token")).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+    await expect(request.clone().json()).resolves.toEqual(update);
+
+    // The offset is confirmed to Telegram and survives a restart.
+    await vi.waitFor(() => expect(polls.at(-1)?.offset).toBe(9002));
+    const [row] = await db
+      .select({ setup: chatEndpoints.setup })
+      .from(chatEndpoints)
+      .where(eq(chatEndpoints.id, endpoint.id));
+    expect(
+      (row!.setup as { telegramPollOffset?: { offset: number } })
+        .telegramPollOffset?.offset,
+    ).toBe(9002);
+    expect(polls[0]).toMatchObject({
+      timeout: 25,
+      allowed_updates: expect.arrayContaining([
+        "message",
+        "callback_query",
+        "stopped_message_generation",
+      ]),
+    });
+
+    await service.shutdown();
+    const callsAfterShutdown = vi.mocked(providerFetch).mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(vi.mocked(providerFetch).mock.calls).toHaveLength(
+      callsAfterShutdown,
+    );
+    const token = "123456:telegram-long-poll-test";
+    expect(JSON.stringify(row!.setup)).not.toContain(token);
+  });
+
   it("rejects unsupported Telegram webhook ports before provider access or secret persistence", async () => {
     const fixture = await seedCompany();
     const providerFetch = vi.fn(async () => {

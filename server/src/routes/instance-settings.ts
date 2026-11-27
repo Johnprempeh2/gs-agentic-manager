@@ -269,6 +269,8 @@ export function instanceSettingsRoutes(db: Db) {
       const previousAiRoute = changesAiRoute ? readAiAccessRoute(await svc.getGeneral()) : null;
       const updated = await svc.updateGeneral(req.body);
       if (Object.prototype.hasOwnProperty.call(req.body, "requireTwoStepSignIn")) clearTwoStepRequirementCache();
+      // A raised run cap starts waiting runs now, not at the next 15s re-check (GRE-6094).
+      if (Object.prototype.hasOwnProperty.call(req.body, "runAdmission")) heartbeat.recheckRunAdmission();
       const actor = getActorInfo(req);
       const nextAiRoute = readAiAccessRoute(updated.general);
       if (changesAiRoute && nextAiRoute !== previousAiRoute) {

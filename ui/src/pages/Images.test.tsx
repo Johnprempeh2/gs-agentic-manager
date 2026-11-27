@@ -25,8 +25,8 @@ vi.mock("../api/organisations", () => ({
   organisationsApi: { list: vi.fn(async () => [{ id: "org-1", name: "Tailspin" }]) },
 }));
 vi.mock("@/lib/router", () => ({
-  Link: ({ to, children, title, className }: { to: string; children: ReactNode; title?: string; className?: string }) =>
-    createElement("a", { href: to, title, className }, children),
+  Link: ({ to, children, ...rest }: { to: string; children: ReactNode; [key: string]: unknown }) =>
+    createElement("a", { href: to, ...rest }, children),
 }));
 vi.mock("../api/videos", () => ({
   videosApi: {
@@ -121,6 +121,7 @@ describe("Images page", () => {
     await render();
 
     expect(container.querySelector('[data-testid="images-not-set-up"]')?.textContent).toContain("not switched on yet");
+    expect(container.querySelector('[data-testid="images-connect-higgsfield"]')?.getAttribute("href")).toBe("/apps/connect?source=higgsfield");
     expect(container.querySelector('[data-testid="images-get-key-link"]')?.getAttribute("href")).toBe("https://console.higgsfield.ai");
     expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).disabled).toBe(true);
     expect((container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).disabled).toBe(true);

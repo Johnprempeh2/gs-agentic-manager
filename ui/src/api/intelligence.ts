@@ -6,6 +6,8 @@ import type {
   IntelligenceReport,
   IntelligenceReportKind,
   IntelligenceReportSummary,
+  IntelligenceSettings,
+  UpdateIntelligenceSettings,
 } from "@greatstone/shared";
 import { api, ApiError } from "./client";
 
@@ -13,6 +15,9 @@ const base = (companyId: string) => `/companies/${encodeURIComponent(companyId)}
 
 /** Intelligence page client: reports, boards and recommendations an agent writes. */
 export const intelligenceApi = {
+  settings: (companyId: string) => api.get<IntelligenceSettings>(`${base(companyId)}/settings`),
+  saveSettings: (companyId: string, settings: UpdateIntelligenceSettings) =>
+    api.put<IntelligenceSettings>(`${base(companyId)}/settings`, settings),
   /** `date` is YYYY-MM-DD or `latest`. */
   report: (companyId: string, date: string, kind: IntelligenceReportKind) =>
     api.get<IntelligenceReport>(`${base(companyId)}/reports/${encodeURIComponent(date)}?kind=${kind}`),

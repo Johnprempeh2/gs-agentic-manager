@@ -694,6 +694,7 @@ export const queryKeys = {
     boards: (companyId: string, date: string | null) => ["intelligence", companyId, "boards", date] as const,
     boardHistory: (companyId: string, date: string | null) => ["intelligence", companyId, "boardHistory", date] as const,
     recommendations: (companyId: string) => ["intelligence", companyId, "recommendations"] as const,
+    settings: (companyId: string) => ["intelligence", companyId, "settings"] as const,
   },
   website: {
     overview: (companyId: string) => ["website", companyId, "overview"] as const,
@@ -832,6 +833,7 @@ export const queryKeys = {
     systemMemory: ["instance", "system-memory"] as const,
     signInActivity: ["instance", "sign-in-activity"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
+    runAdmissionStatus: ["instance", "run-admission-status"] as const,
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
     fleetCatalogue: ["instance", "fleet-catalogue"] as const,

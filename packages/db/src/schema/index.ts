@@ -126,7 +126,7 @@ export { prototypePortalShares } from "./prototype_portal_shares.js";
 export { websiteProperties, websitePulls } from "./website.js";
 export { websiteSite, websitePage, websiteEntry, websiteRelease, websiteSitemapOption, websiteFeature, websiteBridgeInboundNonces } from "./website_module.js";
 export { websiteActivityCursors, websiteActivityEvents } from "./website_activity.js";
-export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations } from "./intelligence.js";
+export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations, intelligenceSettings } from "./intelligence.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";

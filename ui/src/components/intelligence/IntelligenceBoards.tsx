@@ -1,5 +1,4 @@
 import {
-  INTELLIGENCE_BOARD_LABELS,
   type IntelligenceBoardHistory,
   type IntelligenceBoardMovement,
   type IntelligenceBoardRow,
@@ -20,7 +19,7 @@ export function seriesFor(history: IntelligenceBoardHistory | undefined): ScoreS
   return series;
 }
 
-const scoreLabel = (view: IntelligenceBoardView) => (view.board === "frontier_models" ? "Index" : "Score");
+const scoreLabel = (view: IntelligenceBoardView) => view.scoreLabel;
 
 /** Score change since the compared snapshot, signed, in the status colours. */
 export function ScoreDelta({ movement }: { movement: IntelligenceBoardMovement }) {
@@ -84,7 +83,7 @@ export function Podium({ view, series }: { view: IntelligenceBoardView; series?:
   // Podium order: 2nd, 1st, 3rd. `place` is the podium step, `rank` what the board says.
   const order = [1, 0, 2].flatMap((index) => (top[index] ? [{ entry: top[index], place: index + 1 }] : []));
   return (
-    <ol className="grid grid-cols-3 items-end gap-2 sm:gap-3" aria-label={`${INTELLIGENCE_BOARD_LABELS[view.board]} top three`}>
+    <ol className="grid grid-cols-3 items-end gap-2 sm:gap-3" aria-label={`${view.label} top three`}>
       {order.map(({ entry, place }) => {
         const first = place === 1;
         return (
@@ -142,7 +141,7 @@ export function BoardSection({ view, series }: { view: IntelligenceBoardView; se
     <section className="space-y-3" aria-labelledby={`board-${view.board}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 id={`board-${view.board}`} className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          {INTELLIGENCE_BOARD_LABELS[view.board]}
+          {view.label}
         </h2>
         <span className="text-xs text-muted-foreground">
           {formatCalendarDay(view.snapshotDate, { includeYear: true })}

@@ -9,8 +9,8 @@
  * - every new agent without its own budget gets `agentBudgetMonthlyCents` as
  *   its monthly budget (hard stop on), and `agentMaxDailyRuns` as its daily
  *   run cap unless it names one;
- * - `maxConcurrentRuns` is the run cap of the whole install; it replaces the
- *   instance "run admission" cap.
+ * - `maxConcurrentRuns` is the starting run cap of the whole install. A cap
+ *   the owner saves in Settings wins over it (GRE-6094).
  *
  * Absent env = no limits (self-hosted and internal installs). A malformed
  * value refuses startup: a silently dropped limit is worse than a loud failure.

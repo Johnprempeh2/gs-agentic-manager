@@ -1,0 +1,79 @@
+# Aura macOS install package (GRE-6097).
+#
+# Builds the package on a GitHub-hosted Apple Silicon Mac (agents run on the
+# PC, which cannot build or run it), then installs it from scratch on the same
+# clean runner: server healthy, first-run owner screen reached, one company
+# "Aura" and nothing else, agent cap 2, invite flow, backup and restore,
+# restart after a crash, uninstall. The package, its file list and sizes are kept as run
+# artifacts for Flint's contents check (GRE-6101).
+#
+# Runs only when the package files change, so it never slows Fork CI.
+# No secrets and a read-only token.
+
+name: Aura macOS package
+
+on:
+  pull_request:
+    paths:
+      - "scripts/aura-macos/**"
+      - "scripts/client-instance/templates/aura/**"
+      - "scripts/client-instance/aura-template.ts"
+      - ".github/workflows/aura-macos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aura-macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Fixed text in John's instructions (GRE-6099); not a key.
+  AURA_FEATURE_REQUEST_ADDRESS: everest.greatstone@agentmail.to
+
+jobs:
+  package:
+    name: Build, install, smoke test, uninstall (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+
+      - name: Build the package
+        run: scripts/aura-macos/build-package.sh "$RUNNER_TEMP/aura-package"
+
+      - name: Install, smoke test, uninstall
+        run: scripts/aura-macos/smoke-test.sh "$RUNNER_TEMP/aura-package/gsam-aura-macos-arm64.tar.gz"
+
+      - name: Server log (on failure)
+        if: failure()
+        run: tail -n 300 "$HOME/GSAM-Aura/logs/server.log" "$HOME/GSAM-Aura/logs/install.log" 2>/dev/null || true
+
+      - name: Keep the file list for Flint
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: aura-macos-file-list
+          path: |
+            ${{ runner.temp }}/aura-package/*-FILES.txt
+            ${{ runner.temp }}/aura-package/*-SIZES.txt
+            ${{ runner.temp }}/aura-package/*/manifest.json
+            ${{ runner.temp }}/aura-package/*.sha256
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Keep the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gsam-aura-macos-arm64
+          path: ${{ runner.temp }}/aura-package/gsam-aura-macos-arm64.tar.gz
+          retention-days: 30

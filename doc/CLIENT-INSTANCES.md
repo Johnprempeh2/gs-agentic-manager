@@ -139,7 +139,7 @@ kept in `<root>/client-instance.json` and given to the server as
 | --- | --- |
 | `--agent-budget-cents N` | Monthly budget of each new agent that has none (hard stop on). |
 | `--agent-daily-runs N` | Runs a day for each new agent that names no cap. |
-| `--max-concurrent-runs N` | Runs at the same time on the whole install. Replaces the Run limits cap in Instance → General. |
+| `--max-concurrent-runs N` | Starting number of runs at the same time on the whole install. The owner can change it in Instance → General → "Max agents running at once"; a saved value there wins, with no restart. |
 
 When an agent spends its budget, it is paused, its runs stop, and it says so
 in a comment on each task it holds (`todo` or `in_progress`). The task keeps

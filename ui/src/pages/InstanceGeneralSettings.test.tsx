@@ -15,6 +15,7 @@ const mockInstanceSettingsApi = vi.hoisted(() => ({
   updateGeneral: vi.fn(),
   getSystemMemory: vi.fn(),
   getRunAdmissionRecommendation: vi.fn(),
+  getRunAdmissionStatus: vi.fn(),
 }));
 const mockNavigateTopLevel = vi.hoisted(() => vi.fn());
 
@@ -346,6 +347,13 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
       availableBytes: 5 * GB,
       pressure: "normal",
     });
+    mockInstanceSettingsApi.getRunAdmissionStatus.mockResolvedValue({
+      maxConcurrentRuns: 4,
+      source: "saved",
+      defaultMaxConcurrentRuns: 6,
+      running: 0,
+      queued: 0,
+    });
     mockInstanceSettingsApi.getRunAdmissionRecommendation.mockResolvedValue(NO_USAGE_RECOMMENDATION);
   });
 
@@ -392,7 +400,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
   it("shows the saved values, machine memory, and the suggested cap", async () => {
     await renderPage();
 
-    expect(inputLabelled("Most at once").value).toBe("4");
+    expect(inputLabelled("Max agents running at once").value).toBe("4");
     expect(inputLabelled("Memory to keep free (MB)").value).toBe("3072");
     await vi.waitFor(() => expect(container.textContent).toContain("Total RAM 16 GB"));
     expect(container.textContent).toContain("Available now 5 GB");
@@ -407,7 +415,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     const save = buttonNamed("Save run limits")!;
     expect(save.disabled).toBe(true);
 
-    typeInto(inputLabelled("Most at once"), "8");
+    typeInto(inputLabelled("Max agents running at once"), "8");
     expect(save.disabled).toBe(false);
     flushSync(() => save.click());
 
@@ -450,18 +458,60 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
       backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
     });
     await renderPage();
-    expect(inputLabelled("Most at once").value).toBe("6");
+    expect(inputLabelled("Max agents running at once").value).toBe("6");
     expect(inputLabelled("Memory to keep free (MB)").value).toBe("2048");
 
     await vi.waitFor(() => expect(buttonNamed("Use suggested")).toBeDefined());
     flushSync(() => buttonNamed("Use suggested")!.click());
-    expect(inputLabelled("Most at once").value).toBe("28");
+    expect(inputLabelled("Max agents running at once").value).toBe("28");
+  });
+
+  it("starts at the install cap, and saving another limit does not pin it (GRE-6094)", async () => {
+    mockInstanceSettingsApi.getGeneral.mockResolvedValue({
+      censorUsernameInLogs: false,
+      keyboardShortcuts: false,
+      feedbackDataSharingPreference: "not_allowed",
+      backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+    });
+    mockInstanceSettingsApi.getRunAdmissionStatus.mockResolvedValue({
+      maxConcurrentRuns: 2,
+      source: "install",
+      defaultMaxConcurrentRuns: 2,
+      running: 2,
+      queued: 1,
+    });
+    await renderPage();
+    await vi.waitFor(() => expect(inputLabelled("Max agents running at once").value).toBe("2"));
+    expect(container.textContent).toContain("Default 2.");
+
+    typeInto(inputLabelled("Memory to keep free (MB)"), "1024");
+    flushSync(() => buttonNamed("Save run limits")!.click());
+    await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
+    expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
+      runAdmission: { minAvailableMemoryMb: 1024, minFreeDiskGb: 20 },
+    });
+  });
+
+  it("shows how many runs are running and waiting (GRE-6094)", async () => {
+    mockInstanceSettingsApi.getRunAdmissionStatus.mockResolvedValue({
+      maxConcurrentRuns: 1,
+      source: "saved",
+      defaultMaxConcurrentRuns: 2,
+      running: 1,
+      queued: 2,
+    });
+    await renderPage();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="run-queue-status"]')?.textContent).toBe(
+        "Running now 1 of 1 · Waiting 2",
+      ),
+    );
   });
 
   it("blocks saving an out-of-range cap", async () => {
     await renderPage();
 
-    typeInto(inputLabelled("Most at once"), "0");
+    typeInto(inputLabelled("Max agents running at once"), "0");
 
     expect(container.textContent).toContain("Enter a whole number from 1 to 1000.");
     expect(buttonNamed("Save run limits")!.disabled).toBe(true);
@@ -474,7 +524,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     await vi.waitFor(() =>
       expect(container.textContent).toContain("Machine memory is not available, so no cap is suggested."),
     );
-    typeInto(inputLabelled("Most at once"), "3");
+    typeInto(inputLabelled("Max agents running at once"), "3");
     expect(buttonNamed("Save run limits")!.disabled).toBe(false);
   });
 
@@ -524,6 +574,13 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
       availableBytes: 5 * GB,
       pressure: "normal",
     });
+    mockInstanceSettingsApi.getRunAdmissionStatus.mockResolvedValue({
+      maxConcurrentRuns: 4,
+      source: "saved",
+      defaultMaxConcurrentRuns: 6,
+      running: 0,
+      queued: 0,
+    });
   });
 
   afterEach(() => {
@@ -564,7 +621,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
     const text = box()!.textContent ?? "";
     expect(text).toContain("Recommended from your usage");
     const capRow = Array.from(box()!.querySelectorAll("tbody tr"))
-      .find((row) => row.querySelector("th")?.textContent === "Most at once");
+      .find((row) => row.querySelector("th")?.textContent === "Max agents running at once");
     expect(Array.from(capRow!.querySelectorAll("td")).map((cell) => cell.textContent)).toEqual(["4", "5"]);
     expect(text).toContain("raise the cap by one to 5.");
     // The reasons carry the raw formula, so they sit behind a closed disclosure.
@@ -583,7 +640,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
       runAdmission: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072, minFreeDiskGb: 20 },
     });
     const capLabel = Array.from(container.querySelectorAll("label"))
-      .find((el) => el.textContent === "Most at once");
+      .find((el) => el.textContent === "Max agents running at once");
     expect(container.querySelector<HTMLInputElement>(`#${CSS.escape(capLabel!.getAttribute("for")!)}`)!.value)
       .toBe("5");
   });

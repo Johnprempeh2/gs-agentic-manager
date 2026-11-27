@@ -88,6 +88,7 @@ export function InstanceGeneralSettings({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings }),
         queryClient.invalidateQueries({ queryKey: queryKeys.instance.runAdmissionRecommendation }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.runAdmissionStatus }),
       ]);
     },
     onError: (error) => {

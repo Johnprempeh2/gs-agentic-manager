@@ -23,6 +23,17 @@ export interface RunAdmissionRecommendation {
   };
 }
 
+/** GET /instance/run-admission/status (GRE-6094): the run cap in force and the queue now. */
+export interface RunAdmissionStatus {
+  maxConcurrentRuns: number;
+  /** "saved" in Settings, the "install" starting value, or the built-in "default". */
+  source: "saved" | "install" | "default";
+  /** The cap used while nothing is saved. */
+  defaultMaxConcurrentRuns: number;
+  running: number;
+  queued: number;
+}
+
 /** GET /instance/sign-in-activity: attempts that did not finish, across the instance. Instance admins only. */
 export interface InstanceSignInActivity {
   since: string;
@@ -72,6 +83,8 @@ export const instanceSettingsApi = {
     api.get<InstanceSystemMemory>("/instance/system-memory"),
   getRunAdmissionRecommendation: () =>
     api.get<RunAdmissionRecommendation>("/instance/run-admission/recommendation"),
+  getRunAdmissionStatus: () =>
+    api.get<RunAdmissionStatus>("/instance/run-admission/status"),
   getSignInActivity: () =>
     api.get<InstanceSignInActivity>("/instance/sign-in-activity"),
 };

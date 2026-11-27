@@ -74,17 +74,39 @@ export type RunAdmissionDecision =
   | { admit: true; slots: number }
   | { admit: false; reason: RunAdmissionHoldReason; message: string };
 
+/** Where the run cap in force came from (GRE-6094). */
+export type RunCapSource = "saved" | "install" | "default";
+
+/**
+ * The instance run cap and where it came from. The cap saved in Settings wins
+ * (GRE-6094): a client install's cap (GSAM_INSTALL_LIMITS, GRE-141) is only
+ * the starting value, so the owner can raise or lower it in the app without
+ * editing the start-up config. With neither, the built-in default.
+ */
+export function resolveRunCap(
+  general: Pick<InstanceGeneralSettings, "runAdmission"> | null | undefined,
+  installLimits: InstallLimits | null = getInstallLimits(),
+): { maxConcurrentRuns: number; source: RunCapSource; defaultMaxConcurrentRuns: number } {
+  const defaultMaxConcurrentRuns =
+    installLimits?.maxConcurrentRuns ?? DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS;
+  const saved = general?.runAdmission?.maxConcurrentRuns;
+  if (saved !== undefined) {
+    return { maxConcurrentRuns: saved, source: "saved", defaultMaxConcurrentRuns };
+  }
+  return {
+    maxConcurrentRuns: defaultMaxConcurrentRuns,
+    source: installLimits ? "install" : "default",
+    defaultMaxConcurrentRuns,
+  };
+}
+
 export function resolveRunAdmissionSettings(
   general: Pick<InstanceGeneralSettings, "runAdmission"> | null | undefined,
   installLimits: InstallLimits | null = getInstallLimits(),
 ): RunAdmissionSettings {
   const stored = general?.runAdmission;
   return {
-    // A client install's run cap (GSAM_INSTALL_LIMITS, GRE-141) replaces the stored cap.
-    maxConcurrentRuns:
-      installLimits?.maxConcurrentRuns ??
-      stored?.maxConcurrentRuns ??
-      DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+    maxConcurrentRuns: resolveRunCap(general, installLimits).maxConcurrentRuns,
     minAvailableMemoryMb:
       stored?.minAvailableMemoryMb ??
       DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,

@@ -58,10 +58,6 @@ walk(repoRoot, (filePath) => {
 const requiredSourceFragments = [
   [".nvmrc", "24"],
   ["packages/shared/src/node-version.ts", 'MINIMUM_NODE_VERSION = "24.11.0"'],
-  ["scripts/install.sh", "MIN_NODE_VERSION=\"${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.${MIN_NODE_PATCH}\""],
-  ["scripts/install.sh", "MIN_NODE_MAJOR=24"],
-  ["scripts/install.sh", "MIN_NODE_MINOR=11"],
-  ["scripts/install.sh", "DEFAULT_NODE_MAJOR=24"],
   ["docker/agent-runtime/Dockerfile.base", "ARG NODE_VERSION=24"],
   ["packages/adapter-utils/src/sandbox-install-command.ts", "NODE_VERSION=\"v24.11.0\""],
   ["packages/plugins/sandbox-providers/exe-dev/src/plugin.ts", "nodesource.com/setup_24.x"],

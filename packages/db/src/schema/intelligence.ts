@@ -84,3 +84,19 @@ export const intelligenceRecommendations = pgTable(
     ),
   }),
 );
+
+/**
+ * The topics a company's Intelligence page follows (GRE-6095). One row per
+ * company; no row means "not set up yet". `topics` is ordered: the page and
+ * the agent use that order. Shape: the shared `updateIntelligenceSettingsSchema`.
+ */
+export const intelligenceSettings = pgTable("intelligence_settings", {
+  companyId: uuid("company_id")
+    .primaryKey()
+    .references(() => companies.id, { onDelete: "cascade" }),
+  topics: jsonb("topics").$type<Record<string, unknown>[]>().notNull().default([]),
+  sectionTitles: jsonb("section_titles").$type<Record<string, string>>().notNull().default({}),
+  updatedByUserId: text("updated_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
