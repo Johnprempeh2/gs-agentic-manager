@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-import { mountGreatstoneTide } from "../lib/greatstone-tide";
 import { BrandMark } from "./BrandMark";
 
 function greetingFor(hour: number) {
@@ -10,39 +8,18 @@ function greetingFor(hour: number) {
 }
 
 /**
- * Dashboard welcome band: the organization on the void, with the tide of time
- * and the lime stone on the right. The band stays on the void in both themes
- * (it is the brand image, like the sign-in hero). The tide is masked out of
- * the copy zone entirely, so a lime crest never passes behind text. Wide
- * screens keep the copy on the left and the tide on the right; on phones the
- * tide runs along a bottom strip the copy can never reach (the copy always
- * ends 5rem above the band's bottom edge, and the mask is measured from it).
+ * Dashboard welcome band: the organization on the void, with a soft emerald
+ * glow and the lime stone on the right. The band stays on the void in both
+ * themes (it is the brand image, like the sign-in hero). Nothing moves and no
+ * line crosses it: the fanned arcs went on 27 Nov with the other corner waves.
+ * The glow is centred behind the stone and has faded out before the copy.
  */
 export function DashboardHero({ companyName, now = new Date() }: { companyName: string; now?: Date }) {
-  const tideRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const host = tideRef.current;
-    if (!host) return;
-    // The band is wide and short: the tide rises from below its right edge so
-    // the arcs sweep through it as concentric curves, spaced tightly.
-    const tide = mountGreatstoneTide(host, {
-      focalPoint: { x: 1.02, y: 1.7 },
-      sweep: [-3.3, -1.25],
-      spread: 0.78,
-      arcs: 52,
-      warpRadius: 0.55,
-      warpStrength: 22,
-      crestWidth: 0.09,
-    });
-    return () => tide.destroy();
-  }, []);
-
   const dateLabel = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(now);
 
   return (
     <section aria-label="Welcome" className="gs-dash-hero relative overflow-hidden rounded-xl border">
-      <div ref={tideRef} aria-hidden="true" className="gs-dash-hero-tide absolute inset-0" />
+      <div aria-hidden="true" className="gs-dash-hero-grain absolute inset-0" />
       <BrandMark
         variant="outline"
         decorative

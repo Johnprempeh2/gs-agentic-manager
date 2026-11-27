@@ -50,10 +50,6 @@ export function PipelineAccessOverview() {
   return (
     <div className="flex max-w-6xl flex-col gap-4">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Pipelines access</h1>
-        </div>
         <p className="text-sm text-muted-foreground">
           What each agent may do on each pipeline. View sees it, Work cases also works its cases,
           Administer also edits the pipeline, its stages and moves. Under each level is who changed it last.

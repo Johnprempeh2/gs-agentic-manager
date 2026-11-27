@@ -1130,9 +1130,7 @@ function PipelinesIndex() {
           squeezed the title's sentence to two words a line (15 Nov). */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div data-tour="pipelines-title" className="min-w-0 flex-1 basis-72">
-          <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Work</p>
-          <h1 className="text-2xl font-semibold text-foreground">Pipelines</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>

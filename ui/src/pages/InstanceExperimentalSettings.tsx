@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, FlaskConical, Lock, Play } from "lucide-react";
+import { AlertTriangle, Lock, Play } from "lucide-react";
 import type {
   InstanceExperimentalSettings,
   InstanceExperimentalSettingsWithManaged,
@@ -303,10 +303,6 @@ export function InstanceExperimentalSettings() {
   return (
     <div className="max-w-6xl space-y-6">
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Experimental</h1>
-        </div>
         <p className="text-sm text-muted-foreground">
           Opt into features that are still being evaluated before they become default behavior.
         </p>

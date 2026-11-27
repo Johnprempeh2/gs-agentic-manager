@@ -339,10 +339,7 @@ export function Billing() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="billing-page">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Billing</h1>
-        <p className="text-sm text-muted-foreground">Your plan, fees and AI usage. Greatstone manages these values.</p>
-      </div>
+      <p className="text-sm text-muted-foreground">Your plan, fees and AI usage. Greatstone manages these values.</p>
 
       {usage?.pausedSince ? (
         <InlineBanner tone="info" icon={PauseCircle} title={`Paused since ${formatBillingDay(usage.pausedSince.slice(0, 10))}`}>

@@ -51,6 +51,8 @@ describe("ErrorState", () => {
 
   it("falls back to a plain line for unknown errors", () => {
     expect(errorStateMessage("Timed out")).toBe("Timed out");
+    expect(errorStateMessage(new Error("Issue not found"))).toBe("Task not found");
+    expect(errorStateMessage("There was an issue saving")).toBe("There was an issue saving");
     expect(errorStateMessage(new Error("  "))).toBe("Something went wrong.");
     expect(errorStateMessage({ status: 500 })).toBe("Something went wrong.");
   });

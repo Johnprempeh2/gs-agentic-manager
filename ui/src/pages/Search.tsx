@@ -1,3 +1,4 @@
+import { Kbd } from "@/components/ui/kbd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search as SearchIcon, AlertTriangle, FileQuestion, Plus, X } from "lucide-react";
@@ -622,12 +623,7 @@ export function Search() {
               <X className="h-3.5 w-3.5" />
             </button>
           ) : null}
-          <kbd
-            aria-hidden
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 text-(length:--text-nano) font-medium text-muted-foreground"
-          >
-            ⌘K
-          </kbd>
+          <Kbd aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">⌘K</Kbd>
         </div>
         <div className="mt-2 flex min-h-6 flex-wrap items-center gap-1.5 text-(length:--text-micro) text-muted-foreground">
           {operatorPills.length > 0 ? (

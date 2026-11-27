@@ -298,6 +298,26 @@ One filled button per decision. The yes ("Approve", "Grant") is the default `But
 
 Use `CopyActionLabel` with `useCopyAction()`. The label keeps its resting width while it reads "Copied", so a toolbar never re-wraps on click.
 
+### Numbers
+
+`body` sets `font-variant-numeric: tabular-nums`, so every count, cost, time and key keeps its column without a class. Rendered markdown goes back to proportional figures. Do not switch tabular figures off on a count or a column.
+
+### Keycaps
+
+Every shortcut hint is a `Kbd` (`ui/kbd.tsx`). Never hand-style a `<kbd>`.
+
+### Command Palette
+
+Pinned 14vh from the top from `md` up (never centred: a centred palette moves as results change). The selected row is the lit `gs-row` (marker plus glass rim); only one row ever looks selected. Task keys share a 56px column so titles line up. The footer carries the key hints and hides on touch screens and below `sm`.
+
+### Loading
+
+A skeleton is shaped like what it replaces and never repeats chrome that is already on screen. Task lists use `SkeletonRows` under their real toolbar. When data lands or a filter changes, the list settles in with `useSettleMotion`; the page itself arrives with `useRouteEnterMotion`. Neither delays a click and both are off under reduced motion.
+
+### Page Headings
+
+The page bar names the page. A page does not repeat that name in an `h1` under it; it starts with the sentence that says what the page is for, then its actions. A page keeps its own `h1` only when it says something the bar does not ("How far we are from each goal").
+
 ### Scroll Edge Fade
 
 `gs-scroll-fade-y` on a scrolling column fades whichever edge still hides content (CSS scroll timeline, no script). Use it where a list is cut by fixed chrome, as the navigation rail is by its footer.

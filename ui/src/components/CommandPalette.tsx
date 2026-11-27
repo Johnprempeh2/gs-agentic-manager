@@ -23,6 +23,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { Kbd } from "@/components/ui/kbd";
 import {
   CircleDot,
   Bot,
@@ -447,7 +448,18 @@ export function CommandPalette() {
     showSearchAll && visibleIssues.length === 0 && matchedDestinations.length === 0;
 
   return (
-    <CommandDialog className="sm:max-w-2xl" open={open} onOpenChange={(v) => {
+    <CommandDialog
+      className="sm:max-w-2xl"
+      footer={
+        <>
+          <span className="inline-flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> Move</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>↵</Kbd> Open</span>
+          <span className="inline-flex items-center gap-1.5"><Kbd>Tab</Kbd> Task actions</span>
+          <span className="ml-auto inline-flex items-center gap-1.5"><Kbd>Esc</Kbd> Close</span>
+        </>
+      }
+      open={open}
+      onOpenChange={(v) => {
         setOpen(v);
         if (v && isMobile) setSidebarOpen(false);
       }}>
@@ -500,7 +512,7 @@ export function CommandPalette() {
           }
         }}
       />
-      <CommandList className="max-h-(--sz-480px)">
+      <CommandList className="max-h-(--sz-palette-list)">
         {pendingCommand ? (
           <CommandPreviewPanel
             command={pendingCommand}
@@ -527,7 +539,7 @@ export function CommandPalette() {
           {showSearchAll ? (
             <span>
               No quick task matches. Press{" "}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-(length:--text-nano)">↵</kbd>{" "}
+              <Kbd>↵</Kbd>{" "}
               to <span className="font-medium">search all</span> or keep typing to refine.
             </span>
           ) : (
@@ -553,7 +565,7 @@ export function CommandPalette() {
                   >
                     <Icon className="mr-2 h-4 w-4 shrink-0" />
                     {destination.kind === "task" && destination.key ? (
-                      <span className="mr-2 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{destination.key}</span>
+                      <span className="mr-2 min-w-14 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{destination.key}</span>
                     ) : null}
                     <span className="min-w-0 truncate">{destination.label}</span>
                     {destination.kind === "project" && destination.detail ? (
@@ -584,7 +596,7 @@ export function CommandPalette() {
                 >
                   <Clock className="mr-2 h-4 w-4 shrink-0" />
                   {issue.identifier ? (
-                    <span className="mr-2 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+                    <span className="mr-2 min-w-14 shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{issue.identifier}</span>
                   ) : null}
                   <span className="min-w-0 flex-1 truncate">{issue.title}</span>
                   <span className="ml-2 hidden shrink-0 text-xs text-muted-foreground sm:inline">
@@ -617,7 +629,6 @@ export function CommandPalette() {
             <CommandItem
               value={`${SEARCH_ALL_VALUE} ${searchQuery}`}
               onSelect={goFullSearch}
-              className="bg-accent/40 border border-accent data-[selected=true]:bg-accent/60"
               data-testid="command-search-all"
             >
               <Search className="mr-2 h-4 w-4" />
@@ -626,7 +637,7 @@ export function CommandPalette() {
               </span>
               <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <span>open full search</span>
-                <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">↵</kbd>
+                <Kbd className="bg-background">↵</Kbd>
               </span>
             </CommandItem>
             {!searchIsSaved ? (
@@ -701,7 +712,7 @@ export function CommandPalette() {
           >
             <SquarePen className="mr-2 h-4 w-4" />
             Create new task
-            <span className="ml-auto text-xs text-muted-foreground">C</span>
+            <Kbd className="ml-auto">C</Kbd>
           </CommandItem>
           {onIssueDetail && (
             <CommandItem
@@ -712,7 +723,7 @@ export function CommandPalette() {
             >
               <FileCode2 className="mr-2 h-4 w-4" />
               Open file in this issue...
-              <span className="ml-auto text-xs text-muted-foreground">g f</span>
+              <span className="ml-auto inline-flex items-center gap-1"><Kbd>g</Kbd><Kbd>f</Kbd></span>
             </CommandItem>
           )}
           <CommandItem
@@ -748,7 +759,7 @@ export function CommandPalette() {
           >
             <Keyboard className="mr-2 h-4 w-4" />
             Keyboard shortcuts
-            <span className="ml-auto text-xs text-muted-foreground">?</span>
+            <Kbd className="ml-auto">?</Kbd>
           </CommandItem>
         </CommandGroup>
 
@@ -785,7 +796,7 @@ export function CommandPalette() {
                   className="group/task"
                 >
                   <CircleDot className="mr-2 h-4 w-4" />
-                  <span className="text-muted-foreground mr-2 shrink-0 whitespace-nowrap font-mono text-xs">
+                  <span className="text-muted-foreground mr-2 min-w-14 shrink-0 whitespace-nowrap font-mono text-xs">
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate">{issue.title}</span>
@@ -950,7 +961,7 @@ function TaskQuickActions({
         <CommandItem value="__back" onSelect={onBack} data-testid="command-actions-back">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to results
-          <span className="ml-auto text-xs text-muted-foreground">⌫</span>
+          <Kbd className="ml-auto">⌫</Kbd>
         </CommandItem>
       </CommandGroup>
     </>

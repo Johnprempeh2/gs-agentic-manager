@@ -531,13 +531,10 @@ export function GetHelp() {
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="get-help-page">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Get help</h1>
-          <p className="text-sm text-muted-foreground">
-            Ask Greatstone for platform support, an optional quality review, or an upgrade. Only what you type and the
-            files you pick go to Greatstone.
-          </p>
-        </div>
+        <p className="min-w-0 flex-1 basis-72 text-sm text-muted-foreground">
+          Ask Greatstone for platform support, an optional quality review, or an upgrade. Only what you type and the
+          files you pick go to Greatstone.
+        </p>
         <Button type="button" onClick={openNew}>
           <Plus />
           Open a ticket

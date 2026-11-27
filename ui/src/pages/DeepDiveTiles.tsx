@@ -111,13 +111,10 @@ export function DeepDiveTiles() {
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-bold">Deep Dive</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            One Deep Dive for each client engagement. Open a tile for its questions and answers, findings, sessions,
-            documents and deliverables.
-          </p>
-        </div>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          One Deep Dive for each client engagement. Open a tile for its questions and answers, findings, sessions,
+          documents and deliverables.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           {finishedCount > 0 ? (
             <Button type="button" variant="outline" size="sm" onClick={() => setShowFinished((v) => !v)} aria-pressed={showFinished}>
