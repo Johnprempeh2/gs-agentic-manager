@@ -1,7 +1,7 @@
 #!/bin/bash
 # GSAM for Mac: the engine behind GSAM.app. Each subcommand is one setup step,
 # so the app can show progress between them. Every step is safe to run again.
-#   gsam.sh status | xcode | node | activate | rust | code | deps | tools | config | service | wait
+#   gsam.sh status | xcode | node | activate | code | runner | rust | deps | tools | config | service | wait
 #           | tailscale | owner | owner-done | open | newer | update | log
 set -euo pipefail
 
@@ -95,6 +95,17 @@ case "${1:-}" in
     out=$(GSAM_RELEASE_TAG="$(current_release)" node "$HERE/mac-setup.mjs" activate "$INST" "$HUB_URL") || fail "$out"
     echo "$out" ;;
 
+  runner)
+    # The prebuilt native runner for this release, checked against the release's SHA256SUMS
+    # (scripts/fetch-runner-binary.mjs). Without one (a test build, or no binary for this Mac),
+    # Rust is installed so GSAM's first start builds it from source.
+    tag=$(current_release)
+    if node "$CODE/scripts/fetch-runner-binary.mjs" --tag "$tag" --dest "$RUNTIME/runner/$tag"; then
+      find "$RUNTIME/runner" -mindepth 1 -maxdepth 1 ! -name "$tag" -exec rm -rf {} + 2>/dev/null || true
+    else
+      bash "$0" rust
+    fi ;;
+
   rust)
     if ! [ -x "$CARGO_HOME/bin/cargo" ]; then
       curl -fsSL https://sh.rustup.rs -o "$RUNTIME/rustup-init.sh"
@@ -143,7 +154,7 @@ case "${1:-}" in
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key><array>
     <string>/bin/bash</string><string>-c</string>
-    <string>cd "$CODE" &amp;&amp; exec corepack pnpm dev:once --data-dir "$DATA"</string>
+    <string>cd "$CODE" &amp;&amp; b="$RUNTIME/runner/\$(cat "$APP_HOME/version")/paperclip-runnerd"; [ -x "\$b" ] &amp;&amp; export GSAM_RUNNER_BINARY="\$b"; exec corepack pnpm dev:once --data-dir "$DATA"</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>$PATH</string>
@@ -292,6 +303,7 @@ EOF
       checkout_release "$latest"
     fi
     (cd "$CODE" && corepack pnpm install --frozen-lockfile)
+    bash "$0" runner
     launchctl kickstart -k "gui/$(id -u)/$LABEL" ;;
 
   log)

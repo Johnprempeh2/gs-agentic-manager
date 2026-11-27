@@ -2,16 +2,16 @@
 
 25 Nov 2026. Decision: GSAM runs natively on Windows (no WSL, no Docker), so a
 customer can install it on a Windows PC beside the Mac app in `packaging/macos`.
-This plan covers the phases. W1 and W2 are done in the pull request that adds
-this file; W3 to W5 are later.
+This plan covers the phases. W1 and W2 landed in #1223; W3 to W5 and the two
+known gaps are in #1224.
 
 | Phase | What | State |
 | --- | --- | --- |
 | W1 | Windows CI that proves GSAM runs natively | done (`.github/workflows/windows-ci.yml`) |
 | W2 | Porting fixes the CI found | done for the install path, remaining items below |
-| W3 | Prebuilt runner binaries on `live-*` releases | planned |
-| W4 | Windows installer | planned |
-| W5 | Cross-platform fleet orders, OS column, download picker | planned |
+| W3 | Prebuilt runner binaries on `live-*` releases | built (`release-assets.yml`) |
+| W4 | Windows installer | built (`packaging/windows`), see the proof below |
+| W5 | Cross-platform fleet orders, OS column, download picker | built (hub, Fleet page, website #330) |
 
 ## W1: what the Windows CI proves
 
@@ -140,163 +140,261 @@ Sizes: S is under a day, M one to three days, L a week or more.
 | Agent secret shield | Off (it uses bubblewrap, Linux only; also off on Mac). The health page already reports it as unavailable. | None planned; a Windows equivalent would be an AppContainer, which is L. | L |
 | Codex app server Unix proxy | `paperclip-runner-codex-proxy` takes a Unix socket path. Not exercised on Windows yet. | Pass a named pipe path (`\\.\pipe\...`), which Node's `net` accepts on Windows, and add it to the Windows job. | S |
 | Other POSIX-only package scripts | `pnpm build` (the full release build) and the `clean` and `prepack` scripts use `rm -rf`, `mkdir -p`, `cp` and `chmod` in about 40 package scripts (`packages/db`, `server`, `cli`, the Codex and Grok adapters, the sandbox providers). None of them runs when GSAM is installed and started; they matter for building releases on Windows. | Replace with Node one-liners or a shared `scripts/fs-tool.mjs`; or set pnpm's `script-shell` to Git Bash on developer machines only. | S to M |
-| POSIX shell for workspace services | Agents' workspace runtime services (dev servers an agent starts) run through `sh -lc`. Git for Windows' full or portable build provides `sh`; MinGit does not. | The installer ships PortableGit (which includes `sh` and bash) instead of MinGit, or sets `SHELL` to it. Decide in W4. | S |
+| POSIX shell for workspace services | Agents' workspace runtime services (dev servers an agent starts) run through `sh -lc`. Git for Windows' full or portable build provides `sh`; MinGit does not. | Done in W4: the installer ships PortableGit and puts its `usr\bin` on GSAM's PATH. | done |
 | Full test suite on Windows | Only the curated set runs. Many tests assume `/bin/sh`, POSIX signals or `/tmp`. | Grow the curated list file by file as features are confirmed; never block on the whole suite. | L, ongoing |
 
 Features off on Windows until those land: the agent secret shield, the
-process kill guard (see Known gaps), the hot-restart snapshot on stop, the
-Codex app server Unix proxy.
+hot-restart snapshot on stop, the Codex app server Unix proxy. (The process
+kill guard is now built; see Known gaps.)
 
 ## Known gaps (security and correctness)
 
-These are not hidden by the green Windows job: some of its tests skip on
-Windows because of them, and each needs its own work before Windows customers
-rely on the feature.
+Each was found while porting; none is hidden by a green job. Status at the
+end of W3 to W5 (pull request #1224):
 
-### 1. No process kill guard on Windows (W2 follow-up, size M)
+### 1. Process kill guard on Windows: built
 
 On Linux and macOS, `packages/adapter-utils/src/process-kill-guard.ts` wraps
 `pkill` and `killall` for every agent run so a broad pattern cannot stop the
 live GSAM server or anything running from the install or data folders (it
-stopped live for 8.5 hours on 4 Oct 2026). On Windows
-`processKillGuardSupported()` is false, so **nothing stops an agent's
-commands from killing the live server**, and its POSIX path tests are
-skipped there.
+stopped live for 8.5 hours on 4 Oct 2026). Windows had none.
 
-Proposed Windows equivalent:
+Now `process-kill-guard-windows.ts` puts a `taskkill` guard first on a Windows
+run's PATH: `taskkill.cmd` (found by cmd.exe and PowerShell through PATHEXT)
+and an extensionless `taskkill` (Git Bash, which Claude Code's shell uses),
+both running `gsam-process-guard.cjs`. The guard:
 
-- Wrap `taskkill` and PowerShell's `Stop-Process` (the two ways an agent
-  kills on Windows; `pkill` does not exist there) with `.cmd` and PowerShell
-  shims on the run's PATH ahead of the system ones, as the POSIX wrappers are.
-- Before passing a kill through, resolve its targets with
-  `Get-CimInstance Win32_Process` (PID, parent PID, command line, executable
-  path) and refuse when a target is the live server's PID, one of its
-  ancestors, a process in its tree, or a process whose command line or
-  executable sits under a protected folder.
-- Protected markers: the install and data folders as today, plus the drive
-  roots (`C:\` and the other fixed drives) and `%USERPROFILE%` themselves,
-  never used as a "live" marker in their own right (the same rule as `/` and
-  `$HOME` on POSIX), with the run's own workspace exempt when it lies strictly
-  inside a protected folder.
-- Port the existing path tests with Windows paths, and add a real-process
-  test like the Linux one (start a fake live server, run the shimmed
-  `taskkill /IM node.exe /F`, assert it survives).
-- Limit: like the POSIX guard, it covers the commands it wraps; an agent can
-  still call the Win32 API directly. Job Objects for agent runs (the runner
-  item above) narrow that further.
+- lists every process with `Get-CimInstance Win32_Process` (PID, parent,
+  command line, executable) and fails closed when it cannot;
+- works out what `taskkill` would end (`/PID`, `/IM` with wildcards, and with
+  `/T` every descendant);
+- leaves alone the live server, every process above it, and any process
+  whose command line or executable names a protected folder (the install and
+  data folders), unless that is inside the run's own workspace; with `/T` a
+  target whose tree holds a live process is left alone whole;
+- ends the rest through the real `taskkill.exe`, one `/PID` at a time, and
+  refuses options it cannot check (`/FI`, `/S`, `/U`, `/P`);
+- never uses a drive root (`C:\`) or `%USERPROFILE%` (or anything above it)
+  as a protected marker, the same rule as `/` and `$HOME` on POSIX.
 
-Size: M (about 3 days with tests).
+Also fixed on the way: the run launcher joined its PATH with `:` and
+exported it from shell profiles on Windows too, which would have broken a
+local Windows run's PATH, so no guard could have been first on it.
 
-### 2. Credential files rely on the folder ACL, not 0600
+Proof (Windows CI, real processes, `process-kill-guard-windows.test.ts`):
+the guard is first on the run's PATH; a `taskkill /F` over the server, a
+process in the live folder, the agent's own process and an unrelated one
+ends only the last two; a **planted failure** runs the real `taskkill.exe`
+on the live process and it dies, so the survival is the guard's doing; `/T`
+over a tree holding a live process leaves it alone; `/FI` is refused.
+
+Limits, as on POSIX: it covers the command it wraps. PowerShell's
+`Stop-Process` (a cmdlet, which no PATH shim can reach) and direct Win32
+calls are not covered. Job Objects for agent runs (below) narrow that.
+
+### 2. Credential files rely on the folder ACL, not 0600: handled
 
 On POSIX the Codex adapter writes `auth.json` and `config.toml` (which holds
-the MCP bearer token) with mode `0600` and their folders `0700`. Windows has
-no mode bits: those files take the ACL of the folder they are written in.
+the MCP bearer token) with mode `0600`. Windows has no mode bits: files take
+the ACL of their folder.
 
-- **Staged sync home**: `stageCodexHomeForSync` stages into `os.tmpdir()`,
-  which on Windows is `%LOCALAPPDATA%\Temp`, private to the user (the user,
-  SYSTEM and Administrators). A new Windows-only test
-  (`codex-home.test.ts`, "stages credentials that Users and Everyone cannot
-  read") reads the ACL of the staged `auth.json` and `config.toml` with
-  `icacls` and fails if `Users`, `Everyone` or `Authenticated Users` can read
-  them; it also proves the check goes red on a file granted to `Users`.
-- **Managed Codex home**: lives under the instance root,
-  `<data folder>\instances\<id>\[companies\<id>\]codex-home`. With the
-  data folder under `%USERPROFILE%` or `%LOCALAPPDATA%` (the installer's
-  default, as `~/GSAM-data` is on the Mac) it is private to the user by
-  default. **A data folder elsewhere is not**: the root of a second drive
-  (`D:\`), for example, grants `Authenticated Users` modify by default. The
-  installer (W4) must therefore keep the data folder under the user profile,
-  or, if the customer picks another place, lock that folder once with
-  `icacls <data> /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F" "SYSTEM:(OI)(CI)F"`
-  so everything under it, credentials included, is user-only. Size: S, part
-  of W4.
+- The **staged sync home** is in `os.tmpdir()` (`%LOCALAPPDATA%\Temp`),
+  private to the user. A Windows-only test reads the ACL of the staged
+  `auth.json` and `config.toml` with `icacls` and fails if `Users`,
+  `Everyone` or `Authenticated Users` can read them, with a planted file
+  granted to `Users` proving the check goes red.
+- The **managed Codex home** is under the data folder. The installer keeps
+  the data folder in `%USERPROFILE%\GSAM-data` (private by default); a data
+  folder placed anywhere else gets an owner-only ACL from the engine
+  (`icacls <data> /inheritance:r /grant:r <user>:(OI)(CI)F SYSTEM:(OI)(CI)F`)
+  before anything is written there.
 
-### 3. Codex managed home uses file symlinks (likely broken for standard users)
+### 3. Codex managed home and file symlinks
 
-`ensureSymlink` links the managed Codex home's `auth.json` to the shared
-source so rotating refresh tokens stay single-copy (#5028). Windows only lets
-a standard user create file symlinks with Developer Mode switched on; the CI
-tests pass because the runner account is an administrator. On a customer's
-PC the Codex adapter's first run would most likely fail with `EPERM`. This
-is not yet proven in CI (the smoke test does not run Codex). Hard links are
-not a fix (Codex replaces `auth.json` by rename, which leaves a stale copy,
-the exact bug #5028 fixed). Options: point `CODEX_HOME` at the shared folder
-on Windows, or copy on start and copy back after each run under the existing
-auth merge (`codex-auth-merge-*`). Size: M. Prove it first by running the
-managed home tests as the standard smoke user.
+**Proven broken, now fixed.** `ensureSymlink` links the managed Codex home's
+`auth.json` to the shared credential so rotating, single-use refresh tokens
+stay one copy (#5028). Windows lets a standard user make a file symlink only
+with Developer Mode on. GitHub's Windows image has Developer Mode on, which
+first made the tests pass as the standard user; with it off, as on a
+customer's PC, 22 of the 54 Codex home tests failed with `EPERM`. The Codex
+adapter would have failed on its first run.
 
-## W3: prebuilt runner binaries
+Fix (Windows only; POSIX unchanged), in `codex-home.ts`:
 
-Today the first start compiles `paperclip-runnerd` with cargo, so a customer
-needs Rust (and on Windows the MSVC build tools, a 2 GB download that needs
-admin). Instead:
+- When Windows refuses the symlink, the home's `auth.json` is a **hard link**
+  to the shared credential (no privilege needed). A credential written in
+  place is shared at once, exactly as through the symlink.
+- A writer that replaces the file splits the link. The next seed (before
+  every probe and run) carries a strictly newer same-identity credential back
+  to the shared file through the existing `copyBackCodexAuth` (the same
+  decision script, directory lock and atomic rename as the sandbox
+  copy-back); a home behind the shared file is relinked by the existing
+  freshness rule. Another account's credential never goes to the shared file.
+- Another volume cannot hold a hard link; there it falls back to a copy kept
+  in step the same way.
 
-- A release workflow builds `paperclip-runnerd` for Windows x64, Mac arm64
-  and Mac x64 when a `live-*` tag is pushed and attaches them to the GitHub
-  release with a `SHA256SUMS` file.
-- The installer (and the nightly updater) downloads the binary for its
-  platform, checks the SHA-256, and sets `GSAM_RUNNER_BINARY` to it. The dev
-  runner already skips its own cargo build when `GSAM_RUNNER_BINARY` is set
-  (`scripts/dev-runner-native-binary.mjs`).
-- Rust stays a fallback for developers only.
+Proof: `codex-home-windows.test.ts` runs in CI as the standard user with
+Developer Mode off, and first checks (a planted environment check) that
+Windows really refuses the symlink there; then: the link shares an in-place
+refresh, a split home's newer credential reaches the shared file, and another
+account's credential does not. The existing 54 Codex home tests still run
+with the symlink privilege.
 
-Size: M. Needs: nothing from John (public repo, standard runners).
+Residual: between a split and the next seed, another home could start with
+the older token. Every run seeds first, so the window is one run; a Codex
+writer that rewrites in place never splits the link.
 
-## W4: Windows installer
+## What remains on Windows, with sizes
 
-Mirror `packaging/macos/src/gsam.sh` step by step, so both apps behave the
-same:
+See the table above for the runtime items (polite server stop, Job Objects,
+the secret shield, the Codex app server proxy, POSIX package scripts, the
+full test suite). Added by W3 to W5:
 
-- **Engine**: `gsam.ps1` (PowerShell 5.1, which every Windows 10 and 11 PC
-  has) with the same subcommands: `status`, `node`, `git`, `code`, `deps`,
-  `runner`, `tools`, `service`, `wait`, `open`, `update`, `log`. Each step is
-  safe to run again.
-- **Node**: the official Node zip for `win-x64`, checked against
-  `SHASUMS256.txt` (SHA-256) before it is unpacked into
-  `%LOCALAPPDATA%\GSAM\runtime\node`; `corepack enable`.
-- **Git**: MinGit was the plan, but agents' workspace services run through
-  `sh -lc` (see the table above) and MinGit has no `sh`. Use PortableGit
-  (the self-extracting portable Git for Windows, which includes bash and
-  `sh`) into the runtime folder, with its own SHA-256 check, and put its
-  `usr\bin` on the service's PATH. MinGit remains possible if those services
-  move to cmd.exe on Windows.
-- **Code**: clone, then check out the newest `live-*` tag, as on the Mac.
-- **Runner**: the prebuilt binary from W3 (no Rust, no MSVC).
-- **Licence activation**: reuse `packaging/macos/src/mac-setup.mjs` from branch
-  `gsam-product-p1`. It has no dependencies and only needs Node, so it runs
-  unchanged on Windows; rename it to `setup.mjs` when it moves to a shared
-  folder.
-- **Service**: Task Scheduler instead of launchd. One task runs
-  `pnpm dev:once --data-dir` at log-on (restart on failure), one runs the
-  updater at 03:30 (run as soon as possible if missed). Both run as the
-  signed-in user, so no admin rights are needed.
-- **Package**: an Inno Setup `.exe` that installs per user (no admin), puts
-  a Start menu shortcut that opens `http://localhost:3100` as an app window
-  in Edge, and runs the engine steps with a progress page.
-- **Remote access**: Tailscale for Windows (its own installer, needs admin
-  once); the same tailnet setup as the Mac.
-- **Signing**: an unsigned `.exe` shows a SmartScreen warning ("Windows
-  protected your PC") until it builds reputation. A code-signing certificate
-  (OV or EV) removes it. **Needs John**: buying the certificate (EV needs a
-  hardware token or a cloud signing service) and the company verification.
+| Item | Why | Size |
+| --- | --- | --- |
+| Run the installer on a real Windows 11 PC | CI cannot sign a user in, so the scheduled task's start at sign-in (Interactive log-on) and "update now" through `schtasks /Run` are proven only up to registration; the CI test starts what the task runs directly (`GSAM_SERVICE_DIRECT`). | S (an hour on a clean VM) |
+| Tailscale remote help on Windows | The step is written (tailscaled built from source, userspace networking, its own sign-in task), but userspace networking as a standard user on Windows is not proven, and CI cannot join a tailnet. | M |
+| Installer progress UI | The wizard waits while a console window shows each step; a native progress page would look better. | S |
+| Release back-fill | `release-assets.yml` publishes on each new `live-*` tag. The current live tag needs one run by hand (Actions, Release assets, Run workflow, tag) before `releases/latest/download/...` serves anything; to be done with John (it publishes to the public repository). Set the repository variable `GSAM_HUB_URL` first. | S |
+| Code signing | Unsigned: SmartScreen warns (More info, then Run anyway). The hook is in place (`GSAM_SIGN_COMMAND`, Inno's `SignTool`). | S once a certificate exists |
 
-Size: L (about two weeks with testing on a clean Windows 11 machine).
+## Release assets: both installers on every live release
 
-## W5: cross-platform fleet and website
+`.github/workflows/release-assets.yml` builds everything a customer downloads
+and, on each `live-*` tag, attaches it to that tag's GitHub release with one
+`SHA256SUMS`: the three runner binaries, **`GSAM-Installer.dmg`** (Mac) and
+**`GSAM-Setup.exe`** (Windows). The release is marked latest only when it is
+the newest `live-*` tag, so
+`https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/<file>`
+always serves the newest installers, and the website links there. A run by
+hand with a tag back-fills a tag made before the workflow (not run yet: to be
+done with John, since it publishes to the public repository). Pull requests
+build everything as workflow artifacts, plus screenshots of the mounted DMG
+window (Light and Dark Mode) and of the Windows wizard. The installers take
+the hub address from the repository variable `GSAM_HUB_URL`; unset, they
+still build, with a warning, and say at activation that they do not know
+where Greatstone's service is.
 
-- **Spoke orders**: `server/src/services/fleet-spoke.ts` on branch
-  `gsam-product-p3` runs `launchctl kickstart` for "update now". Add a Windows
-  branch that runs `schtasks /Run /TN "GSAM Update"` (S), behind one
-  `platformServiceManager()` helper so the order code stays the same.
-- **Fleet OS column**: spokes report `process.platform` and `os.release()` in
-  their heartbeat; the fleet table shows it (S).
-- **Website download picker**: detect the visitor's OS and offer the Mac app
-  or the Windows installer, with the other one a click away (S).
+The Mac installer was polished at the same time (`packaging/macos`): a
+branded disk image laid out by dmgbuild (pinned, hashes checked; no Finder
+needed, so it builds in CI), Greatstone void background with the wordmark and
+a lime arrow from GSAM to the Applications alias, the stone as the volume
+icon, the window exactly the size of the background, icon labels on
+`#767676` pills (Finder draws them black or white depending on the Mac; both
+pass AA on that grey), and the first-open step (right-click, then Open) on
+the background and in the README. `GSAM.app` is an AppleScript applet, which
+is universal; the build fails if it ever is not. Still ad hoc signed and not
+notarised.
+
+## W3: prebuilt runner binaries (built)
+
+`.github/workflows/release-assets.yml` builds `paperclip-runnerd` with the
+pinned toolchain and locked dependencies for Windows x64 (MSVC), macOS arm64
+and macOS x64 (cross-built on the Apple silicon runner). On a `live-*` tag it
+attaches the three binaries and `SHA256SUMS` to that tag's GitHub release
+(made if missing, never marked latest); pull requests only build, as proof.
+`scripts/fetch-runner-binary.mjs` (no dependencies) downloads the binary for
+an install's release and checks it against `SHA256SUMS`; its test serves a
+fake release and plants a tampered download, which is refused. The Mac app's
+new `runner` step uses it (Rust only as the fallback, for a build with no
+binary); the Windows installer has no fallback (building needs Microsoft's
+build tools). Both hand the binary to GSAM as `GSAM_RUNNER_BINARY`, which the
+dev runner and the server already honour, so no install compiles Rust.
+
+Proof: all three binaries build in CI (run 45721453052).
+
+## W4: Windows installer (built)
+
+`packaging/windows` (README there): `src/gsam.ps1` mirrors
+`packaging/macos/src/gsam.sh` step for step (`node`, `activate`, `git`,
+`code`, `runner`, `deps`, `tools`, `config`, `service`, `wait`, `tailscale`,
+`owner`, plus `update`, `stop`, `uninstall`), and `gsam.iss` wraps it in an
+Inno Setup `.exe`:
+
+- **No administrator rights**: per-user install in `%LOCALAPPDATA%\GSAM`, data
+  in `%USERPROFILE%\GSAM-data`, scheduled tasks for the user only, run level
+  Limited.
+- **Node**: the official `win-x64` zip, checked against `SHASUMS256.txt`.
+- **Git**: PortableGit 2.56.1, pinned SHA-256 (it brings the `sh` agents'
+  workspace services need; MinGit has none); long paths on.
+- **Code**: the newest `live-*` tag. **Runner**: the prebuilt binary (W3).
+- **Licence**: the wizard asks for the key; activation reuses
+  `packaging/macos/src/mac-setup.mjs` unchanged except that it reports
+  `os: windows` (the hub's activation facts now accept it). The key reaches
+  the engine through the environment, never a file or command line.
+- **Service**: a task at sign-in running `gsam.ps1 run`, which keeps
+  `pnpm dev:once --data-dir` running (started again 30 seconds after it
+  stops, as launchd's KeepAlive), with `GSAM_SCHEDULED_TASK` set for "update
+  now"; and `<label>.update` daily at 03:30, run as soon as possible if
+  missed.
+- **Owner**: the one-time set-up link opens in an Edge app window.
+- **Unsigned**: SmartScreen shows "Windows protected your PC"; customers
+  choose More info, then Run anyway (the website says so). Signing later is
+  one setting (`GSAM_SIGN_COMMAND`, for example Azure Trusted Signing).
+- **Uninstall** removes the tasks and the app; the data folder stays.
+
+Proof (Windows CI, job "Windows installer"): builds `GSAM-Setup.exe` (kept
+as a sandbox artifact, hub 127.0.0.1, never to be handed out), then as a
+freshly made standard user with Developer Mode off: a sandbox hub makes a
+licence, the installer runs silently with it, and the test checks:
+
+all green (run 45753443815, about 45 minutes): setup finished every step;
+GSAM answers in authenticated mode; both scheduled tasks exist and run
+without administrator rights; the updater runs at 03:30; the owner's set-up
+link was made; status says licensed and waiting for the owner; the install
+checked in with the hub as a Windows install (check-in v4); the uninstaller
+removed the tasks, kept the data folder, and GSAM stopped.
+
+Found on the way, by running it as a standard user with Developer Mode off:
+
+- **Inno Setup's Redirection Guard.** Setup enables Windows' Redirection
+  Guard by default and the processes it starts inherit it; under it Node
+  refuses the folder junctions pnpm makes for a standard user, so
+  `pnpm install` failed with "unknown error" reading `node_modules`. The
+  logged policy confirmed it. `gsam.iss` sets `RedirectionGuard=no`: the
+  mitigation guards elevated installers, and this one is never elevated.
+- **Directory symlinks.** The repository's own `postinstall`
+  (`link-plugin-dev-sdk`) made a directory symlink, which a standard user
+  cannot. Directory links now go through one helper, `linkDirectory`
+  (`adapter-utils/server-utils`): a junction on Windows, a symlink elsewhere.
+  It serves the plugin SDK link, workspace package links and every adapter's
+  skill links. POSIX unchanged.
+- The engine also runs in 64-bit PowerShell whatever starts it, ignores npm
+  and pnpm settings it inherits, keeps its own package store beside the app,
+  and retries an install by copying files.
+
+## W5: cross-platform fleet and website (built)
+
+- **Check-in v4** (closed schema): v3 plus `platform { os: macos | windows |
+  linux, arch: arm64 | x64 | other }`. The app spoke sends v4; the hub takes
+  v1 to v4 and records order results from v3 and v4. A free-text OS is
+  refused (test).
+- **Update now**: `updaterCommand()` picks the platform's way:
+  `launchctl kickstart gui/<uid>/<label>.update` on a Mac (unchanged),
+  `schtasks /Run /TN <label>.update` on Windows; nothing elsewhere. Labels are
+  checked against `^[A-Za-z0-9.-]{1,120}$` (test).
+- **Fleet page**: an OS column (and a phone-card row) from the newest
+  check-in; installs on older releases show Not reported (test).
+- **Website** (greatstone-website #330): My GSAM offers the Mac or Windows
+  download first from the visitor's browser (`userAgentData`, else the user
+  agent), with a switch; the Windows note explains SmartScreen. New optional
+  setting `GSAM_WINDOWS_INSTALLER_URL`.
 
 ## Needs John
 
-- A code-signing certificate for the Windows installer (W4), or a decision to
-  ship unsigned at first and accept the SmartScreen warning.
-- When the Windows job has been green for a week: whether to make it a
-  required check.
+- Set the repository variable `GSAM_HUB_URL` (the hub's public https
+  address; Settings, Secrets and variables, Actions, Variables), so release
+  installers can activate a licence.
+- Then back-fill the current live tag once: Actions, Release assets, Run
+  workflow, with the tag. It publishes to the public repository, so it is
+  done with John. From then on every new `live-*` tag publishes itself, and
+  the website's links (`releases/latest/download/GSAM-Installer.dmg` and
+  `GSAM-Setup.exe`) serve the newest.
+- Later: Azure Trusted Signing (or another code-signing certificate) to
+  remove the SmartScreen warning, and the Apple Developer Program to notarise
+  the Mac app (no more right-click, then Open).
+- A one-hour check on a real Windows 11 PC: the start at sign-in through Task
+  Scheduler, "update now" through `schtasks /Run`, and Tailscale remote help,
+  which CI cannot sign in to prove.
+- When the Windows jobs have been green for a week: whether to make them
+  required checks.

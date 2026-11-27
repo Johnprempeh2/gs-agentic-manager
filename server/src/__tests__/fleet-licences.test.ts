@@ -176,6 +176,15 @@ describeEmbeddedPostgres("fleet licences and the Mac spoke", () => {
     expect((await request(app()).post("/api/fleet/spoke/activate").send(notALicence)).status).toBe(400);
   });
 
+  it("activates a Windows install, and refuses an operating system it does not list", async () => {
+    const { licenceKey } = await newLicence();
+    const linux = activationBody(licenceKey).body;
+    expect((await request(app()).post("/api/fleet/spoke/activate").send({ ...linux, facts: { ...linux.facts, os: "linux" } })).status).toBe(400);
+    const windows = activationBody(licenceKey).body;
+    const res = await request(app()).post("/api/fleet/spoke/activate").send({ ...windows, facts: { os: "windows", arch: "x64", releaseTag: null } });
+    expect(res.status).toBe(201);
+  });
+
   it("rate limits activation per address", async () => {
     const server = app();
     const statuses: number[] = [];

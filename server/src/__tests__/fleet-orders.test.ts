@@ -7,15 +7,15 @@ import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { activityLog, companies, createDb, fleetCheckIns, fleetInstances, fleetOrders } from "@greatstone/db";
-import { FLEET_CHECK_IN_SCHEMA_V3, fleetCheckInSchema } from "@greatstone/shared/fleet";
-import { generateFleetKey, nextSeq, registrationSubject, signFleetMessage } from "@greatstone/shared/fleet-spoke";
+import { FLEET_CHECK_IN_SCHEMA_V3, FLEET_CHECK_IN_SCHEMA_V4, fleetCheckInSchema } from "@greatstone/shared/fleet";
+import { fleetPlatform, generateFleetKey, nextSeq, registrationSubject, signFleetMessage } from "@greatstone/shared/fleet-spoke";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { fleetHubRoutes, fleetSpokeRoutes } from "../routes/fleet.js";
 import { readHubSigningKey } from "../services/fleet-entitlements.js";
 import { fleetTailscaleAuthKey, signFleetOrder, verifyFleetOrder } from "../services/fleet-orders.js";
 import { fleetSpokePaths, readFleetSpokeConfig } from "../services/fleet-spoke-config.js";
-import { obeySpokeOrders, readSpokeOrders, sendSpokeCheckIn } from "../services/fleet-spoke.js";
+import { obeySpokeOrders, readSpokeOrders, sendSpokeCheckIn, updaterCommand } from "../services/fleet-spoke.js";
 import { currentServiceHold, serviceHoldHealth, setServiceHoldSpoke } from "../services/service-hold.js";
 import { setEntitlementRuntime, type EntitlementRuntime } from "../services/entitlement-runtime.js";
 import { resolveHeartbeatSchedulingSuppression } from "../services/heartbeat.js";
@@ -225,7 +225,11 @@ describeEmbeddedPostgres("fleet orders", () => {
     expect(list.body[0]).toMatchObject({ state: "paused", orders: [{ seq: 1, status: "done" }] });
     const stored = await db.select().from(fleetCheckIns).where(eq(fleetCheckIns.fleetInstanceId, id));
     const reported = stored.map((row) => row.payload as { schema: string; orders: unknown[] }).find((p) => p.orders.length > 0)!;
-    expect(reported).toMatchObject({ schema: FLEET_CHECK_IN_SCHEMA_V3, orders: [{ seq: 1, result: "done", code: null }] });
+    expect(reported).toMatchObject({
+      schema: FLEET_CHECK_IN_SCHEMA_V4,
+      orders: [{ seq: 1, result: "done", code: null }],
+      platform: fleetPlatform(),
+    });
 
     await order(hub, id, "stop", "Contract ended");
     await sendSpokeCheckIn(db, input, fetchImpl);
@@ -300,6 +304,23 @@ describeEmbeddedPostgres("fleet orders", () => {
     expect(
       fleetCheckInSchema.safeParse({ schema: FLEET_CHECK_IN_SCHEMA_V3, orders: [{ seq: 1, result: "failed", code: "disk full on Acme Mac" }] }).success,
     ).toBe(false);
+  });
+
+  it("names the platform in a closed form and starts the updater the platform's own way", () => {
+    expect(fleetPlatform("win32", "x64")).toEqual({ os: "windows", arch: "x64" });
+    expect(fleetPlatform("darwin", "arm64")).toEqual({ os: "macos", arch: "arm64" });
+    expect(fleetPlatform("linux", "s390x")).toEqual({ os: "linux", arch: "other" });
+    // The closed schema: v4 refuses an operating system it does not list.
+    const base = { schema: FLEET_CHECK_IN_SCHEMA_V4, platform: { os: "Windows 11 Pro on ACME-PC", arch: "x64" } };
+    expect(fleetCheckInSchema.safeParse(base).success).toBe(false);
+
+    expect(updaterCommand({ GSAM_LAUNCHD_LABEL: "co.greatstone.gsam" }, "darwin", 501))
+      .toEqual({ file: "launchctl", args: ["kickstart", "gui/501/co.greatstone.gsam.update"] });
+    expect(updaterCommand({ GSAM_SCHEDULED_TASK: "co.greatstone.gsam" }, "win32"))
+      .toEqual({ file: "schtasks.exe", args: ["/Run", "/TN", "co.greatstone.gsam.update"] });
+    expect(updaterCommand({ GSAM_SCHEDULED_TASK: "x & calc" }, "win32")).toBeNull();
+    expect(updaterCommand({ GSAM_LAUNCHD_LABEL: "co.greatstone.gsam" }, "win32")).toBeNull();
+    expect(updaterCommand({}, "linux")).toBeNull();
   });
 
   it("reveals the operator log-in to an instance admin and logs every read", async () => {

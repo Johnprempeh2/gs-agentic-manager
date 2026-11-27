@@ -59,7 +59,7 @@ async function activate() {
     licenceKey,
     publicKey,
     proof: signRegisterProof(privateJwk, licenceKey, seq),
-    facts: { os: "macos", arch: process.arch === "arm64" ? "arm64" : "x64", releaseTag },
+    facts: { os: process.platform === "win32" ? "windows" : "macos", arch: process.arch === "arm64" ? "arm64" : "x64", releaseTag },
   };
 
   let res;

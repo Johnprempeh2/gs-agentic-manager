@@ -26,6 +26,7 @@ import {
   startAdapterExecutionTargetPaperclipBridge,
 } from "@greatstone/adapter-utils/execution-target";
 import {
+  linkDirectory,
   asString,
   asNumber,
   asStringArray,
@@ -135,7 +136,7 @@ async function buildPiSkillsDir(config: Record<string, unknown>): Promise<string
   for (const entry of availableEntries) {
     if (!desiredNames.has(entry.key)) continue;
     if (isPaperclipSkillSourceMissing(entry)) continue;
-    await fs.symlink(entry.source, path.join(target, entry.runtimeName));
+    await linkDirectory(entry.source, path.join(target, entry.runtimeName));
   }
   return target;
 }

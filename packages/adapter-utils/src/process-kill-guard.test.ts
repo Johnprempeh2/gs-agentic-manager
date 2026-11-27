@@ -48,9 +48,10 @@ describe("process kill guard paths", () => {
     expect(exempt("/srv/gsam-guard-test")).toEqual([]);
   });
 
-  it("writes pkill and killall wrappers on Linux and macOS only", () => {
+  it("writes pkill and killall wrappers on Linux and macOS, and a taskkill guard on Windows", () => {
     const guard = { protectedPaths: ["/srv/gsam-guard-test/live"], serverPid: 4242 };
-    expect(processKillGuardFiles(guard, "win32")).toEqual({});
+    expect(Object.keys(processKillGuardFiles(guard, "win32")).sort()).toEqual(["gsam-process-guard.cjs", "taskkill", "taskkill.cmd"]);
+    expect(processKillGuardFiles(guard, "win32")["gsam-process-guard.cjs"]).toContain('"serverPid":4242');
     expect(processKillGuardFiles(null, "linux")).toEqual({});
     const linux = processKillGuardFiles(guard, "linux");
     expect(Object.keys(linux).sort()).toEqual(["killall", "pkill"]);

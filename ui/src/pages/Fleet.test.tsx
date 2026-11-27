@@ -291,6 +291,27 @@ describe("Fleet page", () => {
     expect(row("mac-ended")).toContain("Ended");
   });
 
+  it("shows each install's operating system from a v4 check-in, and not reported before", async () => {
+    const WINDOWS: FleetInstanceView = {
+      ...MAC,
+      id: "66666666-6666-6666-6666-666666666666",
+      code: "win-1a2b3c4d",
+      latestCheckIn: {
+        receivedAt: NOW,
+        checkIn: {
+          ...MAC.latestCheckIn!.checkIn,
+          schema: "gsam-fleet-check-in/v4",
+          platform: { os: "windows", arch: "x64" },
+        } as FleetInstanceView["latestCheckIn"] extends infer T ? (T extends { checkIn: infer C } ? C : never) : never,
+      },
+    };
+    mockFleetApi.listInstances.mockResolvedValue([MAC, WINDOWS]);
+    await render();
+    expect(container.querySelector('[data-testid="fleet-table"] thead')!.textContent).toContain("OS");
+    expect(row("win-1a2b3c4d")).toContain("Windows x64");
+    expect(row("mac-1a2b3c4d")).toContain("Not reported");
+  });
+
   it("sends a signed order only with a reason, and stop needs a second click", async () => {
     mockFleetApi.listInstances.mockResolvedValue([MAC]);
     mockFleetApi.createOrder.mockResolvedValue(MAC.orders![0]);

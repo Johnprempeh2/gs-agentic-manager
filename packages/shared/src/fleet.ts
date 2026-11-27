@@ -25,6 +25,14 @@ export const FLEET_CHECK_IN_SCHEMA_V1 = "gsam-fleet-check-in/v1";
  * Host-script spokes keep sending v2; the hub takes v1, v2 and v3.
  */
 export const FLEET_CHECK_IN_SCHEMA_V3 = "gsam-fleet-check-in/v3";
+/**
+ * v4 (GSAM for Windows W5): v3 plus the install's operating system and CPU,
+ * so the hub's fleet page can show Mac and Windows installs apart. The app
+ * spoke sends v4; the hub takes v1 to v4.
+ */
+export const FLEET_CHECK_IN_SCHEMA_V4 = "gsam-fleet-check-in/v4";
+export const FLEET_PLATFORM_OSES = ["macos", "windows", "linux"] as const;
+export type FleetPlatformOs = (typeof FLEET_PLATFORM_OSES)[number];
 /** The spoke sends one check-in per watch pass. */
 export const FLEET_CHECK_IN_INTERVAL_SECONDS = 5 * 60;
 /** A signed message is good for this long after it is made. */
@@ -214,8 +222,22 @@ export const fleetCheckInV3Schema = fleetCheckInV2Schema
   .strict();
 export type FleetCheckInV3 = z.infer<typeof fleetCheckInV3Schema>;
 
-/** What the hub takes: v3 from a Mac, v2 from a host script, or v1 from a spoke not yet upgraded. Any other field is refused. */
-export const fleetCheckInSchema = z.discriminatedUnion("schema", [fleetCheckInV3Schema, fleetCheckInV2Schema, fleetCheckInV1Schema]);
+/** The app spoke from W5 on: v3 plus the operating system and CPU it runs on. */
+export const fleetCheckInV4Schema = fleetCheckInV3Schema
+  .extend({
+    schema: z.literal(FLEET_CHECK_IN_SCHEMA_V4),
+    platform: z.object({ os: z.enum(FLEET_PLATFORM_OSES), arch: z.enum(["arm64", "x64", "other"]) }).strict(),
+  })
+  .strict();
+export type FleetCheckInV4 = z.infer<typeof fleetCheckInV4Schema>;
+
+/** What the hub takes: v4 or v3 from an app install, v2 from a host script, or v1 from a spoke not yet upgraded. Any other field is refused. */
+export const fleetCheckInSchema = z.discriminatedUnion("schema", [
+  fleetCheckInV4Schema,
+  fleetCheckInV3Schema,
+  fleetCheckInV2Schema,
+  fleetCheckInV1Schema,
+]);
 export type FleetReceivedCheckIn = z.infer<typeof fleetCheckInSchema>;
 
 /** Ed25519 public key as a JWK; the hub stores `x` only. */
@@ -323,10 +345,10 @@ export type FleetEntitlementInput = z.infer<typeof fleetEntitlementInputSchema>;
 /** `POST /api/fleet/licences`: a new pending instance with a licence key. The code is made by the hub when left out. */
 export const fleetLicenceCreateSchema = fleetEntitlementInputSchema.extend({ code: fleetInstanceCodeSchema.optional() }).strict();
 
-/** Facts the Mac app sends with its activation. Nothing about the person or their business. */
+/** Facts the Mac or Windows app sends with its activation. Nothing about the person or their business. */
 export const fleetActivationFactsSchema = z
   .object({
-    os: z.literal("macos"),
+    os: z.enum(["macos", "windows"]),
     arch: z.enum(["arm64", "x64"]),
     releaseTag: releaseTag.nullable(),
   })

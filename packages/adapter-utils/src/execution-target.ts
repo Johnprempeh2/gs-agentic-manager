@@ -1724,7 +1724,8 @@ export async function prepareGitHubOperationLaunchers(input: {
   const directory = githubOperationLauncherDirectory(input);
   const configDirectory = path.posix.join(directory, "gh-config");
   const basePath = await githubOperationLauncherBasePath(remote, input.env);
-  const managedPath = basePath ? `${directory}:${basePath}` : directory;
+  // A local run's PATH uses this OS's separator (";" on Windows); a remote one is POSIX.
+  const managedPath = basePath ? `${directory}${remote ? ":" : path.delimiter}${basePath}` : directory;
   // Login shells may reorder PATH through /etc/profile or path_helper. Restore
   // the managed launchers after startup without loading a host user's profile.
   // Empty merge overrides clear host identity before launch, but Git treats
@@ -1733,7 +1734,10 @@ export async function prepareGitHubOperationLaunchers(input: {
   const clearEmptyGitIdentity = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]
     .map((key) => `if [ -z "\${${key}-}" ]; then unset ${key}; fi\n`)
     .join("");
-  const profile = `export PATH=${shellQuote(managedPath)}\n${clearEmptyGitIdentity}`;
+  // Not on a local Windows run: Git Bash converts the inherited Windows PATH
+  // itself, and a Windows-style value exported from a profile would break it.
+  const exportPath = !remote && process.platform === "win32" ? "" : `export PATH=${shellQuote(managedPath)}\n`;
+  const profile = `${exportPath}${clearEmptyGitIdentity}`;
   const files: Record<string, string> = Object.fromEntries([
     // Remote launchers live beneath the checkout. Pin their own package scope
     // so an enclosing project's "type": "module" cannot reinterpret require().

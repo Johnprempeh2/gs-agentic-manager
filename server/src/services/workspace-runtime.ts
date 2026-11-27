@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AdapterRuntimeServiceReport } from "@greatstone/adapter-utils";
+import { linkDirectory } from "@greatstone/adapter-utils/server-utils";
 import type { Db } from "@greatstone/db";
 import { executionWorkspaces, issueComments, issues, projectWorkspaces, workspaceRuntimeServices } from "@greatstone/db";
 import {
@@ -665,7 +666,7 @@ export async function ensureServerWorkspaceLinksCurrent(
     const linkPath = path.join(workspaceRoot, "server", "node_modules", ...mismatch.packageName.split("/"));
     await fs.mkdir(path.dirname(linkPath), { recursive: true });
     await fs.rm(linkPath, { recursive: true, force: true });
-    await fs.symlink(mismatch.expectedPath, linkPath);
+    await linkDirectory(mismatch.expectedPath, linkPath);
   }
 
   const remainingMismatches = findServerWorkspaceLinkMismatches(workspaceRoot);

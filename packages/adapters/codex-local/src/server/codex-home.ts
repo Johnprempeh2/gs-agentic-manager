@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AdapterExecutionContext } from "@greatstone/adapter-utils";
 import { resolvePaperclipInstanceRootForAdapter } from "@greatstone/adapter-utils/server-utils";
 import { isCodexAuthCachePath, readSubscriptionAccountId } from "./codex-auth-cache.js";
+import { copyBackCodexAuth } from "./codex-auth-copyback.js";
 
 const TRUTHY_ENV_RE = /^(1|true|yes|on)$/i;
 const COPIED_SHARED_FILES = ["config.json", "config.toml", "instructions.md"] as const;
@@ -207,12 +208,38 @@ async function isExpectedSymlink(target: string, source: string): Promise<boolea
   return path.resolve(path.dirname(target), linkedPath) === path.resolve(source);
 }
 
+/** Both paths are the same file (a hard link), or both are missing: false. */
+async function isSameFile(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([fs.stat(a, { bigint: true }).catch(() => null), fs.stat(b, { bigint: true }).catch(() => null)]);
+  return Boolean(x && y && x.ino === y.ino && x.dev === y.dev);
+}
+
+/**
+ * Windows lets a standard user make a file symlink only with Developer Mode on,
+ * which a customer's PC does not have (EPERM). There the managed home's file is
+ * a hard link to the shared one instead (no privilege needed): a credential
+ * written in place is shared at once, as through the symlink. A writer that
+ * replaces the file splits the link; the next seed carries a newer credential
+ * back (see seedManagedCodexHome) and links again.
+ */
+async function linkWithoutSymlink(target: string, source: string): Promise<void> {
+  try {
+    await fs.link(source, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST" && await isSameFile(target, source)) return;
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    // ponytail: another volume cannot hold a hard link; a copy, kept in step by the seed's copy-back.
+    await fs.copyFile(source, target);
+  }
+}
+
 async function createExpectedSymlink(target: string, source: string): Promise<void> {
   try {
     await fs.symlink(source, target);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EEXIST" && await isExpectedSymlink(target, source)) return;
+    if (code === "EPERM" && process.platform === "win32") return await linkWithoutSymlink(target, source);
     throw error;
   }
 }
@@ -237,6 +264,8 @@ export async function ensureSymlink(target: string, source: string): Promise<voi
     // a GS Agentic Manager-written stale copy and warrants operator inspection rather
     // than silent removal.
     if (existing.isDirectory()) return;
+    // Windows without the symlink privilege: the hard link that stands in for the symlink.
+    if (process.platform === "win32" && await isSameFile(target, source)) return;
     await fs.unlink(target);
     await createExpectedSymlink(target, source);
     return;
@@ -659,6 +688,22 @@ export async function seedManagedCodexHome(
   if (!apiKey && seedFromShared && !credentialStoreEntry) {
     const authPath = path.join(targetHome, "auth.json");
     const existing = await fs.lstat(authPath).catch(() => null);
+    if (
+      process.platform === "win32" && existing && !existing.isSymbolicLink() && existing.isFile() &&
+      (await pathExists(path.join(sourceHome, "auth.json"))) &&
+      !(await isSameFile(authPath, path.join(sourceHome, "auth.json")))
+    ) {
+      // Windows without the symlink privilege: this home's auth.json is a hard link to
+      // the shared one (linkWithoutSymlink) that a writer split. A strictly newer
+      // same-identity credential here goes back to the shared file first, under the
+      // same guarded decision and lock as a sandbox copy-back, so no other home is
+      // left with a spent refresh token (#5028).
+      await copyBackCodexAuth({
+        readSandboxAuth: () => fs.readFile(authPath),
+        hostAuthPath: path.join(sourceHome, "auth.json"),
+        log: (line) => onLog("stdout", `${line}\n`),
+      }).catch(() => undefined);
+    }
     if (existing && !existing.isSymbolicLink()) {
       const targetBytes = await fs.readFile(authPath).catch(() => null);
       const targetIdentity = targetBytes ? readSubscriptionAccountId(targetBytes) : null;

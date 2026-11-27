@@ -8,6 +8,7 @@ import {
   FLEET_AUDIENCE,
   FLEET_CHECK_IN_SCHEMA_V1,
   FLEET_CHECK_IN_SCHEMA_V3,
+  FLEET_CHECK_IN_SCHEMA_V4,
   FLEET_LICENCE_KEY_PREFIX,
   FLEET_LICENCE_TTL_DAYS,
   FLEET_JWS_TYPE,
@@ -543,7 +544,7 @@ export function fleetService(
       const checkIn = claims.checkIn!;
       // A v1 check-in says nothing about lifecycle, so the stored one stays.
       const lifecycle = checkIn.schema === FLEET_CHECK_IN_SCHEMA_V1 ? null : checkIn.lifecycle;
-      const reports = checkIn.schema === FLEET_CHECK_IN_SCHEMA_V3 ? checkIn.orders : [];
+      const reports = checkIn.schema === FLEET_CHECK_IN_SCHEMA_V3 || checkIn.schema === FLEET_CHECK_IN_SCHEMA_V4 ? checkIn.orders : [];
       const recorded: Array<{ id: string; seq: number; kind: string; result: string; code: string | null }> = [];
       await db.transaction(async (tx) => {
         const fields: PgUpdateSetSource<typeof fleetInstances> = { lastCheckInAt: now, lastAppHealth: checkIn.health.app };

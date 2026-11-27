@@ -34,6 +34,7 @@ on:
       - "server/package.json"
       - "ui/package.json"
       - "ui/vite.config.ts"
+      - "packaging/**"
   workflow_dispatch:
 
 permissions:
@@ -76,57 +77,37 @@ jobs:
 
       # As a standard user, as a customer's copy runs: PostgreSQL refuses to
       # start with administrator rights, and the runner's own account is an
-      # elevated administrator. The user gets a random password (masked) and
-      # access to the checkout and the tools set up above.
+      # elevated administrator (scripts/windows/run-as-standard-user.ps1).
       - name: Install smoke test as a standard user (start, API, stop, restart)
-        # Windows PowerShell 5.1: it carries the LocalAccounts module.
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
-          $user = "gsamsmoke"
-          $password = "Gs1!" + [guid]::NewGuid().ToString("N")
-          Write-Output "::add-mask::$password"
-          $secret = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name $user -Password $secret -PasswordNeverExpires | Out-Null
-          Add-LocalGroupMember -Group Users -Member $user -ErrorAction SilentlyContinue
           $node = (Get-Command node).Source
-          $pnpmHome = Split-Path (Split-Path $env:PNPM_HOME)
-          icacls $env:GITHUB_WORKSPACE /grant "${user}:(OI)(CI)M" /T /C /Q | Out-Null
-          foreach ($dir in @((Split-Path $node), $pnpmHome)) {
-            icacls $dir /grant "${user}:(OI)(CI)RX" /T /C /Q | Out-Null
-          }
-          # A process started for another user gets that user's environment,
-          # so hand it this step's PATH (node, pnpm, git) through a wrapper.
-          $wrapper = "$env:RUNNER_TEMP\smoke.cmd"
-          Set-Content -Path $wrapper -Encoding Ascii -Value @(
-            "@set ""PATH=$env:PATH""",
-            "@""$node"" scripts\native-install-smoke.mjs --port 3197"
-          )
-          icacls $wrapper /grant "${user}:RX" /Q | Out-Null
-          $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$user", $secret)
-          # Not -Wait: that also waits for every descendant, so one leftover
-          # process would hang the step with no output.
-          $smoke = Start-Process -FilePath "cmd.exe" -ArgumentList "/d", "/c", $wrapper `
-            -WorkingDirectory $env:GITHUB_WORKSPACE -Credential $credential -LoadUserProfile -NoNewWindow `
-            -RedirectStandardOutput "$env:RUNNER_TEMP\smoke.out" -RedirectStandardError "$env:RUNNER_TEMP\smoke.err" -PassThru
-          $null = $smoke.Handle  # keeps ExitCode readable after the process ends
-          $finished = $smoke.WaitForExit(40 * 60 * 1000)
-          Get-Content "$env:RUNNER_TEMP\smoke.out", "$env:RUNNER_TEMP\smoke.err"
-          # Nothing the smoke test started may outlive it.
-          $left = @(Get-CimInstance Win32_Process | Where-Object {
-            try { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User -eq $user } catch { $false }
-          })
-          if ($left.Count -gt 0) {
-            Write-Output "Processes left running by the smoke user:"
-            $left | ForEach-Object { Write-Output ("  {0} {1} {2}" -f $_.ProcessId, $_.Name, $_.CommandLine) }
-            $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-          }
-          if (-not $finished) { Write-Output "smoke test did not finish within 40 minutes"; exit 1 }
-          if ($smoke.ExitCode -ne 0) { exit $smoke.ExitCode }
-          if ($left.Count -gt 0) { exit 1 }
+          & scripts/windows/run-as-standard-user.ps1 -Name smoke -Command """$node"" scripts\native-install-smoke.mjs --port 3197"
+          exit $LASTEXITCODE
+
+      # Standard users cannot make file symlinks without Developer Mode or the
+      # symlink privilege, which the Codex managed home uses. Make sure this PC
+      # is like a customer's (Developer Mode off), show what the standard user
+      # may do, then run the Codex home tests as that user.
+      - name: Developer Mode off, as on a customer's PC
+        shell: powershell
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          Write-Output ("Developer Mode before: " + (Get-ItemProperty $key -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense)
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
+          & scripts/windows/run-as-standard-user.ps1 -Name whoami -TimeoutMinutes 2 -Command "whoami /groups /priv"
+          exit $LASTEXITCODE
+
+      - name: Codex home tests as a standard user
+        shell: powershell
+        run: |
+          & scripts/windows/run-as-standard-user.ps1 -Name codex-home -TimeoutMinutes 15 -Command "set ""GSAM_EXPECT_NO_SYMLINKS=1"" && npx vitest run packages/adapters/codex-local/src/server/codex-home-windows.test.ts"
+          exit $LASTEXITCODE
 
       - name: Unit tests (paths, processes, dev runner)
         run: |
+          node --test scripts/fetch-runner-binary.test.mjs
           pnpm run preflight:workspace-links
           pnpm --filter @greatstone/plugin-sdk ensure-build-deps
           pnpm --filter @greatstone/shared exec vitest run src/home-paths.test.ts
@@ -145,6 +126,7 @@ jobs:
             packages/adapter-utils/src/server-utils.test.ts \
             packages/adapter-utils/src/server-utils-env.test.ts \
             packages/adapter-utils/src/process-kill-guard.test.ts \
+            packages/adapter-utils/src/process-kill-guard-windows.test.ts \
             packages/adapter-utils/src/child-output-capture.test.ts \
             packages/adapter-utils/src/acpx-engine/spawn-smoke.test.ts \
             packages/adapters/claude-local/src/server/claude-config.test.ts \
@@ -157,3 +139,87 @@ jobs:
         run: |
           pnpm --filter @greatstone/paperclip-runner run check:conformance-parity
           pnpm --filter @greatstone/paperclip-runner run check:replay-parity
+
+  installer:
+    name: Windows installer (build and install as a standard user)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The PowerShell scripts parse
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem packaging\windows\src\*.ps1, packaging\windows\*.ps1, scripts\windows\*.ps1) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors)
+            foreach ($e in $errors) { Write-Output "$($f.Name):$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          exit $bad
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+
+      - name: Runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: windows-runner
+          save-if: "false"
+
+      # Stands in for the release's prebuilt binary (W3), which a test build has none of.
+      - name: Build the native runner
+        run: pnpm --filter @greatstone/paperclip-runner run build:binary
+
+      - name: Install Inno Setup when the image has none
+        shell: powershell
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      # A sandbox build: its hub is the test hub on 127.0.0.1:3491. Never hand it out.
+      - name: Build GSAM-Setup.exe
+        shell: powershell
+        env:
+          GSAM_HUB_URL: http://127.0.0.1:3491
+          GSAM_INSTALLER_VERSION: 0.0.0-ci
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+
+      - name: Keep the sandbox installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: GSAM-Setup-sandbox-hub-do-not-distribute
+          path: packaging/windows/dist/
+          retention-days: 7
+
+      - name: Install, check and uninstall as a standard user
+        shell: powershell
+        run: |
+          # As on a customer's PC: Developer Mode off.
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
+          git branch -f gsam-installer-smoke HEAD
+          $installer = Resolve-Path packaging\windows\dist\GSAM-Setup.exe
+          $runner = Resolve-Path packages\paperclip-runner\dist\bin\paperclip-runnerd.exe
+          & scripts/windows/run-as-standard-user.ps1 -Name installer -TimeoutMinutes 90 `
+            -Command "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\installer-smoke.ps1 -Installer ""$installer"" -RunnerBinary ""$runner"" -CodeRef gsam-installer-smoke"
+          exit $LASTEXITCODE
+
+
+      - name: Keep the installer logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: installer-logs
+          path: installer-logs/
+          retention-days: 7
+          if-no-files-found: ignore

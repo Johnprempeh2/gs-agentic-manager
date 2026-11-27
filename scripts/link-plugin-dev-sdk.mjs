@@ -78,7 +78,8 @@ export function linkSdkInto(packageDir) {
   try {
     const stat = lstatSync(linkTarget);
     if (stat.isSymbolicLink()) {
-      if (readlinkSync(linkTarget) === relativeSdkDir) {
+      // Resolved, so a Windows junction (stored absolute) counts as well as the relative symlink.
+      if (resolve(scopeDir, readlinkSync(linkTarget)) === resolve(sdkDir)) {
         // Already linked to the in-repo SDK; nothing to do.
         return false;
       }
@@ -93,6 +94,9 @@ export function linkSdkInto(packageDir) {
     if (error?.code !== "ENOENT") throw error;
   }
 
-  symlinkSync(relativeSdkDir, linkTarget, "dir");
+  // Windows: a directory junction, which (unlike a symlink) a standard user may make
+  // without Developer Mode; Node stores its target absolute. Elsewhere a relative symlink.
+  if (process.platform === "win32") symlinkSync(sdkDir, linkTarget, "junction");
+  else symlinkSync(relativeSdkDir, linkTarget, "dir");
   return true;
 }
