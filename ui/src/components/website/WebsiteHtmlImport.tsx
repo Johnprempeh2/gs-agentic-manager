@@ -61,7 +61,7 @@ function ImportSummary({ result }: { result: WebsiteHtmlImportResult }) {
           {result.chrome.length ? ` Shared parts updated: ${result.chrome.join(", ")}.` : ""}
         </p>
       ) : null}
-      <p className="text-muted-foreground">Nothing is live yet. Review the drafts on the Sitemap tab, then Publish to staging and Deploy.</p>
+      <p className="text-muted-foreground">Nothing is live yet. Review the drafts on the Sitemap tab, then Queue for live and Deploy.</p>
     </div>
   );
 }

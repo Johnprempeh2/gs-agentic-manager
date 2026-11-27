@@ -58,7 +58,7 @@ export function Pill({ className, children }: { className: string; children: Rea
 
 export function StatusPill({ status }: { status: SitemapPageStatus }) {
   const onLive = useContext(WebsiteContentLiveContext);
-  return <Pill className={status === "live" && !onLive ? WEBSITE_STATUS_TONE["On staging"] : STATUS_CLASSES[status]}>{sitemapStatusLabel(status, onLive)}</Pill>;
+  return <Pill className={status === "live" && !onLive ? WEBSITE_STATUS_TONE["Ready to go live"] : STATUS_CLASSES[status]}>{sitemapStatusLabel(status, onLive)}</Pill>;
 }
 
 /** Agreed strings (GRE-2081): `menus.planned_hidden` and `journeys.gap`. */

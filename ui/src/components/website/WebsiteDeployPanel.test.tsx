@@ -62,7 +62,7 @@ describe("WebsiteDeployPanel", () => {
   it("shows John what goes live and starts Deploy only after he confirms", async () => {
     api.deploy.mockResolvedValue({ request: "r1" });
     const el = await mount(status());
-    expect(el.textContent).toContain("On staging, waiting to go live (2)");
+    expect(el.textContent).toContain("Waiting to go live (2)");
     expect(el.textContent).toContain("content release 9 (live has 8)");
     expect(el.textContent).toContain("aaaaaaa Voice guide on every page");
     await act(async () => { buttons(el).find((b) => b.textContent === "Deploy to live: greatstoneint.com")!.click(); });

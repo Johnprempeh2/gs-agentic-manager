@@ -46,7 +46,7 @@ describe("Sitemap Menus and Journeys status", () => {
     const items = [...container.querySelectorAll("li")].map((item) => item.textContent);
     // Published, but not known to be on the live site yet: On staging, never Live.
     expect(items).toEqual([
-      "HomeOn staging",
+      "HomeReady to go live",
       "ToolsTo buildTools is planned, so it stays out of this menu until it is live.",
     ]);
   });

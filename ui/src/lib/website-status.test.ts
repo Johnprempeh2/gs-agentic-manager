@@ -4,10 +4,10 @@ import { contentIsLive, websiteStatusWord } from "./website-status";
 
 describe("websiteStatusWord", () => {
   it("says every publishing state in exactly five words", () => {
-    expect(WEBSITE_PAGE_STATUSES.map((status) => websiteStatusWord(status, false))).toEqual(["Draft", "Draft", "In review", "Approved", "On staging"]);
+    expect(WEBSITE_PAGE_STATUSES.map((status) => websiteStatusWord(status, false))).toEqual(["Draft", "Draft", "In review", "Approved", "Ready to go live"]);
     expect(websiteStatusWord("published", true)).toBe("Live");
     const words = new Set([...WEBSITE_PAGE_STATUSES.flatMap((status) => [websiteStatusWord(status, false), websiteStatusWord(status, true)])]);
-    expect([...words].sort()).toEqual(["Approved", "Draft", "In review", "Live", "On staging"]);
+    expect([...words].sort()).toEqual(["Approved", "Draft", "In review", "Live", "Ready to go live"]);
   });
 });
 

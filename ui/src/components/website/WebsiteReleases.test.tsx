@@ -329,10 +329,10 @@ describe("WebsiteReleases", () => {
     expect(summary?.textContent).toBe("Build script returned non-zero exit code: 2");
   });
 
-  it("a Publish to staging ends Saved to staging, and a stalled release stops spinning and says what to do", async () => {
+  it("a Queue for live ends Ready to go live, and a stalled release stops spinning and says what to do", async () => {
     moduleMock.releases.mockResolvedValue([release({ id: "rel-2", number: 2, status: "staged", deploy: null }), live41]);
     await render();
-    expect(container.textContent).toContain("Saved to staging (content release 2)");
+    expect(container.textContent).toContain("Ready to go live (content release 2)");
     expect(container.textContent).not.toContain("Rebuilding the site");
 
     const stalled = release({ id: "rel-3", number: 3, status: "switched", updatedAt: new Date(Date.now() - 7 * 60_000).toISOString() });
@@ -345,13 +345,13 @@ describe("WebsiteReleases", () => {
     expect(container.querySelector("[aria-label='In progress']")).toBeNull();
   });
 
-  it("names the target: the public site's record publishes to staging, with staging's address in the confirm", async () => {
+  it("names the target: the public site's record queues for live, free, with no staging rebuild", async () => {
     moduleMock.releases.mockResolvedValue([live41]);
     await render(20, { ...site, netlifySiteId: PUBLIC_NETLIFY_SITE_ID, domain: "greatstoneint.com" });
     expect(button("Publish")).toBeUndefined();
-    await click("Publish to staging");
-    expect(document.body.textContent).toContain("to staging (gre3833-next-db-staging.netlify.app)?");
-    expect(document.body.textContent).toContain("Visitors do not see them until you Deploy to live: greatstoneint.com.");
+    await click("Queue for live");
+    expect(document.body.textContent).toMatch(/Queue (the approved changes|\d+ changes?) for live\?/);
+    expect(document.body.textContent).toContain("It starts no Netlify build, so it is free.");
   });
 
   it("shows the busy line muted, not as an error", async () => {

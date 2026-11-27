@@ -14,7 +14,10 @@ import { websiteErrorCode, websiteModuleApi } from "../../api/website";
 import { buildCompanyUserLabelMap } from "../../lib/company-members";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, formatClockTime, formatDate, formatShortDate } from "../../lib/utils";
-import { publishLabel, STAGING_ADDRESS } from "../../lib/website-status";
+import { publishLabel } from "../../lib/website-status";
+
+/** The public site queues its changes for Deploy instead of publishing them anywhere. */
+const LIVE_QUEUE = "live";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -40,7 +43,7 @@ export const RELEASE_STATUS_COPY: Record<WebsiteReleaseStatus, { label: string; 
   uploading: { label: "Sending", help: "Sending pages and images to the site.", tone: "bg-status-info-soft text-status-info-foreground" },
   switched: { label: "Rebuilding the site", help: "The site is building with this release. This takes about a minute.", tone: "bg-status-info-soft text-status-info-foreground" },
   sent_live: { label: "Sent straight to live", help: "Made for a Deploy straight to live (skip staging). Staging never served it. The Deploy panel shows whether it went live.", tone: "bg-status-warning-soft text-status-warning-foreground" },
-  staged: { label: "Saved to staging", help: "This content release is saved to staging, which rebuilds with it in a few minutes. Deploy takes it to the public site.", tone: "bg-status-success-soft text-status-success-foreground" },
+  staged: { label: "Ready to go live", help: "This content release is saved and waits for Deploy to live. Staging is not rebuilt for it, so Preview on each page shows it free of charge.", tone: "bg-status-success-soft text-status-success-foreground" },
   pending: { label: "Pending", help: "The live check has not passed yet. See what failed and retry.", tone: "bg-status-warning-soft text-status-warning-foreground" },
   live: { label: "Live", help: "Visitors see this release.", tone: "bg-status-success-soft text-status-success-foreground" },
   superseded: { label: "Replaced", help: "A newer release is live. You can roll back to this one.", tone: "bg-status-neutral-soft text-status-neutral-foreground" },
@@ -101,6 +104,7 @@ export function releaseDate(at: string) {
 
 /** Publish confirm title (copy 9): the count of approved changes when GSAM knows it. */
 export function publishConfirmTitle(count: number | null, target: string): string {
+  if (target === LIVE_QUEUE) return count === null ? "Queue the approved changes for live?" : `Queue ${count} ${count === 1 ? "change" : "changes"} for live?`;
   if (count === null) return `Publish to ${target}?`;
   return count === 1 ? `Publish 1 change to ${target}?` : `Publish ${count} changes to ${target}?`;
 }
@@ -566,8 +570,8 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       );
     } else if (latest.status === "staged") {
       latestPanel = (
-        <Panel title={`Saved to staging (content release ${latest.number})`} tone="success" testId="website-release-staged">
-          <p className="text-xs">Staging ({STAGING_ADDRESS}) rebuilds with these changes in a few minutes. greatstoneint.com changes only when you Deploy to live.</p>
+        <Panel title={`Ready to go live (content release ${latest.number})`} tone="success" testId="website-release-staged">
+          <p className="text-xs">Saved, with no Netlify build. Preview any page to see it. greatstoneint.com changes only when you Deploy to live.</p>
         </Panel>
       );
     } else if (latest.status === "live" && finished === latest.id) {
@@ -636,17 +640,17 @@ export function WebsiteReleases({ companyId, site, pollMs = RELEASE_POLL_MS }: {
       <AlertDialog open={confirmingPublish} onOpenChange={(open) => !publish.isPending && setConfirmingPublish(open)}>
         <AlertDialogContent data-testid="website-publish-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? `staging (${STAGING_ADDRESS})` : site.domain)}</AlertDialogTitle>
+            <AlertDialogTitle>{publishConfirmTitle(approvedChanges, site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? LIVE_QUEUE : site.domain)}</AlertDialogTitle>
             <AlertDialogDescription>
               {site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID
-                ? `This puts the approved changes on staging (${STAGING_ADDRESS}), which rebuilds in a few minutes. Visitors do not see them until you Deploy to live: greatstoneint.com.`
-                : `This puts the approved changes on ${site.domain}.`} A Publish costs about 15 credits. Saving drafts is free, so group your changes into one Publish.
+                ? "This saves the approved changes for the next Deploy to live: greatstoneint.com. It starts no Netlify build, so it is free. Preview shows each page as it will look."
+                : `This puts the approved changes on ${site.domain}. A Publish costs about 15 credits. Saving drafts is free, so group your changes into one Publish.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={publish.isPending}>Cancel</AlertDialogCancel>
             <Button type="button" disabled={publish.isPending} onClick={() => publish.mutate()}>
-              {publish.isPending ? "Starting" : "Publish now"}
+              {publish.isPending ? "Starting" : site.netlifySiteId === PUBLIC_NETLIFY_SITE_ID ? "Queue now" : "Publish now"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

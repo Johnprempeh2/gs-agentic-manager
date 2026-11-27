@@ -115,7 +115,7 @@ import { WebsiteCommentsPanel, useWebsitePageComments } from "./WebsitePageComme
 import { WEBSITE_PREVIEW_DEVICES, type WebsitePreviewDevice, type WebsiteTab } from "./WebsiteHub";
 import { countOf, isBuiltPage } from "./sitemap/model";
 import { useWebsiteSite } from "./WebsiteSiteConnection";
-import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websiteStatusWord } from "../../lib/website-status";
+import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websitePagePreviewUrl, websiteStatusWord } from "../../lib/website-status";
 import { WebsiteStyleForSite } from "./WebsiteStyle";
 import { WebsiteMediaCard, WebsiteMediaPicker, type MediaPickerKind, type PickedWebsiteMedia } from "./WebsiteStudioMedia";
 
@@ -258,6 +258,14 @@ export function WebsitePagesTab({
               <span className="truncate font-mono text-xs text-muted-foreground">{entry.slug}</span>
             </button>
             <PageStatusPill status={entry.status} onLive={onLive} />
+            {websitePagePreviewUrl(companyId, entry) ? (
+              <Button asChild size="xs" variant="ghost">
+                <a href={websitePagePreviewUrl(companyId, entry)!} target="_blank" rel="noopener" aria-label={`Preview ${entry.title}`} title="The newest saved version, drawn by GSAM. Free: no Netlify build.">
+                  <Eye />
+                  Preview
+                </a>
+              </Button>
+            ) : null}
             <Button type="button" size="xs" variant="outline" onClick={() => openPage(entry.id)} aria-label={`Edit ${entry.title}`}>
               <PenLine />
               Edit
@@ -657,7 +665,7 @@ function EditorScreen({ companyId, site, onLeave }: { companyId: string; site: W
     mutationFn: (target: WebsitePage) => websiteModuleApi.approvePage(companyId, site.id, target.id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.website.pages(companyId, site.id) });
-      setMessage({ text: "Approved. Publish to staging puts it on the test copy, and Deploy to live puts it on greatstoneint.com.", tone: "success" });
+      setMessage({ text: "Approved. Queue for live lines it up for the next Deploy, and Deploy to live puts it on greatstoneint.com.", tone: "success" });
     },
     onError: (error) => setMessage({ text: `Not approved: ${errorStateMessage(error)}`, tone: "warn" }),
   });
