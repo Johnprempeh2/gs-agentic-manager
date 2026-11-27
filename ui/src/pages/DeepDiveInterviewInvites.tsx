@@ -335,7 +335,7 @@ function InvitePeople({ round, companyId }: { round: DeepDiveInterviewRound; com
 function StatusBar({ counts, total }: { counts: DeepDiveInterviewStatusCounts; total: number }) {
   if (total === 0) return null;
   return (
-    <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+    <div className="flex h-2 w-full overflow-hidden rounded-full bg-track" aria-hidden="true">
       {INTERVIEW_STATUS_ORDER.map((status) =>
         counts[status] > 0 ? (
           <span key={status} className={BAR_TONE[status]} style={{ width: `${(counts[status] / total) * 100}%` }} />

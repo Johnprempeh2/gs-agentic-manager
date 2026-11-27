@@ -13,6 +13,7 @@ import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { digestText } from "../lib/digest-text";
 import { useCopyAction } from "../lib/use-copy-action";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 /**
  * "Since you were last here" (GRE-357): agent work since the last visit,
@@ -78,7 +79,7 @@ export function SinceLastVisit() {
               }
             >
               {digestCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-              {digestCopy.copied ? "Copied" : digestCopy.failed ? "Could not copy" : "Copy as an update"}
+              <CopyActionLabel copy={digestCopy}>Copy as an update</CopyActionLabel>
             </Button>
           ) : null}
         </div>

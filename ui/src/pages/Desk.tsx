@@ -77,6 +77,7 @@ import { PriorityIcon } from "../components/PriorityIcon";
 import { useIssueFollows, useRecentlyOpenedIssuesQuery } from "../hooks/useIssueFollows";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { relativeTime } from "../lib/utils";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 /** Desk rows carry no decision rows of their own: decisions are cards. */
 const NO_DECISION_ISSUES: ReadonlyMap<string, Issue | null> = new Map();
@@ -831,7 +832,7 @@ export function Desk() {
           onClick={() => void listCopy.copy(copyTasksText())}
         >
           {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-          {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+          <CopyActionLabel copy={listCopy}>Copy as a list</CopyActionLabel>
         </Button>
       )}
     </div>

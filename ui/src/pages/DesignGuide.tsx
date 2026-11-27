@@ -204,6 +204,8 @@ import {
 } from "@/fixtures/issueThreadInteractionFixtures";
 import type { CompanySecret, EnvBinding, Issue } from "@greatstone/shared";
 import { CollectionToolbar } from "@/components/CollectionToolbar";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
+import { useCopyAction } from "@/lib/use-copy-action";
 import { IssueRow } from "@/components/IssueRow";
 import { DeepDiveTile } from "@/components/DeepDiveTile";
 import { InterviewLogView } from "@/components/InterviewLogView";
@@ -528,6 +530,18 @@ const designGuideConversations: Conversation[] = [
   { key: "chat:ops", kind: "group", name: "Ops room", href: "/design-guide", issueId: "c1", lastMessageAt: new Date().toISOString(), lastMessagePreview: "The vendor call moved to Thursday", lastMessageFromMe: false, unreadCount: 0, muted: false, workingOn: 0, typing: true },
   { key: "chat:dm", kind: "direct", name: "Sam Okafor", href: "/design-guide", issueId: "c2", lastMessageAt: new Date(Date.now() - 86_400_000).toISOString(), lastMessagePreview: "Thanks, I will review it tonight.", lastMessageFromMe: true, unreadCount: 0, muted: true, workingOn: 0, typing: false },
 ];
+
+function CopyActionDemo() {
+  const copy = useCopyAction();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => void copy.copy("Copied from the design guide")}>
+        <CopyActionLabel copy={copy}>Copy as an update</CopyActionLabel>
+      </Button>
+      <Button size="sm" variant="outline">Stays put</Button>
+    </div>
+  );
+}
 
 export function DesignGuide() {
   const [conversationQuery, setConversationQuery] = useState("");
@@ -1803,7 +1817,7 @@ export function DesignGuide() {
                 <span className="text-xs text-muted-foreground">{label}</span>
                 <span className="text-xs font-mono">{pct}%</span>
               </div>
-              <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-track rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-(--tp-width-background-color) duration-150 ${color}`}
                   style={{ width: `${pct}%` }}
@@ -1817,6 +1831,58 @@ export function DesignGuide() {
       {/* ============================================================ */}
       {/*  LOG VIEWER                                                   */}
       {/* ============================================================ */}
+      <Section title="Progress track">
+        <p className="text-sm text-muted-foreground">
+          The empty part of a bar, ring or meter is <code className="font-mono text-xs">bg-track</code> (or{" "}
+          <code className="font-mono text-xs">stroke-track</code>), never <code className="font-mono text-xs">bg-muted</code>:
+          at night muted is 1.09:1 on a card, so an empty bar vanished.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1 rounded-md border border-border bg-card p-3">
+            <span className="text-xs text-muted-foreground">Empty, on a card</span>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-track" />
+          </div>
+          <div className="space-y-1 rounded-md border border-border bg-card p-3">
+            <span className="text-xs text-muted-foreground">A third done</span>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-track">
+              <div className="h-full w-1/3 rounded-full bg-primary" />
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Decision buttons">
+        <p className="text-sm text-muted-foreground">
+          One filled button per decision. The yes is the primary button; the no is an outline button with
+          destructive text, the same on the Desk, the Inbox, Approvals and an approval page.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm">Approve</Button>
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">Reject</Button>
+          <Button size="sm" variant="outline">Ask for changes</Button>
+        </div>
+      </Section>
+
+      <Section title="Copy button that answers in place">
+        <p className="text-sm text-muted-foreground">
+          <code className="font-mono text-xs">CopyActionLabel</code> swaps the words for Copied or Could not copy
+          and keeps the resting width, so nothing beside the button moves.
+        </p>
+        <CopyActionDemo />
+      </Section>
+
+      <Section title="Scroll edge fade">
+        <p className="text-sm text-muted-foreground">
+          <code className="font-mono text-xs">gs-scroll-fade-y</code> on a scrolling column fades the edge that
+          still has content beyond it. The navigation rail uses it.
+        </p>
+        <div className="gs-scroll-fade-y h-32 w-56 overflow-y-auto rounded-md border border-border bg-card p-2 text-sm">
+          {Array.from({ length: 12 }).map((_, index) => (
+            <div key={index} className="px-2 py-1.5">Row {index + 1}</div>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Log Viewer">
         <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs max-h-80 overflow-y-auto">
           <div className="text-foreground">[12:00:01] INFO  Agent started successfully</div>

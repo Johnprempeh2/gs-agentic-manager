@@ -41,6 +41,7 @@ import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const KIND_ICONS: Record<CalendarItemKind, typeof CircleCheck> = {
   task: CircleCheck,
@@ -435,7 +436,7 @@ export function Calendar() {
           >
             {weekCopy.copied ? <Check className="size-4" /> : <ClipboardList className="size-4" />}
             <span className="hidden sm:inline">
-              {weekCopy.copied ? "Copied" : weekCopy.failed ? "Could not copy" : "Copy the week ahead"}
+              <CopyActionLabel copy={weekCopy}>Copy the week ahead</CopyActionLabel>
             </span>
           </Button>
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>

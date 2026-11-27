@@ -519,7 +519,7 @@ function Small({ children }: { children: ReactNode }) {
 function SlimBar({ parts, label }: { parts: { value: number; className: string }[]; label: string }) {
   const total = Math.max(parts.reduce((sum, part) => sum + part.value, 0), 1);
   return (
-    <span role="img" aria-label={label} className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+    <span role="img" aria-label={label} className="flex h-1.5 w-full overflow-hidden rounded-full bg-track">
       {parts.filter((part) => part.value > 0).map((part, index) => (
         <span key={index} className={cn("h-full", part.className)} style={{ width: `${(part.value / total) * 100}%` }} />
       ))}

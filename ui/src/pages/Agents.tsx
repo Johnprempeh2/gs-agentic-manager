@@ -47,6 +47,7 @@ import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSh
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { ErrorState } from "../components/ErrorState";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
@@ -605,7 +606,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               onClick={() => void teamCopy.copy(agentsUpdateText(filtered, (at) => relativeTime(at)))}
             >
               {teamCopy.copied ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <ClipboardList className="h-3.5 w-3.5 mr-1.5" />}
-              {teamCopy.copied ? "Copied" : teamCopy.failed ? "Could not copy" : "Copy as an update"}
+              <CopyActionLabel copy={teamCopy}>Copy as an update</CopyActionLabel>
             </Button>
           )}
           {filtered.length > 0 && (
@@ -620,9 +621,10 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 )
               }
             >
-              <Download className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">Download as spreadsheet</span>
-              <span className="sr-only sm:hidden">Download as spreadsheet</span>
+              {/* Icon only until the page is wide enough for tabs and tools on one row. */}
+              <Download className="h-3.5 w-3.5 @7xl:mr-1.5" />
+              <span className="hidden @7xl:inline">Download as spreadsheet</span>
+              <span className="sr-only @7xl:hidden">Download as spreadsheet</span>
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => setTeamsDialogOpen(true)}>

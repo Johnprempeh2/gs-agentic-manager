@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { errorStateMessage } from "../ErrorState";
 import { formatCalendarMonth } from "@/lib/utils";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 // "Website data" on Site connection (GRE-2323): whether GSAM can read the site's customer records through the
 // signed admin bridge, one line per bridge key (read, write, refund_request; GRE-2552), and, for people with
@@ -137,7 +138,7 @@ export function WebsiteDataBridgeRow({ companyId, site, canManage }: { companyId
           <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-micro" data-testid="website-data-bridge-entry">{JSON.stringify(made.keysEntry)}</pre>
           <div className="flex gap-2">
             <Button type="button" size="xs" variant="ghost" onClick={() => void copyEntry.copy(JSON.stringify(made.keysEntry))}>
-              {copyEntry.copied ? "Copied" : copyEntry.failed ? "Could not copy" : "Copy"}
+              <CopyActionLabel copy={copyEntry}>Copy</CopyActionLabel>
             </Button>
             <Button type="button" size="xs" variant="ghost" onClick={() => setMade(null)}>Done</Button>
           </div>

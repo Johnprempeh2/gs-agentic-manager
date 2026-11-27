@@ -67,6 +67,7 @@ import { goalDetailUpdateText } from "../lib/goals-text";
 import { localToday } from "../lib/calendar";
 import { useCopyAction } from "../lib/use-copy-action";
 import { ErrorState } from "../components/ErrorState";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 interface GoalPropertiesToggleButtonProps {
   panelVisible: boolean;
@@ -335,7 +336,7 @@ export function GoalDetail() {
             >
               {goalCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
               <span className="hidden sm:inline">
-                {goalCopy.copied ? "Copied" : goalCopy.failed ? "Could not copy" : "Copy as an update"}
+                <CopyActionLabel copy={goalCopy}>Copy as an update</CopyActionLabel>
               </span>
               <span className="sr-only sm:hidden">Copy as an update</span>
             </Button>

@@ -774,7 +774,7 @@ function SubIssueProgressSummaryStrip({
             aria-valuemin={0}
             aria-valuenow={summary.doneCount}
             aria-valuemax={summary.totalCount}
-            className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
+            className="flex h-2 w-full overflow-hidden rounded-full bg-track"
           >
             {statusEntries.map(({ status, count }) => (
               <span

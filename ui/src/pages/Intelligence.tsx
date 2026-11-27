@@ -39,6 +39,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const TABS = [
   ["overview", "Overview"],
@@ -850,7 +851,7 @@ export function Intelligence() {
                     onClick={() => void pulseCopy.copy(pulseText(pulse))}
                   >
                     {pulseCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-                    {pulseCopy.copied ? "Copied" : pulseCopy.failed ? "Could not copy" : "Copy the Pulse"}
+                    <CopyActionLabel copy={pulseCopy}>Copy the Pulse</CopyActionLabel>
                   </Button>
                   <ListenButton targetRef={todayRef} label="Listen to the Pulse" />
                 </div>

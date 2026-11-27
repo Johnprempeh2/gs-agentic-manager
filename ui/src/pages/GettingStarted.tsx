@@ -29,7 +29,7 @@ export function QuestProgressSummary({ state, who = "you" }: { state: QuestState
           aria-valuemin={0}
           aria-valuemax={state.total}
           aria-valuenow={state.done}
-          className="h-2 overflow-hidden rounded-full bg-muted"
+          className="h-2 overflow-hidden rounded-full bg-track"
         >
           <div className="h-full rounded-full bg-primary motion-safe:transition-[width] motion-safe:duration-500" style={{ width: `${percent}%` }} />
         </div>

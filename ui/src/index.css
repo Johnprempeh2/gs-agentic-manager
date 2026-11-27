@@ -148,6 +148,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-track: var(--track);
   --color-subtle-foreground: var(--subtle-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
@@ -243,6 +244,7 @@
   --secondary-foreground: #1b2a21;
   --muted: #e4e8de;
   --muted-foreground: #4f5750;
+  --track: var(--muted); /* the empty part of a progress bar, ring or meter */
   --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
   --accent: color-mix(in oklab, #c8ff00 22%, #ffffff); /* daylight: hovered and selected rows carry a soft brand lime wash, never lime text */
   --eyebrow-foreground: #1b5039; /* daylight: uppercase section labels in brand emerald (8:1 on the stone canvas) */
@@ -612,6 +614,7 @@
   --secondary-foreground: #f5f5f5;
   --muted: #1e211e;
   --muted-foreground: #b4b9b3;
+  --track: #303630; /* night: --muted is 1.09:1 on a card, so an empty bar vanished; this is 1.5:1 */
   --subtle-foreground: #9ca29b; /* brand faint grey; AA on every dark surface */
   --accent: color-mix(in oklab, #c8ff00 7%, #1c1f1c);
   --accent-foreground: #f5f5f5;

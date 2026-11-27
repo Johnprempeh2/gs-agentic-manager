@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Target, Plus, Network, Check, ClipboardList, Download } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 /** "3 active goals · Everest checked in 2h ago" */
 export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number, agentsById: AgentsById): string {
@@ -190,7 +191,7 @@ export function Goals() {
                 onClick={copyGoalsUpdate}
               >
                 {goalsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-                {goalsCopy.copied ? "Copied" : goalsCopy.failed ? "Could not copy" : "Copy as an update"}
+                <CopyActionLabel copy={goalsCopy}>Copy as an update</CopyActionLabel>
               </Button>
             ) : null}
             {entries.length > 0 ? (

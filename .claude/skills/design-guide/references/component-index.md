@@ -172,6 +172,19 @@ canvas. Rule: at most one tide per viewport, and lime never behind copy.
 
 Bubbles inside Messages are not new components: `[data-messages-hub]` restyles TaskChatBubble and TeamChatThread through tokens (`--gs-bubble-*` in greatstone-glass.css, audited by lib/messages-hub-contrast.test.ts).
 
+### CopyActionLabel
+
+**File:** `CopyActionLabel.tsx`
+**Props:** `copy` (the value of `useCopyAction()`), `children` (the resting words)
+**Usage:** The words on a copy button that answers in place: "Copy as an update", then "Copied" or "Could not copy". It keeps the resting width, so the button and its neighbours never move on click. Use it for every such button instead of an inline ternary.
+
+```tsx
+const copy = useCopyAction();
+<Button variant="outline" onClick={() => void copy.copy(text)}>
+  <CopyActionLabel copy={copy}>Copy as an update</CopyActionLabel>
+</Button>
+```
+
 ### FilterBar
 
 **File:** `FilterBar.tsx`

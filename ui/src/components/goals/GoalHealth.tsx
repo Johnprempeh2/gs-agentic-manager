@@ -42,7 +42,7 @@ export function GoalProgressRing({
       style={healthStyle(health)}
       aria-hidden
     >
-      <circle cx="32" cy="32" r={RING_RADIUS} fill="none" strokeWidth="5" className="stroke-muted" />
+      <circle cx="32" cy="32" r={RING_RADIUS} fill="none" strokeWidth="5" className="stroke-track" />
       {filled > 0 ? (
         <circle
           cx="32"
@@ -63,7 +63,7 @@ export function GoalProgressRing({
 
 export function GoalProgressBar({ percent, health }: { percent: number | null; health: GoalHealth }) {
   return (
-    <div className="h-1 overflow-hidden rounded-full bg-muted" style={healthStyle(health)} aria-hidden>
+    <div className="h-1 overflow-hidden rounded-full bg-track" style={healthStyle(health)} aria-hidden>
       <div
         className="status-fill h-full rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none"
         style={{ width: `${percent ?? 0}%` }}

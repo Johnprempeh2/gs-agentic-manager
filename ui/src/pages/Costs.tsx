@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ErrorState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 const NO_COMPANY = "__none__";
 export type CostsMainTab = "overview" | "usage" | "budgets" | "providers" | "billers" | "finance";
@@ -653,7 +654,7 @@ export function Costs({
                   }
                 >
                   {costsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
-                  {costsCopy.copied ? "Copied" : costsCopy.failed ? "Could not copy" : "Copy as an update"}
+                  <CopyActionLabel copy={costsCopy}>Copy as an update</CopyActionLabel>
                 </Button>
               ) : null}
               {PRESET_KEYS.map((key) => (
@@ -808,7 +809,7 @@ export function Costs({
                     </div>
                     {spendData?.summary.budgetCents && spendData.summary.budgetCents > 0 ? (
                       <div className="space-y-2">
-                        <div className="h-2 overflow-hidden bg-muted">
+                        <div className="h-2 overflow-hidden bg-track">
                           <div
                             className={cn(
                               "h-full transition-(--tp-width-background-color) duration-150",

@@ -74,7 +74,7 @@ function ShareRows({ rows, total, label, hint }: {
               <span className="font-medium">{label(row.key)}</span>
               <span className="font-semibold tabular-nums">{share}%</span>
             </div>
-            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted" role="presentation">
+            <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-track" role="presentation">
               <div className="h-full rounded-full bg-chart-2" style={{ width: `${share}%` }} />
             </div>
             <div className="mt-1 text-xs text-muted-foreground tabular-nums">

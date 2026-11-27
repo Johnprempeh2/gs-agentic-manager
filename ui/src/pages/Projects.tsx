@@ -32,6 +32,7 @@ import { AlertTriangle, ArrowUpDown, Check, ClipboardList, Download, Hexagon, Pl
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
+import { CopyActionLabel } from "@/components/CopyActionLabel";
 
 type ProjectSortField = "name" | "updated" | "created" | "targetDate";
 type ProjectSortDir = "asc" | "desc";
@@ -222,7 +223,7 @@ export function Projects() {
               onClick={copyProjectsUpdate}
             >
               {projectsCopy.copied ? <Check className="h-4 w-4 mr-1" /> : <ClipboardList className="h-4 w-4 mr-1" />}
-              {projectsCopy.copied ? "Copied" : projectsCopy.failed ? "Could not copy" : "Copy as an update"}
+              <CopyActionLabel copy={projectsCopy}>Copy as an update</CopyActionLabel>
             </Button>
           ) : null}
           {hasLiveProjects ? (
@@ -358,7 +359,7 @@ function ProjectProgressCell({ project }: { project: { taskCount?: number; doneT
     <span className="hidden items-center gap-2 text-xs text-muted-foreground tabular-nums sm:inline-flex" title={progress.label}>
       {progress.percent !== null ? (
         <span
-          className="h-1 w-10 overflow-hidden rounded-full bg-muted"
+          className="h-1 w-10 overflow-hidden rounded-full bg-track"
           role="progressbar"
           aria-label="Tasks done"
           aria-valuemin={0}

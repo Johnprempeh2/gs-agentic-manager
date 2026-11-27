@@ -160,7 +160,7 @@ export function TaskTreeProgress({ counts, className }: { counts: TaskTreeStatus
         <span className="text-muted-foreground"> done</span>
       </p>
       <div
-        className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted"
+        className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-track"
         role="progressbar"
         aria-label="Sub-tasks done"
         aria-valuemin={0}
