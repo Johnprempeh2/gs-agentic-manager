@@ -92,6 +92,7 @@ const NATIVE_REVIEW_READ_TOOLS = new Set([
 ]);
 
 type Binding = {
+  whatsappWebTurn?: boolean;
   /** Server-derived scope for one addressed native completion review. */
   nativeReview?: NativeReviewAssignmentContext;
   companyId: string;
@@ -152,6 +153,7 @@ export class PaperclipRunnerToolAuthority {
   constructor(readonly db: Db, readonly binding: Binding) {}
 
   definitions(): Array<Record<string, unknown>> {
+    if (this.binding.whatsappWebTurn) return [READ_CURRENT_WAKE_COMMENTS_TOOL_DEFINITION];
     if (this.binding.nativeReview) {
       // Scope GS Agentic Manager control-plane actions. Provider file and shell access
       // still follow the configured agent/environment policy, including tests.
@@ -237,6 +239,9 @@ export class PaperclipRunnerToolAuthority {
     callId: string;
     arguments: unknown;
   }): Promise<unknown> {
+    if (this.binding.whatsappWebTurn && call.tool !== READ_CURRENT_WAKE_COMMENTS_TOOL_NAME) {
+      throw forbidden("WhatsApp Web may only read its current chat turn");
+    }
     if (this.binding.nativeReview) {
       if (call.tool === "resolve_review") return this.#resolveReview(call.arguments);
       if (!NATIVE_REVIEW_READ_TOOLS.has(call.tool)) {

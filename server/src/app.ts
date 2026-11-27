@@ -631,6 +631,7 @@ export async function createApp(
     createChatWebhookDiagnostics(),
     chatWebhookBodyParser,
   );
+  app.use("/api/private-chat/whatsapp-web", express.json({ limit: "24kb", verify: captureRawBody }));
   app.use(
     express.json({
       limit: DEFAULT_JSON_BODY_LIMIT,
@@ -718,7 +719,7 @@ export async function createApp(
   app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   // Stripe events for GSAM for Mac (P3), signed with the shared billing secret; no session.
   app.use(fleetBillingEventRoutes(db));
-  app.use(chatWebhookRoutes(chatChannels));
+  app.use(chatWebhookRoutes(chatChannels, { enablePrivateWhatsAppWeb: opts.deploymentExposure === "private" }));
   // The website pings when an enquiry arrives (no data, no key); the pull itself uses GSAM's signed bridge.
   let websitePing = (_siteId: string) => {};
   app.use("/api", websitePingRoutes((siteId) => websitePing(siteId)));

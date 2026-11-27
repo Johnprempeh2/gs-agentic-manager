@@ -33,6 +33,7 @@ import {
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const providerNames: Record<ChatProvider, string> = {
+  "whatsapp-web": "WhatsApp Web",
   slack: "Slack",
   github: "GitHub",
   discord: "Discord",

@@ -1,3 +1,4 @@
+import { isWhatsAppWebIssue } from "../whatsapp-web-chat.js";
 import {
   isSupportedRemoteCodexVersion,
   parseCodexCliVersion,
@@ -10633,7 +10634,15 @@ async function createRunnerdBackendWithinSessionClaim(
         workMode: input.execution.task.workMode,
       })
     : undefined;
+  const whatsappWebTurn = await isWhatsAppWebIssue(
+    input.db, input.execution.binding.companyId, input.execution.binding.issueId,
+  );
+  if (whatsappWebTurn && (
+    input.execution.provider.kind !== "acpx" || input.execution.provider.permissionMode !== "deny-all" ||
+    input.execution.task.workMode !== "ask" || hasAssignedMcp
+  )) throw new Error("whatsapp_web_restricted_runner_required");
   const authority = new PaperclipRunnerToolAuthority(input.db, {
+    whatsappWebTurn,
     ...(nativeReview ? { nativeReview } : {}),
     connectorAssignments: connectorAssignments.filter((assignment) => pinnedSkills.has(assignment.skillKey)),
     assignedMcpTools,

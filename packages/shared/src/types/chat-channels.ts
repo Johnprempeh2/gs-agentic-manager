@@ -7,6 +7,7 @@ export const CHAT_PROVIDERS = [
   "telegram",
   "agentmail",
   "imessage-photon",
+  "whatsapp-web",
 ] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 

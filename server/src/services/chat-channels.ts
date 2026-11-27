@@ -1,3 +1,4 @@
+import { isWhatsAppWebRunner, WhatsAppWebDeliveryError, whatsappWebConfig } from "./whatsapp-web-chat.js";
 import { withSlackBoardLease } from "./slack-board-lease.js";
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
 import { authorizeSlackBoardPublication } from "./slack-board-authority.js";
@@ -425,6 +426,7 @@ function publicationSummary(
 
 const PROVIDER_LABELS: Record<ChatProvider, string> = {
   "imessage-photon": "iMessage Photon",
+  "whatsapp-web": "WhatsApp Web",
   agentmail: "AgentMail",
   slack: "Slack",
   github: "GitHub",
@@ -661,6 +663,7 @@ async function inspectSlackCallback(
 }
 
 const CAPABILITIES: Record<ChatProvider, ChatAdapterCapabilities> = {
+  "whatsapp-web": { threads: false, directMessages: true, nativeStreaming: false, messageEdits: false, messageDeletes: false, reactions: false, files: false, cards: false, actions: false, modals: false, slashCommands: false, ephemeralMessages: false, proactiveDirectMessages: false },
   "imessage-photon": { threads: false, directMessages: true, nativeStreaming: false, messageEdits: true, messageDeletes: false, reactions: false, files: true, cards: false, actions: true, modals: false, slashCommands: false, ephemeralMessages: false, proactiveDirectMessages: false },
   agentmail: { threads: true, directMessages: true, nativeStreaming: false, messageEdits: false, messageDeletes: false, reactions: false, files: true, cards: false, actions: false, modals: false, slashCommands: false, ephemeralMessages: false, proactiveDirectMessages: true },
   slack: {
@@ -756,6 +759,7 @@ const REQUIRED_CREDENTIALS: Record<
   readonly string[]
 > = {
   "imessage-photon": ["projectSecret"],
+  "whatsapp-web": [],
   agentmail: [],
   slack: ["botToken", "signingSecret"],
   discord: ["botToken", "applicationId", "guildId"],
@@ -816,6 +820,7 @@ const SUPPORTED_GITHUB_WEBHOOK_EVENTS = new Set<string>([
 
 const SUPPLIED_CREDENTIAL_KEYS: Record<ChatProvider, readonly string[]> = {
   "imessage-photon": ["projectSecret"],
+  "whatsapp-web": [],
   agentmail: [],
   slack: ["botToken", "signingSecret"],
   github: ["appId", "privateKey"],
@@ -2672,6 +2677,10 @@ function providerSetupState(
   const webhookUrl = publicBaseUrl ? `${publicBaseUrl}${path}` : null;
   const step = endpoint.status === "active" ? "complete" : endpoint.setup.step;
   switch (endpoint.provider) {
+    case "whatsapp-web": {
+      const config = whatsappWebConfig();
+      return { step, webhookUrl: config ? new URL(`/api/private-chat/whatsapp-web/${endpoint.publicId}`, config.ingressOrigin).toString() : null, testStartedAt: endpoint.setup.testStartedAt };
+    }
     case "imessage-photon": return { step, providerUrl: "https://photon.codes/", testStartedAt: endpoint.setup.testStartedAt } as const;
     case "agentmail": return endpoint.setup;
     case "slack": {
@@ -5980,12 +5989,29 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     return serializeEndpoint(await endpointRecord(endpointId));
   }
 
+  function whatsappBinding(endpoint: Pick<EndpointRow, "companyId" | "assignedAgentId" | "sponsorUserId" | "allowGroupChats" | "allowUnlinkedPeople" | "externalExecutionPolicy" | "botExternalId">) {
+    const config = whatsappWebConfig();
+    if (!config || endpoint.companyId !== config.companyId || endpoint.assignedAgentId !== config.agentId ||
+      endpoint.sponsorUserId !== config.ownerUserId || endpoint.allowGroupChats || endpoint.allowUnlinkedPeople ||
+      endpoint.externalExecutionPolicy !== "restricted" || (endpoint.botExternalId && endpoint.botExternalId !== config.bot)) {
+      throw forbidden("WhatsApp Web private connection is unavailable");
+    }
+    return config;
+  }
+
   async function create(
     companyId: string,
     input: CreateChatEndpointInput,
     actorUserId?: string | null,
   ) {
     if ((input.provider as string) === "agentmail") throw badRequest("Use the email inbox setup API for AgentMail");
+    const whatsapp = input.provider === "whatsapp-web" ? whatsappWebConfig() : null;
+    if (input.provider === "whatsapp-web") {
+      if (!whatsapp || whatsapp.companyId !== companyId || whatsapp.agentId !== input.assignedAgentId || whatsapp.ownerUserId !== actorUserId) {
+        throw forbidden("Only the configured WhatsApp owner may connect the configured agent");
+      }
+      if (input.applicationId) throw badRequest("Use a dedicated WhatsApp Web connection");
+    }
     const agent = await db
       .select({ id: agents.id, name: agents.name, status: agents.status })
       .from(agents)
@@ -6089,8 +6115,15 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         // destination toggle. Keep it closed until the operator explicitly
         // enables that surface, even when this process is running against a
         // database created before the column default was hardened.
-        allowGroupChats: input.provider !== "microsoft-teams",
-        allowUnlinkedPeople: !["slack", "imessage-photon"].includes(input.provider),
+        allowGroupChats: input.provider !== "microsoft-teams" && !whatsapp,
+        allowUnlinkedPeople: !["slack", "imessage-photon", "whatsapp-web"].includes(input.provider),
+        ...(whatsapp ? {
+          allowDirectMessages: true,
+          providerAccountId: whatsapp.bot,
+          botExternalId: whatsapp.bot,
+          botDisplayName: agent.name,
+          concurrencyPolicy: "queue" as const,
+        } : {}),
         capabilities: CAPABILITIES[input.provider],
         setup: {
           step: "provider_setup",
@@ -6099,6 +6132,24 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
             : {}),
         },
       });
+      if (whatsapp) {
+        const [principal] = await tx.insert(chatExternalPrincipals).values({
+          companyId, provider: "whatsapp-web", providerAccountId: whatsapp.bot,
+          externalId: whatsapp.sender, kind: "user", displayName: "WhatsApp owner",
+        }).onConflictDoUpdate({
+          target: [chatExternalPrincipals.companyId, chatExternalPrincipals.provider, chatExternalPrincipals.providerAccountId, chatExternalPrincipals.externalId],
+          set: { updatedAt: new Date() },
+        }).returning({ id: chatExternalPrincipals.id });
+        await tx.insert(chatIdentityLinks).values({
+          companyId, endpointId, principalId: principal!.id,
+          paperclipUserId: whatsapp.ownerUserId, status: "linked", confirmedAt: new Date(),
+        });
+        await logActivity(tx as unknown as Db, {
+          companyId, actorType: "user", actorId: whatsapp.ownerUserId,
+          action: "chat_identity.linked", entityType: "tool_connection", entityId: connectionId,
+          details: { endpointId, provider: "whatsapp-web", principalId: principal!.id },
+        });
+      }
     });
     await logActivity(db, {
       companyId,
@@ -6124,6 +6175,12 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     const initial = await endpointRecord(endpointId);
     if (!initial) throw notFound("Chat endpoint not found");
     if (initial.endpoint.provider === "agentmail") throw badRequest("Use the email inbox API for AgentMail");
+    if (initial.endpoint.provider === "whatsapp-web") {
+      const config = whatsappBinding(initial.endpoint);
+      if (actorUserId !== config.ownerUserId || input.allowGroupChats || input.allowUnlinkedPeople) {
+        throw forbidden("WhatsApp Web is bound to one sender and agent");
+      }
+    }
     await withCredentialMutationLease(
       initial.endpoint,
       async (credentialLease) => {
@@ -6217,6 +6274,10 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     provider: ChatProvider,
     credentials: Record<string, string>,
   ): Promise<VerifiedProviderIdentity> {
+    if (provider === "whatsapp-web") return {
+      providerAccountId: credentials.privateBinding,
+      botExternalId: credentials.privateBinding,
+    };
     if (provider === "imessage-photon") {
       const inspection = await inspectPhotonCredentials(credentials.projectId, credentials.projectSecret);
       if (inspection.allocation !== (credentials.allocation ?? "dedicated")) throw unprocessable("Photon allocation changed; inspect the project again");
@@ -6788,6 +6849,10 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     endpoint: EndpointRow,
     database: DbOrTransaction = db,
   ): Promise<Record<string, string>> {
+    if (endpoint.provider === "whatsapp-web") {
+      const config = whatsappBinding(endpoint);
+      return { privateBinding: config.bot };
+    }
     const connection = await database
       .select({ refs: toolConnections.credentialSecretRefs, config: toolConnections.config })
       .from(toolConnections)
@@ -7646,6 +7711,9 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     userName: string,
     credentials: Record<string, string>,
   ): ResolvedChatSdkProviderConfig {
+    if (endpoint.provider === "whatsapp-web") return {
+      provider: "whatsapp-web", userName, config: whatsappBinding(endpoint), fetch: fetchImpl,
+    };
     if (endpoint.provider === "imessage-photon") return {
       provider: "imessage-photon", userName,
       intakeAfter: Date.parse(String((endpoint.setup as InternalSetupState).photonIntakeAfter ?? endpoint.setup.testStartedAt ?? endpoint.createdAt.toISOString())),
@@ -9164,6 +9232,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     const record = await endpointRecord(endpointId);
     if (!record) throw notFound("Chat endpoint not found");
     if (record.endpoint.provider === "agentmail") throw badRequest("Use the email inbox API for AgentMail");
+    if (record.endpoint.provider === "whatsapp-web") {
+      if (actorUserId !== whatsappBinding(record.endpoint).ownerUserId)
+        throw forbidden("Only the configured owner may manage WhatsApp Web");
+      if (["configure", "reconnect", "resume"].includes(input.action)) {
+        const [agent] = await db.select({ adapterType: agents.adapterType, adapterConfig: agents.adapterConfig })
+          .from(agents).where(and(eq(agents.companyId, record.endpoint.companyId), eq(agents.id, record.endpoint.assignedAgentId)));
+        if (!agent || !isWhatsAppWebRunner(agent.adapterType, agent.adapterConfig))
+          throw unprocessable("WhatsApp Web requires the configured agent to use the GSAM Runner with ACPX");
+      }
+    }
     if (input.photon && record.endpoint.provider !== "imessage-photon") throw badRequest("Photon configuration is only valid for iMessage Photon");
     const suppliedCredentialKeys = Object.keys(input.credentials ?? {});
     if (suppliedCredentialKeys.length > 0) {
@@ -9574,7 +9652,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     ) {
       throw unprocessable("Unsupported chat endpoint setup action");
     }
-    if (!getWebhookPublicBaseUrl() && endpoint.provider !== "discord" && endpoint.provider !== "imessage-photon") {
+    if (!getWebhookPublicBaseUrl() && !["discord", "imessage-photon", "whatsapp-web"].includes(endpoint.provider)) {
       throw unprocessable(
         `A public HTTPS GS Agentic Manager URL is required before connecting ${PROVIDER_LABELS[endpoint.provider]}`,
       );
@@ -10113,7 +10191,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
             );
           }
           const requiredTrigger =
-            ["telegram", "imessage-photon"].includes(endpoint.provider)
+            ["telegram", "imessage-photon", "whatsapp-web"].includes(endpoint.provider)
               ? "direct_message"
               : "subscribed_message";
           const qualifyingDelivery = await db
@@ -10140,7 +10218,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
             !qualifyingDelivery.processedAt
           ) {
             throw conflict(
-              ["telegram", "imessage-photon"].includes(endpoint.provider)
+              ["telegram", "imessage-photon", "whatsapp-web"].includes(endpoint.provider)
                 ? "Send the test direct message before completing setup"
                 : "Reply once without mentioning the agent before completing setup",
               { code: "chat_test_follow_up_missing" },
@@ -10406,6 +10484,14 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   }> {
     const githubAccess = await githubChatPrincipalAccess(tx, endpoint, principalId);
     if (githubAccess) return githubAccess;
+    const whatsapp = endpoint.provider === "whatsapp-web" ? whatsappBinding(endpoint) : null;
+    if (whatsapp) {
+      const [principal] = await tx.select({ id: chatExternalPrincipals.id }).from(chatExternalPrincipals)
+        .where(and(eq(chatExternalPrincipals.id, principalId), eq(chatExternalPrincipals.companyId, endpoint.companyId),
+          eq(chatExternalPrincipals.provider, "whatsapp-web"), eq(chatExternalPrincipals.providerAccountId, whatsapp.bot),
+          eq(chatExternalPrincipals.externalId, whatsapp.sender)));
+      if (!principal) return { allowed: false, linkedDenied: true, userId: null };
+    }
     // Link confirmation already uses this transaction-scoped identity key.
     // Taking it at the final task mutation boundary prevents a newly confirmed
     // identity from racing the authorization snapshot. Row locks below also
@@ -10429,7 +10515,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       .for("update")
       .then((rows) => rows[0] ?? null);
     if (link?.status === "linked") {
-      if (!link.userId) {
+      if (!link.userId || (whatsapp && link.userId !== whatsapp.ownerUserId)) {
         return { allowed: false, linkedDenied: true, userId: null };
       }
       const membership = await tx
@@ -15486,6 +15572,15 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         message.author,
         message.raw,
       );
+      if (endpoint.provider === "whatsapp-web" &&
+          (!thread.isDM || message.author.userId !== whatsappBinding(endpoint).sender ||
+            principalResolution.userId !== whatsappBinding(endpoint).ownerUserId)) {
+        await db.update(chatDeliveries).set({
+          state: "filtered", normalizedEvent: {},
+          processedAt: new Date(), redactedError: "WhatsApp owner binding is no longer authorised",
+        }).where(eq(chatDeliveries.id, activeDelivery.id));
+        return;
+      }
       const mayEnableSetupDestination =
         // Slack channels start enabled. Never use first-test activation to
         // override an existing channel the operator explicitly disabled.
@@ -15601,7 +15696,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       if (
         isLinear &&
         existingConversation &&
-        (endpoint.provider === "imessage-photon"
+        (["imessage-photon", "whatsapp-web"].includes(endpoint.provider)
           // A reply finishes an iMessage turn, not the conversation. Only a
           // delivered /new or /close releases this chat's task binding. Use
           // the durable control receipt so pre-fix completed rows also resume.
@@ -15624,7 +15719,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       // one immutable GS Agentic Manager task, but the command must still be consumed
       // as control-plane input instead of becoming a task comment/wakeup.
       const controlCommand =
-        isLinear || endpoint.provider === "telegram"
+        endpoint.provider !== "whatsapp-web" && (isLinear || endpoint.provider === "telegram")
           ? linearControlCommand(message.text)
           : null;
       const guidanceCommand =
@@ -16084,6 +16179,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
               description: `Started from ${PROVIDER_LABELS[endpoint.provider]}: ${resource.label}`,
               status: "todo",
               priority: "medium",
+              ...(endpoint.provider === "whatsapp-web" ? { workMode: "ask" as const } : {}),
               assigneeAgentId: endpoint.assignedAgentId,
               createdByUserId: taskUserId ?? endpoint.sponsorUserId,
               responsibleUserId: taskUserId ?? endpoint.sponsorUserId,
@@ -30473,6 +30569,8 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     commentId: string,
   ) {
     const emailBoundary = await endpointRecord(endpointId);
+    if (emailBoundary?.endpoint.provider === "whatsapp-web")
+      throw forbidden("WhatsApp Web only delivers the assigned agent's final response");
     if (emailBoundary?.endpoint.publicationMode === "explicit")
       throw badRequest("Use an explicit email send action");
     const conversation = await db
@@ -30548,6 +30646,8 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     attachmentIds: string[] = [],
   ) {
     const emailBoundary = await endpointRecord(endpointId);
+    if (emailBoundary?.endpoint.provider === "whatsapp-web")
+      throw forbidden("WhatsApp Web only delivers the assigned agent's final response");
     if (emailBoundary?.endpoint.publicationMode === "explicit")
       throw badRequest("Use an explicit email send action");
     // Browser request IDs are only unique within the conversation that issued
@@ -33215,6 +33315,21 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   }) {
     const endpointRuntime = await runtimeFor(input.endpoint);
     const thread = endpointRuntime.thread(input.conversation.externalThreadId);
+    if (input.endpoint.provider === "whatsapp-web") {
+      whatsappBinding(input.endpoint);
+      const [reply] = input.publication.commentId ? await db.select({ id: issueComments.id })
+        .from(issueComments).where(and(
+          eq(issueComments.id, input.publication.commentId),
+          eq(issueComments.issueId, input.conversation.issueId),
+          eq(issueComments.companyId, input.endpoint.companyId),
+          eq(issueComments.authorAgentId, input.endpoint.assignedAgentId),
+          isNotNull(issueComments.createdByRunId),
+        )) : [];
+      if (!reply) throw forbidden("WhatsApp Web only delivers the assigned agent's final response");
+      return endpointRuntime.postWhatsAppWebPublication(
+        input.conversation.externalThreadId, input.publication.id, renderPublicationTransportText(input.payload),
+      );
+    }
     const card = safeCardForPublication(input.payload, input.endpoint.provider);
     let attachments: Attachment[] = [];
     let files: FileUpload[] = [];
@@ -35350,6 +35465,10 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           reason:
             "Provider accepted the publication, but GS Agentic Manager could not confirm its durable result",
         }
+      : error instanceof WhatsAppWebDeliveryError
+        ? error.retryable
+          ? { kind: "retry" as const, retryAfterMs: Math.min(60_000, 2 ** attempts * 1_000), reason: error.message }
+          : { kind: "failed" as const, reason: error.message }
       : error instanceof NativeChatReviewPresentationContentionError
         ? { kind: "retry" as const, retryAfterMs: 250, reason: error.message }
         : error instanceof FailedChatRetryPublicationReadError

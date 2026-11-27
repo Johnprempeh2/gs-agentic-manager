@@ -1,3 +1,4 @@
+import { authorizedWhatsAppWebIngress } from "../services/whatsapp-web-chat.js";
 import {
   Router,
   type Request as ExpressRequest,
@@ -53,6 +54,7 @@ type ChatChannelRouteOptions = ChatChannelServiceOptions & {
 };
 
 type ChatWebhookRouteOptions = {
+  enablePrivateWhatsAppWeb?: boolean;
   rateLimiter?: InviteRateLimiter;
 };
 
@@ -564,6 +566,19 @@ export function chatWebhookRoutes(
       windowMs: CHAT_WEBHOOK_RATE_LIMIT_WINDOW_MS,
       maxRequests: CHAT_WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
     });
+  if (options.enablePrivateWhatsAppWeb) {
+    router.post("/api/private-chat/whatsapp-web/:publicId", async (req, res) => {
+      const bucket = rateLimiter.consume(`private-whatsapp:${req.ip || req.socket.remoteAddress || "unknown"}`);
+      if (!bucket.allowed) throw tooManyRequests("Too many WhatsApp Web requests");
+      const request = standardRequest(req);
+      if (!authorizedWhatsAppWebIngress(request)) {
+        res.sendStatus(401);
+        return;
+      }
+      const response = await service.handleWebhook(req.params.publicId as string, "whatsapp-web", request);
+      await writeStandardResponse(response, res);
+    });
+  }
   router.post("/api/chat-webhooks/:publicId/:provider", async (req, res) => {
     recordChatWebhookStage("handler_started");
     // Provider signatures are intentionally verified inside Chat SDK, but an
@@ -582,7 +597,7 @@ export function chatWebhookRoutes(
       });
     }
     const provider = req.params.provider as ChatProvider;
-    if (!CHAT_PROVIDERS.includes(provider) || provider === "agentmail")
+    if (!CHAT_PROVIDERS.includes(provider) || provider === "agentmail" || provider === "whatsapp-web")
       throw badRequest("Unsupported chat provider");
     const response = await service.handleWebhook(
       req.params.publicId as string,
