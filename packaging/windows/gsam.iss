@@ -5,10 +5,9 @@
 ; %LOCALAPPDATA%\GSAM; the wizard asks for the licence key, then the engine's
 ; setup step runs every install step in a console window that shows progress.
 ;
-; Unsigned for now: Windows SmartScreen shows "Windows protected your PC"; the
-; customer chooses More info, then Run anyway. To sign, define SignTool (see
-; build.ps1: GSAM_SIGN_COMMAND, for example Azure Trusted Signing's signtool
-; line) and the installer and its uninstaller are signed as they are built.
+; Signed when build.ps1 is given GSAM_SIGN_COMMAND (README.md, "Signing"): the
+; installer and its uninstaller are signed as they are built. Unsigned, Windows
+; SmartScreen warns and Smart App Control refuses it.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"

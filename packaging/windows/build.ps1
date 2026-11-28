@@ -1,8 +1,9 @@
 # Builds dist\GSAM-Setup.exe with Inno Setup 6.
 #   $env:GSAM_HUB_URL = "https://<Greatstone hub>"; powershell -File packaging\windows\build.ps1
 # GSAM_HUB_URL is where licence keys are checked; it is built into the installer.
-# GSAM_SIGN_COMMAND (optional) signs the installer, for example Azure Trusted
-# Signing's signtool line with $f for the file; unset, the installer is unsigned.
+# GSAM_SIGN_COMMAND (optional) signs the installer and its uninstaller: a signing
+# command in Inno Setup's form, which scripts\release\windows-signing.ps1 writes
+# (README.md, "Signing"). Unset, the installer is unsigned.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 # Unset: it still builds (as the Mac build.sh does), and activation then says the

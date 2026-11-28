@@ -7,7 +7,7 @@
 #   mac-installer      GSAM-Installer.dmg: the universal GSAM.app in a branded
 #                      disk image (packaging/macos/build.sh); plus Light and
 #                      Dark Mode screenshots of the mounted window
-#   windows-installer  GSAM-Setup.exe (packaging/windows/build.ps1), unsigned;
+#   windows-installer  GSAM-Setup.exe (packaging/windows/build.ps1);
 #                      plus screenshots of the wizard pages
 #   publish            on a live-* tag only: SHA256SUMS over all of them, and
 #                      every file on that tag's release (made if missing). The
@@ -33,6 +33,14 @@
 #   MACOS_CERT_P12, MACOS_CERT_PASSWORD      the Developer ID Application certificate
 #   MACOS_NOTARY_KEY_P8 (base64), MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER_ID
 #                                            the App Store Connect API key
+#
+# Windows signing (packaging/windows/README.md, "Signing"). When these exist, a
+# tag build or a run by hand signs GSAM-Setup.exe, its uninstaller and the
+# Windows runner binary through Azure Artifact Signing. Without them they are
+# unsigned as before. Pull requests never see the secrets; they sign the
+# installer with a throwaway certificate, only to prove the plumbing.
+#   secrets    AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+#   variables  AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE
 
 name: Release assets
 
@@ -73,6 +81,7 @@ jobs:
     timeout-minutes: 40
     env:
       SIGNING: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERT_P12 != '' }}
+      WIN_SIGNING: ${{ github.event_name != 'pull_request' && secrets.AZURE_CLIENT_SECRET != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +135,22 @@ jobs:
           codesign --force --timestamp --keychain "$keychain" --sign "$id" "out/${{ matrix.asset }}"
           codesign --verify --strict --verbose=2 "out/${{ matrix.asset }}"
           security delete-keychain "$keychain"
+
+      - name: Sign the Windows binary through Azure Artifact Signing
+        if: runner.os == 'Windows' && env.WIN_SIGNING == 'true'
+        shell: powershell
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release\windows-signing.ps1 "out\${{ matrix.asset }}"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $sig = Get-AuthenticodeSignature "out\${{ matrix.asset }}"
+          if ($sig.Status -ne "Valid") { throw "The runner binary's signature is $($sig.Status)." }
 
       - name: Keep the binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -227,6 +252,10 @@ jobs:
     name: Windows installer (GSAM-Setup.exe)
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      WIN_SIGNING: ${{ github.event_name != 'pull_request' && secrets.AZURE_CLIENT_SECRET != '' }}
+    outputs:
+      signed: ${{ steps.build.outputs.signed }}
     defaults:
       run:
         shell: powershell
@@ -241,16 +270,46 @@ jobs:
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
 
+      # Sets GSAM_SIGN_COMMAND for the build below.
+      - name: Get signing ready
+        if: env.WIN_SIGNING == 'true' || github.event_name == 'pull_request'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          if ($env:WIN_SIGNING -eq "true") {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release\windows-signing.ps1
+          } else {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release\windows-signing.ps1 -SelfSigned
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Build GSAM-Setup.exe
+        id: build
         env:
           GSAM_HUB_URL: ${{ vars.GSAM_HUB_URL }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
           if (-not $env:GSAM_HUB_URL) {
             Write-Output "::warning title=No hub address::The repository variable GSAM_HUB_URL is unset, so this GSAM-Setup.exe cannot activate a licence. Set it and run again."
           }
           $env:GSAM_INSTALLER_VERSION = $env:RELEASE_NAME
           powershell -NoProfile -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-ChildItem packaging\windows\dist
+          $sig = Get-AuthenticodeSignature packaging\windows\dist\GSAM-Setup.exe
+          Write-Output "Signature: $($sig.Status), $($sig.SignerCertificate.Subject)"
+          if ($env:GSAM_SIGN_COMMAND -and -not $sig.SignerCertificate) { throw "GSAM-Setup.exe was meant to be signed and is not." }
+          if ($env:WIN_SIGNING -eq "true") {
+            if ($sig.Status -ne "Valid") { throw "GSAM-Setup.exe's signature is $($sig.Status)." }
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
 
       - name: Screenshots of the wizard pages
         continue-on-error: true
@@ -294,6 +353,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
           MAC_NOTARISED: ${{ needs.mac-installer.outputs.notarised }}
+          WIN_SIGNED: ${{ needs.windows-installer.outputs.signed }}
         run: |
           cd out
           ls -la
@@ -304,10 +364,12 @@ jobs:
           latest=$([ "$newest" = "$TAG" ] && echo true || echo false)
           mac_note="Mac, Apple silicon and Intel: the first time, right-click GSAM in Applications and choose Open"
           [ "$MAC_NOTARISED" != true ] || mac_note="Mac, Apple silicon and Intel, signed by Greatstone and checked by Apple"
+          win_note="Windows 10 and 11: if Windows says it protected your PC, choose More info, then Run anyway"
+          [ "$WIN_SIGNED" != true ] || win_note="Windows 10 and 11, signed by Greatstone"
           if gh release view "$TAG" >/dev/null 2>&1; then
             [ "$latest" = false ] || gh release edit "$TAG" --latest
           else
             gh release create "$TAG" --verify-tag --latest="$latest" --title "GSAM $TAG" \
-              --notes "GSAM release $TAG. GSAM-Installer.dmg ($mac_note) and GSAM-Setup.exe (Windows 10 and 11: if Windows says it protected your PC, choose More info, then Run anyway). Installs download the runner binaries below. Check any file against SHA256SUMS."
+              --notes "GSAM release $TAG. GSAM-Installer.dmg ($mac_note) and GSAM-Setup.exe ($win_note). Installs download the runner binaries below. Check any file against SHA256SUMS."
           fi
           gh release upload "$TAG" paperclip-runnerd-* GSAM-Installer.dmg GSAM-Setup.exe SHA256SUMS --clobber
