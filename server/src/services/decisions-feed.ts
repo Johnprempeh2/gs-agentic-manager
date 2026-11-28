@@ -1337,7 +1337,21 @@ function buildCard(input: {
         { field: "body", type: "text", label: "Instruction", required: true },
       ));
     }
-    if (recoveryItem) {
+    if (recoveryItem && chatThread) {
+      // A chat is never done or handed on: resolving puts it back to waiting
+      // for the next message, with the same agent (GRE-6508).
+      actions.push(requestAction(
+        "resolve",
+        "Mark resolved",
+        `Clear the card. The chat stays open with ${owner ?? "its agent"} for your next message.`,
+        [request("POST", `${issuePath}/recovery-actions/resolve`, {
+          actionId: recoveryItem.subject.id,
+          outcome: "restored",
+          sourceIssueStatus: "in_review",
+          resolutionNote: "Marked resolved from Decisions.",
+        })],
+      ));
+    } else if (recoveryItem) {
       actions.push(requestAction(
         "resolve",
         "Mark resolved",
@@ -1407,12 +1421,18 @@ function buildCard(input: {
     }
   }
 
-  const newest = items.reduce<AttentionItem | null>((best, item) =>
+  // A ready-to-retry card has no live rows: its times come from the rows the
+  // fix cleared, so it is dated from the failure. A missing time is skipped,
+  // never read as 1 Jan 1970 (GRE-6508).
+  const timed = (items.length > 0 ? items : group.cleared).filter((item) => timeOf(item.activityAt) > 0);
+  const newest = timed.reduce<AttentionItem | null>((best, item) =>
     !best || timeOf(item.activityAt) > timeOf(best.activityAt) ? item : best, null);
   const severity = items.reduce<AttentionSeverity>((best, item) =>
     SEVERITY_RANK[item.severity] < SEVERITY_RANK[best] ? item.severity : best, readyToRetry ? "high" : "low");
-  const activityAt = newest?.activityAt ?? new Date(group.aiRepairedAt ?? 0).toISOString();
-  const createdAt = items.reduce((oldest, item) => (item.createdAt < oldest ? item.createdAt : oldest), activityAt);
+  const activityAt = newest?.activityAt
+    ?? new Date(group.aiRepairedAt ?? group.setupFixedAt ?? Date.now()).toISOString();
+  const createdAt = timed.reduce((oldest, item) =>
+    (timeOf(item.createdAt) > 0 && item.createdAt < oldest ? item.createdAt : oldest), activityAt);
 
   // ── What the person reads: the decision, why it matters, the facts, the
   // options with their consequences, and what the owning agent recommends.
