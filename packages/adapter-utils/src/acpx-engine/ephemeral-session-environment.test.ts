@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRuntimeStore, type AcpSessionRecord, type AcpSessionStore } from "acpx/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { addLiveRunSecretValue, releaseLiveRunSecretValues } from "../run-secret-values.js";
 import { createEphemeralSessionEnvironmentStore } from "./ephemeral-session-environment.js";
 
 const currentEnvironment = Object.freeze({
@@ -172,5 +173,25 @@ describe("ephemeral ACPX session environment", () => {
     expect(text).not.toContain(currentEnvironment.GSAM_API_KEY);
     expect(saved.messages[0].Agent.tool_results["tool-1"].output).toBe(`GSAM_API_KEY=***REDACTED***\nPATH=${currentEnvironment.PATH}`);
     expect(saved.messages[0].Agent.content[0].Text).toBe(`GSAM_API_KEY=***REDACTED***\nPATH=${currentEnvironment.PATH}`);
+  });
+
+  it("redacts a secret the current run read from the API after the store was built (GRE-6519)", async () => {
+    const disk = await diskStore(), input = record();
+    const apiSecret = "nfp_api-read-secret-fixture";
+    const sink: { currentRunId?: string } = { currentRunId: "run-first" };
+    // A warm runtime keeps the store from the run that created it.
+    const wrapper = createEphemeralSessionEnvironmentStore(disk.store, currentEnvironment, () => sink.currentRunId);
+    sink.currentRunId = "run-second";
+    addLiveRunSecretValue("run-second", apiSecret);
+    try {
+      input.messages = [{ Agent: { content: [{ Text: `token is ${apiSecret}` }], tool_results: { "tool-1": { output: apiSecret } } } }] as unknown as AcpSessionRecord["messages"];
+      await wrapper.save(freeze(input));
+      const text = await readFile(disk.file, "utf8"), saved = JSON.parse(text);
+      expect(text).not.toContain(apiSecret);
+      expect(saved.messages[0].Agent.content[0].Text).toBe("token is ***REDACTED***");
+      expect(saved.messages[0].Agent.tool_results["tool-1"].output).toBe("***REDACTED***");
+    } finally {
+      releaseLiveRunSecretValues("run-second");
+    }
   });
 });

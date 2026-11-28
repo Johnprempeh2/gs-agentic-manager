@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { collectRunSecretValues, redactRunSecretValues } from "./run-secret-values.js";
+import {
+  addLiveRunSecretValue,
+  collectRunSecretValues,
+  redactRunSecretValues,
+  releaseLiveRunSecretValues,
+  withLiveRunSecretValues,
+} from "./run-secret-values.js";
 
 describe("run secret values (GRE-517)", () => {
   const env = {
@@ -23,5 +29,24 @@ describe("run secret values (GRE-517)", () => {
     expect(redactRunSecretValues(printed, values)).toBe(
       "A_TOKEN=***REDACTED***\nB_TOKEN=***REDACTED***\nGSAM_RUN_ID=run-id-fixture-not-secret",
     );
+  });
+});
+
+describe("live run secret values (GRE-6519)", () => {
+  it("adds values read after launch to that run only, longest first, until released", () => {
+    addLiveRunSecretValue("run-a", "api-read-secret-fixture");
+    addLiveRunSecretValue("run-a", "short");
+    addLiveRunSecretValue("run-b", "other-run-secret-fixture");
+
+    expect(withLiveRunSecretValues("run-a", ["launch-env-secret-fixture-longer"])).toEqual([
+      "launch-env-secret-fixture-longer",
+      "api-read-secret-fixture",
+    ]);
+    expect(withLiveRunSecretValues(undefined, ["launch-env-secret-fixture"])).toEqual(["launch-env-secret-fixture"]);
+
+    releaseLiveRunSecretValues("run-a");
+    expect(withLiveRunSecretValues("run-a", [])).toEqual([]);
+    expect(withLiveRunSecretValues("run-b", [])).toEqual(["other-run-secret-fixture"]);
+    releaseLiveRunSecretValues("run-b");
   });
 });
