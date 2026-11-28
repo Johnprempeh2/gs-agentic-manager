@@ -97,7 +97,7 @@ describe("WebsiteRedirects (GRE-4785)", () => {
     await click(approveIn(1));
     expect(moduleApiMock.submitEntry).not.toHaveBeenCalled();
     expect(moduleApiMock.approveEntry).toHaveBeenCalledWith("co-1", "site-1", "r2");
-    expect(container.textContent).toContain("Approved /blog. Publish puts it on staging, and Deploy puts it live.");
+    expect(container.textContent).toContain("Approved /blog. Queue for live lines it up, and Deploy puts it live.");
 
     await click(approveIn(0));
     expect(moduleApiMock.submitEntry).toHaveBeenCalledWith("co-1", "site-1", "r1");

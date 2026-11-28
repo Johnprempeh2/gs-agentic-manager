@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS, isWebsiteHtmlPage, LIVE_DESIGN_VIEW_FRAME, type LiveDesignView } from "@greatstone/shared";
-import { ArrowLeft, Check, ChevronDown, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Eye, History, Laptop, Loader2, Lock, Maximize2, MousePointerClick, PenLine, Smartphone, TriangleAlert, Undo2 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { cn, formatDateTime } from "../lib/utils";
 import { ScaledFrame } from "../components/AttachmentPreviewPanel";
 import { historyKey, LiveDesignChat, useEditHistory, useLiveDesign } from "../components/LiveDesignChat";
 import { useDecisionCardContext } from "../components/website/WebsiteHub";
-import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websiteStatusWord } from "../lib/website-status";
+import { useWebsiteContentLive, WEBSITE_STATUS_TONE, websitePagePreviewUrl, websiteStatusWord } from "../lib/website-status";
 import { getSpeechRecognitionConstructor, type BrowserSpeechRecognition } from "../hooks/useDictation";
 
 // Impeccable asks "Apply 2 edits?" with confirm(), so the live page may open modals.
@@ -163,6 +163,14 @@ export function WebsitePageLiveEditor() {
               {statusWord}
             </span>
           ) : null}
+          {page && websitePagePreviewUrl(companyId, page) ? (
+            <Button asChild size="sm" variant="ghost">
+              <a href={websitePagePreviewUrl(companyId, page)!} target="_blank" rel="noopener" data-testid="live-page-preview" title="The newest saved version in a tab of its own, drawn by GSAM. Free: no Netlify build.">
+                <Eye />
+                Preview
+              </a>
+            </Button>
+          ) : null}
           {/* Nothing waiting to save: an approver approves the saved version here (with edits waiting, Save and approve does both). */}
           {canApprove && page && (page.status === "draft" || page.status === "review") && !live.view?.stagedCount && live.view?.status !== "applying" ? (
             <Button
@@ -170,7 +178,7 @@ export function WebsitePageLiveEditor() {
               size="sm"
               variant="outline"
               disabled={approving}
-              title={approveError ?? "Approve the saved version. Publish then puts it on staging."}
+              title={approveError ?? "Approve the saved version. Queue for live then lines it up for Deploy."}
               onClick={() => {
                 setApproving(true);
                 setApproveError(null);

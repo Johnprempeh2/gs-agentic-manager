@@ -180,7 +180,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
   };
   const save = useMutation({
     mutationFn: saveDraft,
-    onSuccess: () => { setMessage("Draft saved. Once it is approved, Publish puts it on staging and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+    onSuccess: () => { setMessage("Draft saved. Once it is approved, Queue for live lines it up and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
   });
   // Save and approve (people with Publish rights): save, then send for review and approve in the same click.
   // The server approves only what is in review, so the client submits first.
@@ -190,7 +190,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
       if (withSave || detail.data?.status === "draft") await websiteModuleApi.submitEntry(companyId, siteId, id);
       return websiteModuleApi.approveEntry(companyId, siteId, id);
     },
-    onSuccess: () => { setMessage("Approved. Publish puts this change on staging, and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
+    onSuccess: () => { setMessage("Approved. Queue for live lines this change up, and Deploy puts it live."); refresh(); if (entryId) void detail.refetch(); else onClose(); },
     onError: () => { refresh(); if (entryId) void detail.refetch(); },
   });
   const changeStatus = useMutation({
@@ -200,7 +200,7 @@ function EntryEditor({ companyId, siteId, collection, singular, entryId, onClose
       if (action === "archive") return websiteModuleApi.archiveEntry(companyId, siteId, entryId);
       return websiteModuleApi.submitEntry(companyId, siteId, entryId);
     },
-    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. Publish puts this change on staging, and Deploy puts it live." : "Archived. It leaves the live site after the next Publish and Deploy."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
+    onSuccess: (_, action) => { setMessage(action === "review" ? "Sent for review." : action === "approve" ? "Approved. Queue for live lines this change up, and Deploy puts it live." : "Archived. It leaves the live site after the next Publish and Deploy."); refresh(); void detail.refetch(); if (action === "archive") onClose(); },
   });
   if (detail.error) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
   if (entryId && !detail.data) return <p className="text-sm text-muted-foreground">Loading entry</p>;
@@ -279,7 +279,7 @@ export function WebsiteCollectionsTab({ companyId, property }: { companyId: stri
               </li>;
             })}</ul> : <p className="text-sm text-muted-foreground">Nothing matches "{search.trim()}". Try part of the name, the category or the code.</p>}
           </> :
-          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, Publish puts it on staging and Deploy puts it live.`}</p></div>}
+          <div className="space-y-2"><h4 className="font-medium">{collection === "redirect" ? "No redirects" : `No ${selected.label.toLowerCase()} yet`}</h4><p className="text-sm text-muted-foreground">{collection === "redirect" ? "Add one when a page moves, so old links keep working." : `Add the first ${selected.singular} and save it as a draft. After a person approves it, Queue for live lines it up and Deploy puts it live.`}</p></div>}
       </section>}
   </div></WebsiteContentLiveContext.Provider>;
 }

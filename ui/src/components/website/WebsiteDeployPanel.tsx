@@ -217,7 +217,7 @@ export function WebsiteDeployPanel({ companyId, site }: { companyId: string; sit
 
       <div className="space-y-1 text-xs">
         <p className="font-medium text-foreground" data-testid="website-deploy-waiting">
-          {waiting === 0 ? "Nothing is waiting: live matches staging." : `On staging, waiting to go live (${waiting})`}
+          {waiting === 0 ? "Nothing is waiting: live matches staging." : `Waiting to go live (${waiting})`}
         </p>
         {status.staging.release !== null && status.staging.release !== status.live.release ? (
           <p className="text-muted-foreground">Page and catalogue edits: content release {status.staging.release} (live has {status.live.release ?? "none"})</p>

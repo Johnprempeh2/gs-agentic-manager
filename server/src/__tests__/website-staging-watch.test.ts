@@ -45,10 +45,13 @@ describe("website staging watch", () => {
     expect(d.createTask).toHaveBeenCalledWith("b".repeat(40), "a".repeat(40), null);
   });
 
-  it("hands a published content release to the team even when staging already holds main", async () => {
-    const d = deps({ stagedCommit: async () => "b".repeat(40), storeRelease: async () => 7, builtRelease: async () => 6 });
+  it("raises no staging rebuild for a Publish alone (27 Nov: credits; Preview shows drafts free), and a moved main carries it", async () => {
+    const alone = deps({ stagedCommit: async () => "b".repeat(40), storeRelease: async () => 7, builtRelease: async () => 6 });
+    expect(await stagingWatchTick(alone)).toBe("current");
+    expect(alone.createTask).not.toHaveBeenCalled();
+    const d = deps({ storeRelease: async () => 7, builtRelease: async () => 6 });
     expect(await stagingWatchTick(d)).toBe("created");
-    expect(d.createTask).toHaveBeenCalledWith("b".repeat(40), "b".repeat(40), 7);
+    expect(d.createTask).toHaveBeenCalledWith("b".repeat(40), "a".repeat(40), 7);
     expect(stagingWatchTaskDescription("b".repeat(40), "b".repeat(40), 7)).toContain("GSAM_CONTENT_RELEASE=7 npm run deploy:staging");
   });
 
@@ -56,8 +59,9 @@ describe("website staging watch", () => {
     // GRE-4635..GRE-4662: each task deployed release 1 and closed done, and the next sweep raised it again.
     let built: number | null = 6;
     let open: { identifier: string } | null = null;
+    let staged = "a".repeat(40);
     const d = deps({
-      stagedCommit: async () => "b".repeat(40),
+      stagedCommit: async () => staged,
       storeRelease: async () => 7,
       builtRelease: async () => built,
       openTask: async () => open,
@@ -66,6 +70,7 @@ describe("website staging watch", () => {
     expect(await stagingWatchTick(d)).toBe("created");
     expect(await stagingWatchTick(d)).toBe("busy");
     built = 7; // the task ran GSAM_CONTENT_RELEASE=7 npm run deploy:staging and closed done
+    staged = "b".repeat(40);
     open = null;
     expect(await stagingWatchTick(d)).toBe("current");
     expect(await stagingWatchTick(d)).toBe("current");
@@ -74,18 +79,18 @@ describe("website staging watch", () => {
 
   it("names the release staging's store holds, never an older one (GSAM's release rows are not read)", async () => {
     // Staging's store holds release 2 while its pages show release 1 (release 1's row still switched).
-    const d = deps({ stagedCommit: async () => "b".repeat(40), storeRelease: async () => 2, builtRelease: async () => 1 });
+    const d = deps({ storeRelease: async () => 2, builtRelease: async () => 1 });
     expect(await stagingWatchTick(d)).toBe("created");
-    expect(d.createTask).toHaveBeenCalledWith("b".repeat(40), "b".repeat(40), 2);
+    expect(d.createTask).toHaveBeenCalledWith("b".repeat(40), "a".repeat(40), 2);
     const built = deps({ stagedCommit: async () => "b".repeat(40), storeRelease: async () => 2, builtRelease: async () => 2 });
     expect(await stagingWatchTick(built)).toBe("current");
     expect(built.createTask).not.toHaveBeenCalled();
   });
 
   it("hands over the store's release when staging's pages name none, and nothing when the store is empty", async () => {
-    const unnamed = deps({ stagedCommit: async () => "b".repeat(40), storeRelease: async () => 3 });
+    const unnamed = deps({ storeRelease: async () => 3 });
     expect(await stagingWatchTick(unnamed)).toBe("created");
-    expect(unnamed.createTask).toHaveBeenCalledWith("b".repeat(40), "b".repeat(40), 3);
+    expect(unnamed.createTask).toHaveBeenCalledWith("b".repeat(40), "a".repeat(40), 3);
     const empty = deps({ stagedCommit: async () => "b".repeat(40), builtRelease: async () => 3 });
     expect(await stagingWatchTick(empty)).toBe("current");
   });
@@ -94,7 +99,6 @@ describe("website staging watch", () => {
     // Staging's pages never showed the release its store held, so every finished task was raised again.
     const titles: string[] = [];
     const d = deps({
-      stagedCommit: async () => "b".repeat(40),
       storeRelease: async () => 7,
       builtRelease: async () => 6,
       taskExists: async (title) => titles.includes(title),
@@ -106,7 +110,7 @@ describe("website staging watch", () => {
     expect(titles).toEqual([`Put website main on staging (bbbbbbb, content release 7)`]);
   });
 
-  it("puts code on staging at most once per UK window (07:00 and 15:00), but a Publish goes at once", async () => {
+  it("puts code on staging at most once per UK window (07:00 and 15:00), and a Publish waits for it too", async () => {
     const at = (iso: string) => new Date(iso);
     let last: Date | null = at("2026-11-12T07:05:00Z"); // 12 Nov is GMT, so UK 07:05
     const d = deps({ lastTaskAt: async () => last });
@@ -118,7 +122,7 @@ describe("website staging watch", () => {
     expect(await stagingWatchTick(d, at("2026-11-13T07:01:00Z"))).toBe("created");
     expect(d.createTask).toHaveBeenCalledTimes(2);
     const publish = deps({ lastTaskAt: async () => at("2026-11-12T11:00:00Z"), storeRelease: async () => 8, builtRelease: async () => 7 });
-    expect(await stagingWatchTick(publish, at("2026-11-12T11:30:00Z"))).toBe("created");
+    expect(await stagingWatchTick(publish, at("2026-11-12T11:30:00Z"))).toBe("waiting");
   });
 
   it("finds the latest UK window in GMT and in BST", () => {

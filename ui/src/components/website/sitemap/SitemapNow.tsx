@@ -13,7 +13,7 @@ import { MENU_LABELS, Pill } from "./SitemapViews";
 
 const INDENT = ["", "pl-6", "pl-12", "pl-18", "pl-24"];
 
-const STATE_ORDER: WebsiteStatusWord[] = ["Live", "On staging", "Approved", "In review", "Draft"];
+const STATE_ORDER: WebsiteStatusWord[] = ["Live", "Ready to go live", "Approved", "In review", "Draft"];
 
 export function dismissedKey(siteId: string) {
   return `gsam.sitemap.dismissed.${siteId}`;
@@ -132,7 +132,7 @@ export function SitemapNow({ site, pages, approvedTree, framing, onEditPage }: {
           <p className="text-sm text-muted-foreground" data-testid="sitemap-now-summary">
             {rows.length === 0 ? "No page is built yet." : (
               <>
-                {countOf(rows.length, "page")} {rows.length === 1 ? "is" : "are"} built: {stateCounts.map((entry) => `${entry.count} ${entry.state === "On staging" ? "on staging" : entry.state.toLowerCase()}`).join(", ")}.
+                {countOf(rows.length, "page")} {rows.length === 1 ? "is" : "are"} built: {stateCounts.map((entry) => `${entry.count} ${entry.state === "Ready to go live" ? "ready to go live" : entry.state.toLowerCase()}`).join(", ")}.
               </>
             )}
             {rows.length > 0 && !site.liveReleaseId ? " No release has gone live from GSAM for this site yet, so no page reads as live here." : ""}

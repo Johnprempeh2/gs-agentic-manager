@@ -186,7 +186,7 @@ export const WEBSITE_PAGES_TOUR: TourDefinition = {
     {
       target: "website-page-status",
       title: "Its state",
-      body: "Draft, In review, Approved, On staging or Live. Publish to staging puts approved pages on the test copy; visitors only see a page once Deploy to live puts it on greatstoneint.com.",
+      body: "Draft, In review, Approved, Ready to go live or Live. Queue for live lines approved pages up for the next Deploy, and Preview shows any page free of charge; visitors only see a page once Deploy to live puts it on greatstoneint.com.",
     },
     {
       target: "website-pages-edit",
@@ -252,7 +252,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
     {
       target: "website-collection-new",
       title: "Add one",
-      body: "A new entry starts as a draft. Send it for review, or, if you can approve, use Save and approve. Once it is approved, Publish to staging puts it on the test copy and Deploy to live puts it on greatstoneint.com.",
+      body: "A new entry starts as a draft. Send it for review, or, if you can approve, use Save and approve. Once it is approved, Queue for live lines it up and Deploy to live puts it on greatstoneint.com.",
     },
   ],
 };
@@ -261,7 +261,7 @@ export const WEBSITE_COLLECTIONS_TOUR: TourDefinition = {
 export const WEBSITE_RELEASES_TOUR: TourDefinition = {
   id: "website-releases",
   title: "Website releases",
-  description: "How the site is connected, what each Publish sent to staging, and who may publish.",
+  description: "How the site is connected, what each release holds, and who may publish.",
   version: 2,
   flag: "enableWebsiteView",
   autoStart: false,
@@ -275,12 +275,12 @@ export const WEBSITE_RELEASES_TOUR: TourDefinition = {
     {
       target: "website-releases",
       title: "Releases",
-      body: "Each release is one Publish. Saved drafts stay drafts until they are approved and a Publish takes them to staging.",
+      body: "Each release is one Publish. Saved drafts stay drafts until they are approved and Queue for live lines them up for Deploy.",
     },
     {
       target: "website-publish",
-      title: "Publish to staging",
-      body: "Puts every approved change on staging (the test copy) in one go. Deploy to live then takes staging to greatstoneint.com. Each Publish costs credits, so it is for the site's owner to press, after the changes are approved.",
+      title: "Queue for live",
+      body: "Lines up every approved change in one go, free of charge. Preview shows each page as it will look. Deploy to live then puts them on greatstoneint.com, and that is the step that uses Netlify credits.",
     },
     {
       target: "website-release-row",

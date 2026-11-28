@@ -270,9 +270,9 @@ export const SITEMAP_STATUS_LABELS: Record<SitemapPageStatus, string> = {
   live: "Live",
 };
 
-/** The label for a node's status: a published page reads On staging until Deploy has put its content live. */
+/** The label for a node's status: a published page reads Ready to go live until Deploy has put its content live. */
 export function sitemapStatusLabel(status: SitemapPageStatus, onLive: boolean): string {
-  return status === "live" && !onLive ? "On staging" : SITEMAP_STATUS_LABELS[status];
+  return status === "live" && !onLive ? "Ready to go live" : SITEMAP_STATUS_LABELS[status];
 }
 
 /** Site pages by id and by `slug:<path>`, so a draft option's page shows the status of the page it would become. */

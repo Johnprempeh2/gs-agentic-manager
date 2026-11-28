@@ -4,7 +4,9 @@
 // that task, and the watch raises no new one until it is closed.
 // Credits (John, 12 Nov): each staging upload is a 15-credit production deploy, so code merges no longer go
 // straight to staging. A Publish (a content release waiting) still goes at once; code alone goes at most twice a
-// day, in the 07:00 and 15:00 UK windows; a person can always ask the team for one. And never twice for the same
+// day, in the 07:00 and 15:00 UK windows; a person can always ask the team for one. A Publish alone raises nothing
+// (John, 27 Nov): Deploy builds the public site from the release in staging's store, Preview in GSAM shows drafts free,
+// and a waiting release rides along with the next code move. And never twice for the same
 // commit and release: on 8 Nov the watch raised 109 tasks and staging took commit 5a57691 75 times.
 import { and, desc, eq, like, notInArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
@@ -140,15 +142,13 @@ export async function stagingWatchTick(deps: StagingWatchDeps, now = new Date())
   // Content waits while staging's pages were not built with the release its store holds (GRE-4664). Both come from
   // staging itself, so a finished deploy is its own record and a newer publish names the newer release.
   const content = store !== null && store !== built ? store : null;
-  if (main === staged && content === null) return "current" as const;
+  if (main === staged) return "current" as const;
   if (await deps.openTask()) return "busy" as const;
   // The same commit and release never get a second task, whatever became of the first (8 Nov: 109 tasks).
   if (await deps.taskExists(stagingWatchTaskTitle(main, content))) return "duplicate" as const;
-  // Code alone waits for the next UK window; a Publish (content waiting) goes now.
-  if (content === null) {
-    const last = await deps.lastTaskAt();
-    if (last && last >= latestStagingWindow(now)) return "waiting" as const;
-  }
+  // At most one staging rebuild per UK window.
+  const last = await deps.lastTaskAt();
+  if (last && last >= latestStagingWindow(now)) return "waiting" as const;
   await deps.createTask(main, staged, content);
   return "created" as const;
 }
