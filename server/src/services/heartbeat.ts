@@ -55,7 +55,12 @@ import {
   type RunCapabilityProbe,
 } from "./run-capability-check.js";
 import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
-import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
+import {
+  collectRunSecretValues,
+  redactRunSecretValues,
+  releaseLiveRunSecretValues,
+  withLiveRunSecretValues,
+} from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
 import { isWorkspaceGitScanError, WorkspaceGitScanError, WORKSPACE_GIT_SCAN_ERROR_CODES } from "./workspace-git-operation-scheduler.js";
 import { captureDirectorySnapshot, mergeDirectoryWithBaseline } from "@greatstone/adapter-utils/workspace-restore-merge";
@@ -3789,6 +3794,27 @@ function redactInlineBase64ImageData(chunk: string) {
     INLINE_BASE64_IMAGE_DATA_RE,
     (_match, prefix: string, data: string, suffix: string) =>
       `${prefix}[omitted base64 image data: ${data.length} chars]${suffix}`,
+  );
+}
+
+/**
+ * The text a run-log chunk is stored as: current-user and credential-shape
+ * redaction, then every secret value the run holds, including secrets it read
+ * from the API after launch (GRE-517, GRE-6519).
+ */
+export function sanitizeRunLogChunk(
+  chunk: string,
+  input: {
+    runId: string;
+    runSecretValues: readonly string[];
+    currentUserRedactionOptions?: Parameters<typeof redactCurrentUserText>[1];
+  },
+) {
+  return compactRunLogChunk(
+    redactRunSecretValues(
+      redactCurrentUserText(chunk, input.currentUserRedactionOptions),
+      withLiveRunSecretValues(input.runId, input.runSecretValues),
+    ),
   );
 }
 
@@ -26119,12 +26145,11 @@ export function heartbeatService(
           { secretKeys },
         );
         const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
-          const sanitizedChunk = compactRunLogChunk(
-            redactRunSecretValues(
-              redactCurrentUserText(chunk, currentUserRedactionOptions),
-              runSecretValues,
-            ),
-          );
+          const sanitizedChunk = sanitizeRunLogChunk(chunk, {
+            runId: run.id,
+            runSecretValues,
+            currentUserRedactionOptions,
+          });
           if (stream === "stdout")
             stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
           if (stream === "stderr")
@@ -28923,6 +28948,11 @@ export function heartbeatService(
           : releaseIssueExecutionAndPromote(latestRun, { suppressImmediateRecovery: true })).catch(err => {
           logger.error({ err, runId: run.id }, "failed to promote legacy comment queue after cleanup");
         });
+      }
+      // The run has written its log and session record; drop the secret
+      // values it read live unless it is still going (GRE-6519).
+      if (latestRun && isHeartbeatRunTerminalStatus(latestRun.status)) {
+        releaseLiveRunSecretValues(run.id);
       }
       if (
         !nativeSessionResumeScheduled &&

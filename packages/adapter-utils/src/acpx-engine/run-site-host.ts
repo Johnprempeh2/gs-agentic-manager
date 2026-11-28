@@ -36,6 +36,8 @@ export type AcpxAgentProcessIdentity = { pid: number; startedAt: string };
  */
 export type AcpxProcessIdentitySink = {
   current: AdapterExecutionContext["onSpawn"];
+  /** The heartbeat run this warm runtime serves now; set with `current`. */
+  currentRunId?: string;
   latest: AcpxAgentProcessIdentity | null;
   localProcess?: ChildProcess;
 };

@@ -1,10 +1,12 @@
 import type { AcpSessionStore } from "acpx/runtime";
-import { collectRunSecretValues, redactRunSecretValuesDeep } from "../run-secret-values.js";
+import { collectRunSecretValues, redactRunSecretValuesDeep, withLiveRunSecretValues } from "../run-secret-values.js";
 
 /** Keep the current run's environment in memory, outside persisted conversation state. */
 export function createEphemeralSessionEnvironmentStore(
   persistedStore: AcpSessionStore,
   currentEnvironment: Readonly<Record<string, string>>,
+  // A warm runtime keeps this store across runs, so read the run each save.
+  currentRunId: () => string | undefined = () => undefined,
 ): AcpSessionStore {
   const secretValues = collectRunSecretValues(currentEnvironment);
   return {
@@ -29,8 +31,9 @@ export function createEphemeralSessionEnvironmentStore(
         persisted.acpx = { ...record.acpx, session_options: sessionOptions };
       }
       // An agent that prints its environment puts the run's credentials into
-      // tool output inside `messages` (GRE-517); redact them by value too.
-      return persistedStore.save(redactRunSecretValuesDeep(persisted, secretValues));
+      // tool output inside `messages` (GRE-517); redact them by value too,
+      // with secrets the run read from the API after launch (GRE-6519).
+      return persistedStore.save(redactRunSecretValuesDeep(persisted, withLiveRunSecretValues(currentRunId(), secretValues)));
     },
   };
 }

@@ -4310,12 +4310,17 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
         // target mutable so a later agent respawn records identity on the current
         // heartbeat instead of the run that originally created the runtime.
         processIdentitySink.current = ctx.onSpawn;
+        processIdentitySink.currentRunId = ctx.runId;
         flushChildStderr(childStderrState);
         childStderrState.logPath = prepared.childStderrLogPath;
         const persistedRuntimeStore = createRuntimeStore({ stateDir: prepared.stateDir });
         // Resume with this run's launch environment; keep it out of the saved
         // conversation record without mutating the live runtime's options.
-        const runtimeStore = createEphemeralSessionEnvironmentStore(persistedRuntimeStore, prepared.env);
+        const runtimeStore = createEphemeralSessionEnvironmentStore(
+          persistedRuntimeStore,
+          prepared.env,
+          () => processIdentitySink.currentRunId,
+        );
         const runtimeOptions: PaperclipAcpRuntimeOptions = {
           cwd: prepared.cwd,
           // Host-only spawn cwd for the relay proxy on the remote process-session

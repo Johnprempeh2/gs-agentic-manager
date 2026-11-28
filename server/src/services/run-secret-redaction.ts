@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { heartbeatRuns } from "@greatstone/db";
+import { addLiveRunSecretValue } from "@greatstone/adapter-utils/run-secret-values";
 import { REDACTED_EVENT_VALUE } from "../redaction.js";
 import { getSecretProvider } from "../secrets/provider-registry.js";
 import type { StoredSecretVersionMaterial } from "../secrets/types.js";
@@ -189,6 +190,10 @@ export function createRunSecretRedactionRegistry(db: Db) {
           })
           .where(and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.id, runId)));
       });
+      // The stored registry redacts API reads. The live run also writes the
+      // value to its log file and ACP session record as it prints, so hand it
+      // to the in-process writers too (GRE-6519).
+      addLiveRunSecretValue(runId, value);
     },
     redactForRuns: async <T extends { id: string }>(companyId: string, runs: T[]): Promise<T[]> => {
       if (runs.length === 0) return [];
