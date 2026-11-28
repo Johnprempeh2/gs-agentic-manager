@@ -770,6 +770,18 @@ describe("managed AI connections", () => {
 
 
 describe("AI connection recovery delivery", () => {
+  // These members repair their own account. Earlier tests left company-shared
+  // Claude accounts that every member may now fall back to, which would let
+  // the run proceed without asking; set them aside for this block.
+  let setAside: string[] = [];
+  beforeAll(async () => {
+    setAside = (await db.update(toolConnections).set({ enabled: false })
+      .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.connectionPurpose, "ai"), eq(toolConnections.credentialPolicy, "shared"), eq(toolConnections.enabled, true)))
+      .returning({ id: toolConnections.id })).map((row) => row.id);
+  });
+  afterAll(async () => {
+    for (const id of setAside) await db.update(toolConnections).set({ enabled: true }).where(eq(toolConnections.id, id));
+  });
   it.each(["restored", "newer failure", "different blocker", "revoked again", "closed task"])(
     "continues only the repaired source failure: %s", async (scenario) => {
       const userId = `recovery-${randomUUID()}`;

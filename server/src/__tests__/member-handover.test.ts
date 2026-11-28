@@ -391,15 +391,17 @@ describeEmbeddedPostgres("hand over and remove a person", () => {
     const shared = await sharedAccount(companyId, JOHN, "Company Claude");
     const withShared = await handover(app, companyId, seeded.memberId(CARA), { successorUserId: DAN, dryRun: true });
     const novaShared = withShared.body.items.find((item: { ref: string }) => item.ref === `agent:${seeded.nova}`);
-    expect(novaShared).toMatchObject({ blocker: null, recommended: { type: "use_shared_connection", grantId: shared.grantId } });
+    // A member with no personal default now falls back to the company-shared
+    // account, so the agent keeps its setting and still has an account.
+    expect(novaShared).toMatchObject({ blocker: null, recommended: { type: "keep_ai_setting" } });
     expect(withShared.body.blockers).toEqual([]);
 
     await handover(app, companyId, seeded.memberId(CARA), { successorUserId: DAN, dryRun: false }).expect(200);
     const [agent] = await db.select().from(agents).where(eq(agents.id, seeded.nova));
-    expect(agent?.runtimeConfig.aiConnection).toMatchObject({ mode: "shared", grantId: shared.grantId });
+    expect(agent?.runtimeConfig.aiConnection).toMatchObject({ mode: "responsible_user" });
     await expect(aiConnectionService(db).select({
       companyId, userId: DAN, agentId: seeded.nova, adapterType: "claude_local", binding: agent!.runtimeConfig.aiConnection as never,
-    })).resolves.toBeTruthy();
+    })).resolves.toMatchObject({ grant: { id: shared.grantId }, attribution: { mode: "shared" } });
   });
 
   it("applies overrides: another person, an agent, close and leave", async () => {
