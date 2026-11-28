@@ -10597,7 +10597,15 @@ export function issueRoutes(
           );
         }
         let issue = lockedIssue;
-        const sourceStatusChanged = sourceIssueStatus !== lockedIssue.status;
+        // A chat is never done or handed on. Restoring it as done or in review
+        // puts it back to waiting for the next message, with the same agent,
+        // as a finished reply does (GRE-6508).
+        const parksConversation =
+          Boolean(lockedIssue.conversationAgentId) &&
+          outcome === "restored" &&
+          (sourceIssueStatus === "done" || sourceIssueStatus === "in_review");
+        const nextStatus = parksConversation ? "in_review" : sourceIssueStatus;
+        const sourceStatusChanged = nextStatus !== lockedIssue.status;
         if (outcome === "blocked" && sourceStatusChanged) {
           const unresolvedBlockers = await tx
             .select({ id: issueRows.id })
@@ -10643,8 +10651,8 @@ export function issueRoutes(
 
           if (
             lockedIssue.status === "in_review" &&
-            (sourceIssueStatus === "done" ||
-              sourceIssueStatus === "cancelled") &&
+            (nextStatus === "done" ||
+              nextStatus === "cancelled") &&
             lockedIssue.reviewPolicy != null &&
             lockedIssue.reviewPolicy !== "anyone"
           ) {
@@ -10655,7 +10663,7 @@ export function issueRoutes(
           }
 
           const updateFields: Record<string, unknown> = {
-            status: sourceIssueStatus,
+            status: nextStatus,
           };
           if (!safeHandBack) {
             await assertInReviewReviewPath({
@@ -10674,7 +10682,7 @@ export function issueRoutes(
               issue: lockedIssue,
               policy: executionPolicy,
               previousPolicy: executionPolicy,
-              requestedStatus: sourceIssueStatus,
+              requestedStatus: nextStatus,
               requestedAssigneePatch: {},
               actor: {
                 agentId: actor.agentId ?? null,
@@ -10727,7 +10735,7 @@ export function issueRoutes(
             actorUserId: actor.actorType === "user" ? actor.actorId : null,
           };
           const updatedIssue =
-            sourceIssueStatus === "done" || sourceIssueStatus === "cancelled"
+            nextStatus === "done" || nextStatus === "cancelled"
               ? await svc.update(
                   id,
                   issueUpdate,
@@ -10743,6 +10751,24 @@ export function issueRoutes(
                 );
           if (!updatedIssue) throw notFound("Issue not found");
           issue = updatedIssue;
+        }
+        if (parksConversation && issue.conversationState !== "waiting") {
+          // The conversation fields are fixed for `svc.update`; this is the
+          // same write a finished reply makes (settleConversationTurn).
+          if (!sourceStatusChanged) {
+            await requireRecoverySourceMutationAuthority(
+              req,
+              lockedIssue,
+              tx as unknown as Db,
+            );
+          }
+          const [parked] = await tx
+            .update(issueRows)
+            .set({ conversationState: "waiting", updatedAt: new Date() })
+            .where(eq(issueRows.id, issue.id))
+            .returning();
+          if (!parked) throw notFound("Issue not found");
+          issue = parked;
         }
 
         const recordedOutcome =

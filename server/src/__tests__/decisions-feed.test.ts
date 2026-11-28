@@ -1062,6 +1062,120 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect((await build(seeded.companyId)).cards).toEqual([]);
   });
 
+  describe("a stopped chat conversation (GRE-6508)", () => {
+    /**
+     * GRE-6273 "Chat with Everest" on 27 Nov: a run stopped on an incomplete
+     * setup, the recovery blocked the chat, and the setup later worked again.
+     */
+    let seeds = 0;
+    async function seedStoppedChat(input: { setupFixed: boolean }) {
+      // One test may press each option on a fresh chat; prefixes are unique.
+      const prefix = `GC${(seeds += 1)}`;
+      const companyId = randomUUID();
+      const everestId = randomUUID();
+      const chat = randomUUID();
+      const failedAt = new Date(Date.now() - 3 * HOUR);
+      await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: prefix, requireBoardApprovalForNewAgents: false });
+      await db.insert(agents).values({
+        id: everestId, companyId, name: "Everest", role: "ceo", status: "idle", adapterType: "codex_local",
+        adapterConfig: {}, runtimeConfig: { aiConnection: { provider: "anthropic" } }, permissions: {},
+      });
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner" });
+      await db.insert(issues).values({
+        id: chat, companyId, identifier: `${prefix}-6273`, issueNumber: 6273, title: "Chat with Everest", status: "blocked", priority: "medium",
+        assigneeAgentId: everestId, conversationAgentId: everestId, conversationUserId: USER_ID, conversationState: "active",
+        blockedTransitionAt: failedAt,
+      });
+      const runId = randomUUID();
+      await db.insert(heartbeatRuns).values({
+        id: runId, companyId, agentId: everestId, invocationSource: "assignment", status: "failed",
+        errorCode: "configuration_incomplete", error: NO_DEFAULT,
+        resultJson: { configurationIncomplete: { reason: "ai_connection_unavailable", actionUrl: `/agents/${everestId}/runtime` } },
+        contextSnapshot: { issueId: chat }, createdAt: failedAt, finishedAt: failedAt,
+      });
+      const recoveryId = randomUUID();
+      await db.insert(issueRecoveryActions).values({
+        id: recoveryId, companyId, sourceIssueId: chat, kind: "configuration_validation", status: "active", ownerType: "board",
+        previousOwnerAgentId: everestId, returnOwnerAgentId: everestId, cause: "configuration_incomplete",
+        fingerprint: `setup:${chat}`, evidence: { latestRunId: runId, failureSummary: "The run stopped before it started: setup is not complete." },
+        nextAction: RECONNECT, wakePolicy: { type: "board_escalation", reason: "configuration_incomplete", preservesSourceAssignee: true },
+        createdAt: failedAt, updatedAt: failedAt,
+      });
+      if (input.setupFixed) {
+        const fixedAt = new Date(failedAt.getTime() + HOUR);
+        await db.insert(heartbeatRuns).values({
+          companyId, agentId: everestId, invocationSource: "assignment", status: "succeeded", createdAt: fixedAt, finishedAt: fixedAt,
+        });
+      }
+      return { companyId, everestId, chat, recoveryId, failedAt };
+    }
+
+    /** Runs an action as the UI does, with a fresh clientRequestId where the request asks for one. */
+    async function press(testApp: express.Express, found: DecisionCardAction, value?: string) {
+      for (const call of found.requests) {
+        const body = {
+          ...call.body,
+          ...(found.input && value !== undefined ? { [found.input.field]: value } : {}),
+          ...(call.clientRequestId ? { clientRequestId: randomUUID() } : {}),
+        };
+        const agent = request(testApp);
+        const response = call.method === "PATCH" ? await agent.patch(call.path).send(body) : await agent.post(call.path).send(body);
+        expect(response.status, `${found.id} ${call.method} ${call.path}: ${JSON.stringify(response.body)}`).toBeLessThan(300);
+      }
+    }
+
+    it("dates a ready-to-retry card from the failure, never 1 Jan 1970", async () => {
+      const seeded = await seedStoppedChat({ setupFixed: true });
+      const card = cardFor(await build(seeded.companyId), seeded.chat)!;
+      expect(card).toMatchObject({ kind: "recovery", items: [] });
+      expect(card.activityAt).toBe(seeded.failedAt.toISOString());
+      expect(card.why.waitingSince).toBe(seeded.failedAt.toISOString());
+    });
+
+    for (const setupFixed of [false, true]) {
+      it(`offers only options that work on a chat${setupFixed ? " after the setup is fixed" : ""}`, async () => {
+        const first = await seedStoppedChat({ setupFixed });
+        const shown = cardFor(await build(first.companyId), first.chat)!;
+        const ids = shown.actions.filter((candidate) => candidate.type !== "link").map((candidate) => candidate.id);
+        // A chat keeps its agent and is never cancelled.
+        expect(ids).not.toContain("reassign");
+        expect(ids).not.toContain("cancel_task");
+        expect(ids).toEqual(expect.arrayContaining(["retry", "instruct", "resolve", "not_now"]));
+        // Mark resolved asks nothing: a chat has no "Done" to move to.
+        expect(action(shown, "resolve").input).toBeNull();
+
+        for (const id of ids) {
+          const seeded = id === ids[0] ? first : await seedStoppedChat({ setupFixed });
+          const card = cardFor(await build(seeded.companyId), seeded.chat)!;
+          const found = action(card, id);
+          await press(app(seeded.companyId), found, found.input?.type === "text" ? "Carry on with the reply." : undefined);
+        }
+      });
+    }
+
+    it("Mark resolved clears the card and puts the chat back to waiting with the same agent", async () => {
+      const seeded = await seedStoppedChat({ setupFixed: true });
+      const card = cardFor(await build(seeded.companyId), seeded.chat)!;
+      await press(app(seeded.companyId), action(card, "resolve"));
+
+      const [chat] = await db.select().from(issues).where(eq(issues.id, seeded.chat));
+      const [recovery] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, seeded.recoveryId));
+      expect(chat).toMatchObject({ status: "in_review", conversationState: "waiting", assigneeAgentId: seeded.everestId, conversationAgentId: seeded.everestId });
+      expect(recovery?.status).toBe("resolved");
+      expect(cardFor(await build(seeded.companyId), seeded.chat)).toBeNull();
+    });
+
+    it("parks the chat when an older card still sends Done", async () => {
+      const seeded = await seedStoppedChat({ setupFixed: false });
+      const response = await request(app(seeded.companyId))
+        .post(`/api/issues/${seeded.chat}/recovery-actions/resolve`)
+        .send({ actionId: seeded.recoveryId, outcome: "restored", sourceIssueStatus: "done", resolutionNote: "Marked resolved from Decisions." });
+      expect(response.status, JSON.stringify(response.body)).toBe(200);
+      const [chat] = await db.select().from(issues).where(eq(issues.id, seeded.chat));
+      expect(chat).toMatchObject({ status: "in_review", conversationState: "waiting", assigneeAgentId: seeded.everestId });
+    });
+  });
+
   describe("review cards (GRE-870)", () => {
     const OTHER_USER_ID = "other-user";
 
