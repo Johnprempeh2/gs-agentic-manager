@@ -1,4 +1,5 @@
 import { createChatSdkRuntime } from "../services/chat-sdk-runtime.js";
+import { whatsappWebIssueBinding } from "../services/whatsapp-web-chat.js";
 import { toolActionRequests, toolInvocations } from "@greatstone/db";
 import { GitHubPublicationLeaseLost, withGitHubPublicationLease } from "../services/chat-github-publication-lease.js";
 import { githubChatManagementService } from "../services/chat-github-management.js";
@@ -1638,8 +1639,11 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     const conversations = await db.select().from(chatConversations).where(eq(chatConversations.endpointId, endpoint.id));
     expect(conversations).toHaveLength(1);
     const conversation = conversations[0]!;
-    const [issue] = await db.select().from(issues).where(eq(issues.id, conversation.issueId));
-    expect(issue).toMatchObject({ assigneeAgentId: fixture.assignedAgentId, workMode: "ask" });
+    const [issue] = await db.select({
+      assigneeAgentId: issues.assigneeAgentId, workMode: issues.workMode,
+      bound: whatsappWebIssueBinding(fixture.companyId, conversation.issueId),
+    }).from(issues).where(eq(issues.id, conversation.issueId));
+    expect(issue).toEqual({ assigneeAgentId: fixture.assignedAgentId, workMode: "ask", bound: true });
     const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, conversation.issueId));
     expect(comments.map(({ body, authorUserId }) => ({ body, authorUserId }))).toEqual([
       { body: "Hello Everest", authorUserId: "owner-user" },

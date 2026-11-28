@@ -1,4 +1,4 @@
-import { isWhatsAppWebIssue } from "../whatsapp-web-chat.js";
+import { whatsappWebIssueBinding } from "../whatsapp-web-chat.js";
 import {
   isSupportedRemoteCodexVersion,
   parseCodexCliVersion,
@@ -10600,7 +10600,10 @@ async function createRunnerdBackendWithinSessionClaim(
   const pinnedSkills = new Set("runtimeContext" in input.execution ? input.execution.runtimeContext.skills.map((skill) => skill.key) : []);
   const connectorAssignments = [...pinnedSkills].some(isConnectorSkill)
     ? await resolveConnectorAssignments(input.db, input.execution.binding) : [];
-  const reviewRun = await input.db.select({ contextSnapshot: heartbeatRuns.contextSnapshot })
+  const reviewRun = await input.db.select({
+    contextSnapshot: heartbeatRuns.contextSnapshot,
+    whatsappWebTurn: whatsappWebIssueBinding(input.execution.binding.companyId, input.execution.binding.issueId),
+  })
     .from(heartbeatRuns).where(and(
       eq(heartbeatRuns.id, input.execution.binding.runId),
       eq(heartbeatRuns.companyId, input.execution.binding.companyId),
@@ -10634,9 +10637,7 @@ async function createRunnerdBackendWithinSessionClaim(
         workMode: input.execution.task.workMode,
       })
     : undefined;
-  const whatsappWebTurn = await isWhatsAppWebIssue(
-    input.db, input.execution.binding.companyId, input.execution.binding.issueId,
-  );
+  const whatsappWebTurn = reviewRun?.whatsappWebTurn === true;
   if (whatsappWebTurn && (
     input.execution.provider.kind !== "acpx" || input.execution.provider.permissionMode !== "deny-all" ||
     input.execution.task.workMode !== "ask" || hasAssignedMcp

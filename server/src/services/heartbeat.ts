@@ -1,4 +1,4 @@
-import { isWhatsAppWebIssue, isWhatsAppWebRunner, whatsappWebConfig } from "./whatsapp-web-chat.js";
+import { isWhatsAppWebRunner, whatsappWebConfig, whatsappWebIssueBinding } from "./whatsapp-web-chat.js";
 import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { currentServiceHold } from "./service-hold.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
@@ -11184,6 +11184,7 @@ export function heartbeatService(
       .select({
         chatCommunicationGuidance: chatConversations.communicationGuidance,
         chatAssignedAgentId: chatEndpoints.assignedAgentId,
+        whatsappWebTurn: whatsappWebIssueBinding(companyId, issueId),
         externalConversationState: externalConversationStateSql(),
         conversationAgentId: issues.conversationAgentId,
         conversationUserId: issues.conversationUserId,
@@ -26337,7 +26338,7 @@ export function heartbeatService(
         }
         // Runtime selection is immutable once persisted. Greatstone (GRE-1436): the Runner
         // graduated from Experimental, so fresh selections are always enabled.
-        const whatsappWebTurn = issueRef !== null && await isWhatsAppWebIssue(db, agent.companyId, issueRef.id);
+        const whatsappWebTurn = issueContext?.whatsappWebTurn === true;
         if (whatsappWebTurn) {
           const config = whatsappWebConfig();
           if (!config || config.companyId !== agent.companyId || config.agentId !== agent.id ||

@@ -1,5 +1,5 @@
-import { chatConversations, chatEndpoints, type Db } from "@greatstone/db";
-import { and, eq } from "drizzle-orm";
+import { chatConversations, chatEndpoints } from "@greatstone/db";
+import { sql } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { Message, parseMarkdown, stringifyMarkdown, type Adapter, type ChatInstance, type WebhookOptions } from "chat";
@@ -45,12 +45,15 @@ export function whatsappWebConfig(): WhatsAppWebConfig | null {
   }
 }
 
-export async function isWhatsAppWebIssue(db: Db, companyId: string, issueId: string) {
-  const [binding] = await db.select({ id: chatConversations.id }).from(chatConversations)
-    .innerJoin(chatEndpoints, and(eq(chatEndpoints.id, chatConversations.endpointId), eq(chatEndpoints.companyId, chatConversations.companyId)))
-    .where(and(eq(chatConversations.companyId, companyId), eq(chatConversations.issueId, issueId), eq(chatEndpoints.provider, "whatsapp-web")))
-    .limit(1);
-  return Boolean(binding);
+export function whatsappWebIssueBinding(companyId: string, issueId: string) {
+  return sql<boolean>`exists (
+    select 1 from ${chatConversations} as conversation
+    join ${chatEndpoints} as endpoint on endpoint.id = conversation.endpoint_id
+      and endpoint.company_id = conversation.company_id
+    where conversation.company_id = ${companyId}
+      and conversation.issue_id = ${issueId}
+      and endpoint.provider = 'whatsapp-web'
+  )`;
 }
 
 export function isWhatsAppWebRunner(adapterType: string | null, adapterConfig: unknown) {
