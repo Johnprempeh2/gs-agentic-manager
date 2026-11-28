@@ -7,6 +7,7 @@ const BOUND_EXTERNAL_CHAT_PROVIDERS = [
   "microsoft-teams",
   "telegram",
   "imessage-photon",
+  "whatsapp-web",
 ] as const;
 
 export function boundExternalChatProvider(source: unknown) {

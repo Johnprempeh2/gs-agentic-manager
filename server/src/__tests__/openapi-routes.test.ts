@@ -174,6 +174,7 @@ const explicitOpenApiOperationCoverageExclusions = new Set([
   // board API document, while this exact exclusion keeps route coverage honest.
   "POST /api/chat-webhooks/agentmail/{publicId}",
   "POST /api/chat-webhooks/{publicId}/{provider}",
+  "POST /api/private-chat/whatsapp-web/{publicId}",
 ]);
 
 // The set of contract-first routes whose OpenAPI document leads the mounted
@@ -263,8 +264,8 @@ function normalizeExpressPath(routePath: string) {
 
 function resolveMountedPath(file: string, prefix: string, routePath: string) {
   if (
-    (file === "chat-channels.ts" || file === "email.ts") &&
-    routePath.startsWith("/api/chat-webhooks/")
+    ((file === "chat-channels.ts" || file === "email.ts") && routePath.startsWith("/api/chat-webhooks/")) ||
+    (file === "chat-channels.ts" && routePath.startsWith("/api/private-chat/"))
   ) {
     return routePath;
   }
@@ -643,7 +644,7 @@ describe("openapi routes", () => {
         properties: {
           provider: {
             type: "string",
-            enum: ["slack", "github", "discord", "microsoft-teams", "telegram", "imessage-photon"],
+            enum: ["slack", "github", "discord", "microsoft-teams", "telegram", "imessage-photon", "whatsapp-web"],
           },
           assignedAgentId: { type: "string", format: "uuid" },
         },
@@ -866,6 +867,7 @@ describe("openapi routes", () => {
     expect(
       spec.paths["/api/chat-webhooks/{publicId}/{provider}"],
     ).toBeUndefined();
+    expect(spec.paths["/api/private-chat/whatsapp-web/{publicId}"]).toBeUndefined();
   });
 
   it("covers the mounted server routes exactly", () => {

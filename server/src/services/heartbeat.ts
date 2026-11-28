@@ -1,3 +1,4 @@
+import { isWhatsAppWebRunner, whatsappWebConfig, whatsappWebIssueBinding } from "./whatsapp-web-chat.js";
 import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { currentServiceHold } from "./service-hold.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
@@ -11183,6 +11184,7 @@ export function heartbeatService(
       .select({
         chatCommunicationGuidance: chatConversations.communicationGuidance,
         chatAssignedAgentId: chatEndpoints.assignedAgentId,
+        whatsappWebTurn: whatsappWebIssueBinding(companyId, issueId),
         externalConversationState: externalConversationStateSql(),
         conversationAgentId: issues.conversationAgentId,
         conversationUserId: issues.conversationUserId,
@@ -26336,6 +26338,14 @@ export function heartbeatService(
         }
         // Runtime selection is immutable once persisted. Greatstone (GRE-1436): the Runner
         // graduated from Experimental, so fresh selections are always enabled.
+        const whatsappWebTurn = issueContext?.whatsappWebTurn === true;
+        if (whatsappWebTurn) {
+          const config = whatsappWebConfig();
+          if (!config || config.companyId !== agent.companyId || config.agentId !== agent.id ||
+              issueRef?.workMode !== "ask" || !isWhatsAppWebRunner(agent.adapterType, agent.adapterConfig)) {
+            throw new Error("whatsapp_web_restricted_runner_required");
+          }
+        }
         const nativeRuntimeResolution = resolveHeartbeatNativeRuntimeMode({
           persisted: run,
           enabled: true,
@@ -26350,6 +26360,10 @@ export function heartbeatService(
           target: executionTarget,
           workspaceId: persistedExecutionWorkspace?.id ?? null,
         });
+        if (whatsappWebTurn && (nativeRuntimeResolution.kind !== "native" ||
+            nativeRuntimeResolution.profile.backend !== "acpx_runtime")) {
+          throw new Error("whatsapp_web_restricted_runner_required");
+        }
         let nativeExecution: NativeExecutionInput | null = null;
         let nativeRunnerInstanceId: string | null = null;
         if (nativeRuntimeResolution.kind === "native") {
@@ -26850,6 +26864,7 @@ export function heartbeatService(
                       managedProfile,
                       agentCoreProfile,
                     }),
+                    ...(whatsappWebTurn ? { acpxPermissionMode: "deny-all" as const } : {}),
                     lifecyclePolicy: effectiveLifecyclePolicy,
                     interactionResponses,
                     completionContract: {
@@ -27348,7 +27363,7 @@ export function heartbeatService(
               nativeExecution.runtimeContext.mcp.bindingId
                 ? nativeExecution.runtimeContext.mcp.digest
                 : null;
-            const nativeMcpServers = await buildPaperclipRuntimeMcpServers({
+            const nativeMcpServers = whatsappWebTurn ? [] : await buildPaperclipRuntimeMcpServers({
               db,
               agent,
               runId: run.id,

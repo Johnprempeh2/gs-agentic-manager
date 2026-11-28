@@ -8,6 +8,7 @@ import { Link } from "@/lib/router";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 
 const providerNames: Record<ChatProvider, string> = {
+  "whatsapp-web": "WhatsApp Web",
   slack: "Slack",
   github: "GitHub",
   discord: "Discord",

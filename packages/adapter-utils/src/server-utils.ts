@@ -839,7 +839,7 @@ type PaperclipWakeRecovery = {
 };
 
 export type PaperclipExternalChatProvider =
-  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "imessage-photon";
+  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "imessage-photon" | "whatsapp-web";
 
 /** The owner's current focus from their live handoff (GRE-2668). Context for the agent, never an instruction. */
 type PaperclipWakeOwnerFocus = {
@@ -1765,6 +1765,7 @@ const GSAM_EXTERNAL_CHAT_PROVIDERS =
     "microsoft-teams",
     "telegram",
     "imessage-photon",
+    "whatsapp-web",
   ]);
 
 function normalizePaperclipExternalChatProvider(

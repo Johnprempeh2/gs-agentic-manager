@@ -23,6 +23,7 @@ describe("HTTP logger redaction", () => {
     { method: "GET", path: "/api/chat-webhooks/private-url-canary/slack/" },
     { method: "PUT", path: "/API/CHAT-WEBHOOKS/private-url-canary/SLACK" },
     { method: "PATCH", path: "/api/chat-webhooks//private-url-canary" },
+    { method: "POST", path: "/api/private-chat/whatsapp-web/private-url-canary" },
     { method: "DELETE", path: "/api/chat-webhooks/private-url-canary/%XX" },
     {
       method: "POST",
@@ -98,7 +99,11 @@ describe("HTTP logger redaction", () => {
       const log = JSON.parse(output.trim());
       expect(log.req).toMatchObject({
         method,
-        url: path.includes("routine-triggers") ? "/api/routine-triggers/public/:publicId/fire" : "/api/chat-webhooks/:publicId/:provider",
+        url: path.includes("routine-triggers")
+          ? "/api/routine-triggers/public/:publicId/fire"
+          : path.includes("whatsapp-web")
+            ? "/api/private-chat/whatsapp-web/:publicId"
+            : "/api/chat-webhooks/:publicId/:provider",
       });
       expect(log.reqBody).toBe("[REDACTED]");
       expect(log.err.message).toBe("Chat webhook request failed");

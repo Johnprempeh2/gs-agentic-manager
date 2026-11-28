@@ -16,7 +16,7 @@ export type {
 } from "@greatstone/shared";
 
 export type ChatProvider =
-  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "agentmail" | "imessage-photon";
+  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "agentmail" | "imessage-photon" | "whatsapp-web";
 export type ChatEndpointStatus =
   | "draft"
   | "verifying"

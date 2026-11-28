@@ -760,6 +760,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           "microsoft-teams": "Microsoft Teams",
           telegram: "Telegram",
           "imessage-photon": "iMessage Photon",
+          "whatsapp-web": "WhatsApp Web",
   agentmail: "AgentMail",
         } as const;
         target = {

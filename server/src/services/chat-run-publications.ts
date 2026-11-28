@@ -265,6 +265,7 @@ async function enqueueSafeNativeChatProgress(
           eq(chatEndpoints.companyId, chatConversations.companyId),
           eq(chatEndpoints.id, chatConversations.endpointId),
           eq(chatEndpoints.publicationMode, "automatic"),
+          ne(chatEndpoints.provider, "whatsapp-web"),
           eq(chatEndpoints.assignedAgentId, heartbeatRuns.agentId),
         ),
       )

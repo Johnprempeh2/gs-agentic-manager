@@ -68,6 +68,8 @@ export function isPrivateToolCallHttpRequest(url: string | undefined): boolean {
   return TOOL_CALL_HTTP_PATHS.some((pattern) => pattern.test(pathname));
 }
 
+const PRIVATE_WEBHOOK_HTTP_PATH = /^\/api\/(?:chat-webhooks|private-chat\/whatsapp-web|routine-triggers\/public|inbound\/tasks|calendar-feeds)(?:\/|$)/i;
+
 /** Provider payloads are private even when a method/signature is rejected. */
 export function isPrivateWebhookHttpRequest(
   method: string | undefined,
@@ -79,7 +81,7 @@ export function isPrivateWebhookHttpRequest(
     // Do not let URL dot-segment normalization erase an explicitly supplied
     // ingress namespace on a malformed absolute-form callback.
     const rawPath = pathname.replace(/^https?:\/\/[^/]*/i, "");
-    if (/^\/api\/(?:chat-webhooks|routine-triggers\/public|inbound\/tasks|calendar-feeds)(?:\/|$)/i.test(rawPath)) return true;
+    if (PRIVATE_WEBHOOK_HTTP_PATH.test(rawPath)) return true;
     try {
       pathname = new URL(url).pathname;
     } catch {
@@ -88,7 +90,7 @@ export function isPrivateWebhookHttpRequest(
   }
   // This namespace is reserved for provider ingress, including malformed or
   // unknown callback paths. Rejecting a route must not make its payload public.
-  return /^\/api\/(?:chat-webhooks|routine-triggers\/public|inbound\/tasks|calendar-feeds)(?:\/|$)/i.test(pathname);
+  return PRIVATE_WEBHOOK_HTTP_PATH.test(pathname);
 }
 
 /**

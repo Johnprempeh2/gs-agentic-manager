@@ -66,6 +66,7 @@ function isPrivateWebhook(req: {
 }
 
 function privateWebhookLogUrl(url: unknown) {
+  if (typeof url === "string" && /\/private-chat\/whatsapp-web(?:\/|$)/i.test(url)) return "/api/private-chat/whatsapp-web/:publicId";
   if (typeof url === "string" && /\/inbound\/tasks(?:\/|$)/i.test(url)) return "/api/inbound/tasks/:publicId";
   if (typeof url === "string" && /\/calendar-feeds(?:\/|$)/i.test(url)) return "/api/calendar-feeds/:token";
   return typeof url === "string" && /\/routine-triggers\/public(?:\/|$)/i.test(url)

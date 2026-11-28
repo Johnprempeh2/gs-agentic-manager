@@ -62,6 +62,7 @@ const tabItems = tabs.map((value) => ({
   label: value[0].toUpperCase() + value.slice(1),
 }));
 const providerNames: Record<ChatProvider, string> = {
+  "whatsapp-web": "WhatsApp Web",
   agentmail: "AgentMail",
   slack: "Slack",
   github: "GitHub",
@@ -75,6 +76,10 @@ const providerLifecycleGuidance: Record<
   ChatProvider,
   { reconnect: string; remove: string }
 > = {
+  "whatsapp-web": {
+    reconnect: "Reconnect the configured private relay for the same WhatsApp number.",
+    remove: "Disconnect the GSAM channel and retain its conversation history. Unlink the spare phone separately.",
+  },
   agentmail: { reconnect: "Reconnect the same email inbox.", remove: "Disconnect email and retain task history." },
   slack: {
     reconnect:

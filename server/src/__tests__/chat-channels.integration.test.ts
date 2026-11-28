@@ -1,3 +1,5 @@
+import { createChatSdkRuntime } from "../services/chat-sdk-runtime.js";
+import { whatsappWebIssueBinding } from "../services/whatsapp-web-chat.js";
 import { toolActionRequests, toolInvocations } from "@greatstone/db";
 import { GitHubPublicationLeaseLost, withGitHubPublicationLease } from "../services/chat-github-publication-lease.js";
 import { githubChatManagementService } from "../services/chat-github-management.js";
@@ -1566,6 +1568,131 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     const providerRuntime = fakeRuntime.endpoints.get(endpointId);
     if (providerRuntime) providerRuntime.posts.length = 0;
   }
+
+  it("binds private WhatsApp Web turns and retried replies to the owner and Everest", async () => {
+    const fixture = await seedCompany();
+    const key = "1".repeat(64);
+    const replyKey = "2".repeat(64);
+    const sender = "15550001111";
+    const bot = "15550002222";
+    const ingress = "https://gsam.example-tail.ts.net:3100";
+    const relay = "https://mac.example-tail.ts.net:8444";
+    const configPath = path.join(secretsTmpDir, "whatsapp-test.json");
+    writeFileSync(configPath, JSON.stringify({
+      companyId: fixture.companyId, agentId: fixture.assignedAgentId,
+      ownerUserId: "owner-user", sender, bot, ingressOrigin: ingress, relayOrigin: relay,
+      ingressKey: key, replyKey,
+    }), { mode: 0o600 });
+    vi.stubEnv("GSAM_WHATSAPP_WEB_CONFIG_FILE", configPath);
+    onTestFinished(() => vi.unstubAllEnvs());
+    await db.update(agents).set({
+      name: "Everest", adapterType: "claude_local",
+    }).where(eq(agents.id, fixture.assignedAgentId));
+    const outbound = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValue(Response.json({ messageId: "WA_MOCK_REPLY" }));
+    const wakeup = vi.fn(async () => ({ accepted: true }));
+    const service = chatChannelService(db, {
+      fetch: outbound, runtime: createChatSdkRuntime(), heartbeat: { wakeup: receiptBackedWakeup(wakeup) },
+    });
+    fixtureServices.add(service);
+    await expect(service.create(fixture.companyId, {
+      provider: "whatsapp-web", assignedAgentId: fixture.replacementAgentId,
+    }, "owner-user")).rejects.toMatchObject({ status: 403 });
+    const endpoint = await service.create(fixture.companyId, {
+      provider: "whatsapp-web", assignedAgentId: fixture.assignedAgentId,
+    }, "owner-user");
+    await expect(service.configure(endpoint.id, { action: "configure" }, "owner-user"))
+      .rejects.toMatchObject({ status: 422 });
+    await db.update(agents).set({
+      adapterType: "paperclip_runner", adapterConfig: { provider: "acpx", acpxPermissionMode: "approve-all" },
+    }).where(eq(agents.id, fixture.assignedAgentId));
+    await service.configure(endpoint.id, { action: "configure" }, "owner-user");
+
+    function receive(overrides: Record<string, unknown> = {}, token = key, origin = ingress) {
+      return service.handleWebhook(endpoint.publicId, "whatsapp-web", new Request(
+        `${origin}/api/private-chat/whatsapp-web/${endpoint.publicId}`, {
+          method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ id: "WA_1", sender, bot, kind: "direct", text: "Hello Everest", ...overrides }),
+        },
+      ));
+    }
+    const privateIngress = express();
+    privateIngress.set("trust proxy", "loopback");
+    privateIngress.use(express.json(), chatWebhookRoutes(service, { enablePrivateWhatsAppWeb: true }), errorHandler);
+    const privatePost = (path: string, token: string) => request(privateIngress).post(path)
+      .set("Host", new URL(ingress).host).set("X-Forwarded-Proto", "https")
+      .set("Authorization", `Bearer ${token}`).send({ id: "WA_1", sender, bot, kind: "direct", text: "Hello Everest" });
+    const privatePath = `/api/private-chat/whatsapp-web/${endpoint.publicId}`;
+    await privatePost(`/api/chat-webhooks/${endpoint.publicId}/whatsapp-web`, key).expect(400);
+    await privatePost(privatePath, replyKey).expect(401);
+    expect((await receive({}, replyKey)).status).toBe(401);
+    expect((await receive({}, key, "https://public.example.com")).status).toBe(401);
+    expect((await receive({ sender: bot })).status).toBe(403);
+    expect((await receive({ kind: "group" })).status).toBe(400);
+    expect((await receive({ agentId: fixture.replacementAgentId })).status).toBe(400);
+    expect(await db.select().from(chatDeliveries).where(eq(chatDeliveries.endpointId, endpoint.id))).toHaveLength(0);
+
+    await privatePost(privatePath, key).expect(204);
+    expect((await receive()).status).toBe(204);
+    expect((await receive({ id: "WA_2", text: "Please answer here" })).status).toBe(204);
+    const conversations = await db.select().from(chatConversations).where(eq(chatConversations.endpointId, endpoint.id));
+    expect(conversations).toHaveLength(1);
+    const conversation = conversations[0]!;
+    const [issue] = await db.select({
+      assigneeAgentId: issues.assigneeAgentId, workMode: issues.workMode,
+      bound: whatsappWebIssueBinding(fixture.companyId, conversation.issueId),
+    }).from(issues).where(eq(issues.id, conversation.issueId));
+    expect(issue).toEqual({ assigneeAgentId: fixture.assignedAgentId, workMode: "ask", bound: true });
+    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, conversation.issueId));
+    expect(comments.map(({ body, authorUserId }) => ({ body, authorUserId }))).toEqual([
+      { body: "Hello Everest", authorUserId: "owner-user" },
+      { body: "Please answer here", authorUserId: "owner-user" },
+    ]);
+    expect(wakeup.mock.calls).toHaveLength(2);
+
+    const runId = randomUUID();
+    const authority = new PaperclipRunnerToolAuthority(db, {
+      whatsappWebTurn: true, companyId: fixture.companyId, issueId: conversation.issueId,
+      runId, agentId: fixture.assignedAgentId, workMode: "ask",
+    });
+    expect(authority.definitions().map((tool) => tool.name)).toEqual(["read_current_wake_comments"]);
+    await expect(authority.execute({ tool: "call_api", callId: "blocked", arguments: {} }))
+      .rejects.toMatchObject({ status: 403 });
+    await db.insert(heartbeatRuns).values({
+      id: runId, companyId: fixture.companyId, agentId: fixture.assignedAgentId, status: "succeeded",
+      contextSnapshot: await chatWakeContext({
+        endpointId: endpoint.id, issueId: conversation.issueId, provider: "whatsapp-web", providerMessageId: "WA_2",
+      }),
+    });
+    await addSelectedChatFinal({
+      runId, companyId: fixture.companyId, issueId: conversation.issueId, agentId: fixture.assignedAgentId,
+      body: "Everest has your request.",
+    });
+    await service.processPendingPublications();
+    await db.update(chatPublications).set({ nextAttemptAt: new Date(0) })
+      .where(eq(chatPublications.endpointId, endpoint.id));
+    await service.processPendingPublications();
+    expect(outbound).toHaveBeenCalledTimes(2);
+    const requests = outbound.mock.calls.map(([url, options]) => ({
+      url: String(url), authorization: new Headers(options?.headers).get("authorization"),
+      body: JSON.parse(String(options?.body)),
+    }));
+    expect(requests[0]).toEqual(requests[1]);
+    expect(requests[1]).toMatchObject({
+      url: `${relay}/v1/whatsapp-web/replies`, authorization: `Bearer ${replyKey}`,
+      body: { sender, bot, text: "Everest has your request." },
+    });
+    const [outboundLink] = await db.select().from(chatMessageLinks)
+      .where(and(eq(chatMessageLinks.conversationId, conversation.id), eq(chatMessageLinks.direction, "outbound")));
+    expect(outboundLink?.providerMessageId).toBe("WA_MOCK_REPLY");
+    await expect(service.test(endpoint.id)).resolves.toMatchObject({ status: "active" });
+
+    await db.update(companyMemberships).set({ membershipRole: "viewer" })
+      .where(eq(companyMemberships.companyId, fixture.companyId));
+    await receive({ id: "WA_3", text: "Must not wake" });
+    expect(wakeup.mock.calls).toHaveLength(2);
+  });
 
   async function configuredSlackEndpoint(
     fixture: Awaited<ReturnType<typeof seedCompany>>,

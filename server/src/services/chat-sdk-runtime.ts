@@ -1,3 +1,4 @@
+import { WhatsAppWebChatAdapter, type WhatsAppWebConfig } from "./whatsapp-web-chat.js";
 import { PhotonChatAdapter, parsePhotonThreadId } from "./photon/adapter.js";
 import { PhotonLineAuthentication } from "./photon/cloud.js";
 import { PhotonState } from "./photon/state.js";
@@ -136,8 +137,8 @@ const DISCORD_GATEWAY_HEALTHY_SESSION_MS = 60_000;
 
 /** Public GS Agentic Manager provider ids. The Teams SDK name remains an internal detail. */
 export type ChatSdkProvider =
-  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "imessage-photon";
-type ChatSdkAdapterKey = "slack" | "github" | "discord" | "teams" | "telegram" | "imessage-photon";
+  "slack" | "github" | "discord" | "microsoft-teams" | "telegram" | "imessage-photon" | "whatsapp-web";
+type ChatSdkAdapterKey = "slack" | "github" | "discord" | "teams" | "telegram" | "imessage-photon" | "whatsapp-web";
 
 interface ProviderConfigBase {
   /** Agent-derived native bot display/mention name. */
@@ -212,6 +213,7 @@ export interface ResolvedPhotonChatConfig extends ProviderConfigBase {
   credentials: { allocation?: "dedicated" | "shared"; projectId: string; projectSecret: string; lineId: string; phoneNumber: string };
 }
 export type ResolvedChatSdkProviderConfig =
+  | (ProviderConfigBase & { provider: "whatsapp-web"; config: WhatsAppWebConfig; fetch: typeof fetch })
   | ResolvedPhotonChatConfig
   | ResolvedSlackChatConfig
   | ResolvedGitHubChatConfig
@@ -1373,6 +1375,7 @@ function createProviderAdapter(
   const resolvedLogger = adapterLogger(logger);
   switch (config.provider) {
     case "imessage-photon": throw new Error("Photon adapter requires scoped persistence");
+    case "whatsapp-web": return new WhatsAppWebChatAdapter(config.config, config.userName, config.fetch);
     case "slack": {
       const adapterConfig: SlackAdapterConfig = {
         ...config.credentials,
@@ -2498,6 +2501,11 @@ export class ChatSdkEndpointRuntime {
 
   thread(threadId: string): Thread {
     return this.chat.thread(threadId);
+  }
+
+  async postWhatsAppWebPublication(threadId: string, id: string, text: string) {
+    if (!(this.adapter instanceof WhatsAppWebChatAdapter)) throw new Error("WhatsApp Web transport unavailable");
+    return this.adapter.postPublication(threadId, id, text);
   }
 
   async streamTelegramDraft(
