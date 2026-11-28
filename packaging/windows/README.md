@@ -11,7 +11,18 @@ powershell -File packaging\windows\build.ps1
 
 Needs Inno Setup 6. Makes `packaging\windows\dist\GSAM-Setup.exe` and its `.sha256`. `GSAM_HUB_URL` is where licence keys are checked; it is built into the installer.
 
-The installer is **not signed** yet. Windows SmartScreen then shows "Windows protected your PC". Tell customers: choose **More info**, then **Run anyway**. To sign it later (Azure Trusted Signing, or any code-signing certificate), set `GSAM_SIGN_COMMAND` to the signing command with `$f` where the file goes, for example `signtool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib Azure.CodeSigning.Dlib.dll /dmdf metadata.json $f`; the installer and its uninstaller are then signed as they are built.
+## Signing
+
+Unsigned, Windows SmartScreen shows "Windows protected your PC" (More info, then Run anyway), and a PC with Smart App Control on refuses the installer outright with no way round. So a release has to be signed.
+
+`build.ps1` signs when `GSAM_SIGN_COMMAND` holds a signing command in Inno Setup's form (`$f` where the file goes, `$q` for a quotation mark); the installer and its uninstaller are then signed as they are built. `scripts/release/windows-signing.ps1` writes that command, and signs any files passed to it:
+
+- By default through **Azure Artifact Signing** (it was called Trusted Signing). It needs `AZURE_SIGNING_ENDPOINT` (the account's region address, for example `https://weu.codesigning.azure.net`), `AZURE_SIGNING_ACCOUNT` and `AZURE_SIGNING_PROFILE`, and logs in with `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`: an app registration that holds the role "Artifact Signing Certificate Profile Signer" on the certificate profile. Microsoft's signtool plug-in is downloaded from nuget.org, pinned by version and hash, and needs the .NET 10 runtime.
+- With `-SelfSigned`, through a throwaway certificate. Pull requests use this to prove the plumbing; nobody trusts the result.
+
+In CI (`.github/workflows/release-assets.yml`) the three log-in values are repository secrets and the other three are repository variables. Once they exist, a tag build or a run by hand signs `GSAM-Setup.exe`, its uninstaller and `paperclip-runnerd-windows-x64.exe`, and fails if Windows does not report each signature as valid. Until then releases stay unsigned.
+
+Not covered: programs the setup downloads from other people (Node, Git, PostgreSQL) carry their own makers' signatures, or none. Check a signed build on a PC with Smart App Control on before calling it done.
 
 Every `live-*` release gets `GSAM-Setup.exe` built by `.github/workflows/release-assets.yml` (hub address from the repository variable `GSAM_HUB_URL`) and attached to the GitHub release, so `https://github.com/Johnprempeh2/gs-agentic-manager/releases/latest/download/GSAM-Setup.exe` is always the newest.
 
