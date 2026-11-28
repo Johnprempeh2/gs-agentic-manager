@@ -244,6 +244,60 @@ export function aiConnectionService(
         });
     });
   }
+  /**
+   * The company-shared account a member without a personal default falls back
+   * to: an active, healthy organisation grant for the provider that the member
+   * may use and that is permitted for this agent. The marked company default
+   * wins, then the oldest, so every run picks the same account. Credentials
+   * stay in company secrets and are never returned to the member.
+   */
+  async function companySharedFallbackGrantId(input: {
+    companyId: string;
+    userId: string;
+    agentId: string;
+    adapterType: string;
+    model?: unknown;
+    runnerProvider?: unknown;
+    acpxAgent?: unknown;
+    allowUninstalledShared?: boolean;
+    binding: AiConnectionBinding;
+  }): Promise<string | undefined> {
+    const candidates = (await rows(input.companyId))
+      .filter(({ connection, grant }) => {
+        if (grant.kind !== "organization" || grant.status !== "active") return false;
+        if (!connection.enabled || connection.status !== "active" || connection.healthStatus !== "ok") return false;
+        const metadata = aiConnectionMetadataSchema.safeParse(connection.config.ai);
+        if (!metadata.success || metadata.data.provider !== input.binding.provider) return false;
+        if (!isAiConnectionCompatible(metadata.data, input.adapterType, input.model, input.runnerProvider, input.acpxAgent)) return false;
+        if (aiSubscriptionNeedsIsolatedLogin(connection.config)) return false;
+        return aiCredentialExpiryState(readAiCredentialRecord(connection.config)?.expiresAt) !== "expired";
+      })
+      .sort((a, b) =>
+        Number(b.grant.isDefault) - Number(a.grant.isDefault) ||
+        a.grant.createdAt.getTime() - b.grant.createdAt.getTime() ||
+        a.grant.id.localeCompare(b.grant.id));
+    if (!candidates.length) return undefined;
+    const grantIds = candidates.map(({ grant }) => grant.id);
+    const connectionIds = candidates.map(({ connection }) => connection.id);
+    const [audience, installs] = await Promise.all([
+      db.select().from(connectionGrantMembers).where(and(
+        eq(connectionGrantMembers.companyId, input.companyId),
+        inArray(connectionGrantMembers.grantId, grantIds),
+      )),
+      db.select().from(toolConnectionInstalls).where(and(
+        eq(toolConnectionInstalls.companyId, input.companyId),
+        inArray(toolConnectionInstalls.connectionId, connectionIds),
+        or(
+          and(eq(toolConnectionInstalls.targetType, "company"), eq(toolConnectionInstalls.targetId, input.companyId)),
+          and(eq(toolConnectionInstalls.targetType, "agent"), eq(toolConnectionInstalls.targetId, input.agentId)),
+        ),
+      )),
+    ]);
+    return candidates.find(({ connection, grant }) =>
+      canUseCredential(grant, input.userId, audience.filter((member) => member.grantId === grant.id)) &&
+      (input.allowUninstalledShared || installs.some((install) => install.connectionId === connection.id)),
+    )?.grant.id;
+  }
   async function select(input: {
     companyId: string;
     userId: string | null;
@@ -298,13 +352,20 @@ export function aiConnectionService(
               .limit(1)
           )[0]
         : null;
+    // A member with no personal default for this provider uses the company's
+    // shared account, so a new teammate can prompt agents from first sign-in
+    // without being sent a key. Their own default always wins when set.
+    const companyFallbackGrantId =
+      binding.mode === "responsible_user" && !defaultRow
+        ? await companySharedFallbackGrantId({ ...input, userId: userId! })
+        : undefined;
     const grantId =
       binding.mode === "responsible_user"
-        ? defaultRow?.grantId
+        ? defaultRow?.grantId ?? companyFallbackGrantId
         : binding.grantId;
     if (!grantId)
       throw unprocessable(
-        "Connect an account and choose your personal default",
+        "Connect an account and choose your personal default, or ask an admin to connect a company-shared account in Apps",
         { code: "ai_connection_default_missing" },
       );
     const row = (await rows(companyId)).find(
@@ -362,9 +423,12 @@ export function aiConnectionService(
       );
     if (
       binding.mode === "responsible_user" &&
+      !companyFallbackGrantId &&
       (grant.kind !== "user" || grant.subjectUserId !== userId)
     )
       throw forbidden("The default must belong to the responsible user");
+    if (companyFallbackGrantId && grant.kind !== "organization")
+      throw forbidden("Select a company-shared account");
     if (binding.mode === "shared" && grant.kind !== "organization")
       throw forbidden("Select a company-shared account");
     if (binding.mode === "delegated" && grant.kind !== "user")
@@ -404,7 +468,7 @@ export function aiConnectionService(
       !(
         (input.allowUninstalledPersonal &&
           binding.mode === "responsible_user" && grant.subjectUserId === userId) ||
-        (input.allowUninstalledShared && binding.mode === "shared" && grant.kind === "organization")
+        (input.allowUninstalledShared && (binding.mode === "shared" || companyFallbackGrantId) && grant.kind === "organization")
       )
     )
       throw forbidden("This connection is not permitted for this agent");
@@ -415,7 +479,8 @@ export function aiConnectionService(
         grantId: grant.id,
         provider: binding.provider,
         method: metadata.data.method,
-        mode: binding.mode,
+        // Record the account actually used: a company fallback is a shared run.
+        mode: companyFallbackGrantId ? "shared" : binding.mode,
         responsibleUserId: userId,
       } satisfies AiConnectionAttribution,
     };

@@ -36,6 +36,16 @@ and caller-supplied validation URLs are rejected.
 `runtimeConfig.aiConnection` contains `provider`, `mode`, and `method`. For responsible-user selections, `method` is a legacy wire hint retained for rolling upgrades; the resolver uses the selected account’s actual method:
 
 - `responsible_user`: resolve the run's responsible user's personal provider default, using that account's subscription or API key. The `method` hint does not restrict the responsible user's account.
+  When that user has no personal default for the provider, the run falls back
+  to a company-shared account of that provider: active and healthy, shared
+  with that user (every member, or a named audience that includes them), and
+  permitted for the agent. The marked company default wins, then the oldest.
+  This lets a newly onboarded member prompt agents from first sign-in once an
+  admin has connected a shared account in Apps; nobody sends them a key. The
+  key stays in company secrets, is never shown to members, and the run is
+  recorded with `mode: "shared"`. A member's own default always wins, and an
+  existing but broken personal default still blocks rather than silently
+  switching account.
 - `shared`: use the named `connectionId` and `grantId`, with audience and agent
   access checks.
 - `delegated`: retained only to read legacy bindings. It cannot bypass human
